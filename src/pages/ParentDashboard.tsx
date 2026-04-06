@@ -162,7 +162,8 @@ export default function ParentDashboard() {
           amount: payment.amount,
           concept: payment.concept,
           email: auth.currentUser?.email,
-          phone: student?.phone || '+525555555555'
+          phone: student?.phone || '+525555555555',
+          origin: window.location.origin
         })
       });
 
@@ -177,9 +178,12 @@ export default function ParentDashboard() {
           updatedAt: serverTimestamp()
         });
         
-        window.location.href = data.checkout_url;
+        // Use window.location.assign for better compatibility
+        window.location.assign(data.checkout_url);
       } else if (data.checkout_url) {
-        window.location.href = data.checkout_url;
+        window.location.assign(data.checkout_url);
+      } else {
+        throw new Error('No se recibió una URL de pago válida de Conekta');
       }
     } catch (error: any) {
       console.error('Payment Error:', error);
