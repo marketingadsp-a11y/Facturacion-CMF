@@ -191,19 +191,27 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
       {/* Mobile Top Bar */}
       <div className="md:hidden bg-white border-b border-slate-100 p-4 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button 
             onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 -ml-2 text-slate-600 hover:bg-slate-50 rounded-xl transition-colors"
+            className="p-2 -ml-2 text-slate-600 hover:bg-slate-50 rounded-xl transition-colors shrink-0"
           >
             <Menu size={24} />
           </button>
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
-            <GraduationCap size={16} />
+          <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
+                <GraduationCap size={18} />
+              </div>
+            )}
           </div>
-          <span className="font-bold text-slate-800 text-sm truncate max-w-[150px]">{schoolName}</span>
+          <span className="font-bold text-slate-800 text-sm leading-tight">
+            {schoolName}
+          </span>
         </div>
-        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs">
+        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0 ml-2">
           {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
         </div>
       </div>
@@ -228,10 +236,16 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
             >
               <div className="p-6 flex items-center justify-between border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
-                    <GraduationCap size={16} />
+                  <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
+                        <GraduationCap size={20} />
+                      </div>
+                    )}
                   </div>
-                  <span className="font-bold text-slate-800 text-sm truncate max-w-[140px]">{schoolName}</span>
+                  <span className="font-bold text-slate-800 text-sm leading-tight">{schoolName}</span>
                 </div>
                 <button 
                   onClick={() => setIsMobileMenuOpen(false)}

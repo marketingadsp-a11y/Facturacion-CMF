@@ -3,7 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, doc, getDoc } from 'fire
 import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History } from 'lucide-react';
+import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -76,10 +76,23 @@ export default function ParentDashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 font-display">Portal de Padres</h1>
-          <p className="text-slate-500">Bienvenido, {userProfile?.name}. Consulta el estatus de tus hijos.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
+            {settings?.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
+                <GraduationCap size={32} />
+              </div>
+            )}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 font-display leading-tight">
+              {settings?.schoolName || 'Portal de Padres'}
+            </h1>
+            <p className="text-slate-500">Bienvenido, {userProfile?.name}. Consulta el estatus de tus hijos.</p>
+          </div>
         </div>
       </div>
 
