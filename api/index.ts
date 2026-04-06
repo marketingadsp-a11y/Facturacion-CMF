@@ -228,8 +228,8 @@ app.post('/api/conekta/checkout', async (req, res) => {
         checkout: {
           allowed_payment_methods: ['card', 'cash', 'bank_transfer'],
           type: 'HostedPayment',
-          success_url: `${process.env.APP_URL || origin || 'http://localhost:3000'}/parent-dashboard?payment=success`,
-          failure_url: `${process.env.APP_URL || origin || 'http://localhost:3000'}/parent-dashboard?payment=failure`,
+          success_url: `${process.env.APP_URL || origin || 'http://localhost:3000'}/?payment=success`,
+          failure_url: `${process.env.APP_URL || origin || 'http://localhost:3000'}/?payment=failure`,
           monthly_installments_enabled: false,
           redirection_time: 10
         }

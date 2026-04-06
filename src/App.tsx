@@ -340,6 +340,14 @@ const AppContent = () => {
         } 
       />
       <Route 
+        path="/parent-dashboard" 
+        element={
+          <ProtectedRoute>
+            <ParentDashboard />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
         path="/students" 
         element={
           <ProtectedRoute>

@@ -116,14 +116,18 @@ export default function ParentDashboard() {
   }, [students]);
 
   useEffect(() => {
-    if (paymentStatus === 'success') {
-      // In a real app, we would verify the payment on the backend
-      // and update the status via a webhook.
-      // For this demo, we'll show the success message.
-      // The admin can manually mark as paid or we can implement a "Verify" button.
-      console.log('Payment success detected');
+    const orderId = searchParams.get('order_id');
+    if (paymentStatus === 'success' && orderId && payments.length > 0) {
+      const payment = payments.find(p => p.conektaOrderId === orderId);
+      if (payment && payment.status === 'Pendiente') {
+        handleVerifyPayment(payment);
+        // Clear order_id to prevent multiple alerts
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('order_id');
+        setSearchParams(newParams);
+      }
     }
-  }, [paymentStatus]);
+  }, [paymentStatus, payments, searchParams]);
 
   // 3. Listen to payments separately when students are loaded
   useEffect(() => {
