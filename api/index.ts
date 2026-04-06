@@ -1,20 +1,36 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import admin from 'firebase-admin';
-import firebaseConfig from '../firebase-applet-config.json' assert { type: 'json' };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId
-  });
+// Load Firebase Config safely
+let firebaseConfig: any = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  }
+} catch (e) {
+  console.error('Error loading firebase-applet-config.json:', e);
 }
 
-const db = admin.firestore();
+// Initialize Firebase Admin lazily
+function getDb() {
+  if (!admin.apps.length) {
+    try {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID
+      });
+    } catch (e) {
+      console.error('Error initializing Firebase Admin:', e);
+    }
+  }
+  return admin.firestore();
+}
 
 const app = express();
 const PORT = 3000;
@@ -27,6 +43,7 @@ app.post('/api/facturapi/invoice', async (req, res) => {
   
   if (!apiKey) {
     try {
+      const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         apiKey = settingsSnap.data()?.facturapiApiKey;
@@ -76,6 +93,7 @@ app.get('/api/facturapi/invoice/:id/pdf', async (req, res) => {
 
   if (!apiKey) {
     try {
+      const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         apiKey = settingsSnap.data()?.facturapiApiKey;
@@ -131,6 +149,7 @@ app.post('/api/conekta/checkout', async (req, res) => {
 
   if (!privateKey) {
     try {
+      const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         privateKey = settingsSnap.data()?.conektaPrivateKey;
@@ -213,6 +232,7 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
 
   if (!privateKey) {
     try {
+      const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         privateKey = settingsSnap.data()?.conektaPrivateKey;

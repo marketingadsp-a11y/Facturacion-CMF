@@ -167,7 +167,17 @@ export default function ParentDashboard() {
         })
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.error('Non-JSON response from server:', text);
+        throw new Error(`Error del servidor (no es JSON). Por favor contacte al administrador.`);
+      }
+
       if (!response.ok) throw new Error(data.error || 'Error al iniciar el pago');
 
       if (data.checkout_url && data.order_id) {
