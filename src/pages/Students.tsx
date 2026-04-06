@@ -2,23 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Student, Payment } from '../types';
+import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { calculateStudentDebts } from '../lib/paymentUtils';
 
 export default function Students() {
   const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLevel, setFilterLevel] = useState('');
   const [filterGrade, setFilterGrade] = useState('');
   const [filterGroup, setFilterGroup] = useState('');
+  const [filterDebt, setFilterDebt] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -58,11 +62,23 @@ export default function Students() {
       setPayments(data);
     });
 
+    const sUnsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists()) setSettings(snap.data() as AppSettings);
+    });
+
+    const cUnsub = onSnapshot(collection(db, 'cycles'), (snap) => {
+      setCycles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolCycle)));
+    });
+
     return () => {
       unsub();
       pUnsub();
+      sUnsub();
+      cUnsub();
     };
   }, []);
+
+  const currentCycle = cycles.find(c => c.id === settings?.currentCycleId) || null;
 
   const handleOpenModal = (student?: Student) => {
     if (student) {
@@ -136,6 +152,12 @@ export default function Students() {
     const matchesLevel = !filterLevel || s.level === filterLevel;
     const matchesGrade = !filterGrade || s.grade === filterGrade;
     const matchesGroup = !filterGroup || s.group === filterGroup;
+    
+    if (filterDebt) {
+      const debtStatus = calculateStudentDebts(s, payments, currentCycle, settings);
+      if (!debtStatus.hasDebt) return false;
+    }
+
     return matchesSearch && matchesLevel && matchesGrade && matchesGroup;
   });
 
@@ -210,13 +232,25 @@ export default function Students() {
             ))}
           </select>
 
-          {(filterLevel || filterGrade || filterGroup || searchTerm) && (
+          <button
+            onClick={() => setFilterDebt(!filterDebt)}
+            className={cn(
+              "px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all",
+              filterDebt ? "bg-red-100 text-red-600 border border-red-200" : "bg-slate-50 text-slate-600 border border-slate-200"
+            )}
+          >
+            <AlertCircle size={14} />
+            {filterDebt ? 'Solo con Adeudo' : 'Ver Adeudos'}
+          </button>
+
+          {(filterLevel || filterGrade || filterGroup || searchTerm || filterDebt) && (
             <button
               onClick={() => {
                 setFilterLevel('');
                 setFilterGrade('');
                 setFilterGroup('');
                 setSearchTerm('');
+                setFilterDebt(false);
               }}
               className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
               title="Limpiar filtros"
@@ -236,92 +270,102 @@ export default function Students() {
                 <th className="px-6 py-4">Alumno</th>
                 <th className="px-6 py-4">Nivel / Grado / Grupo</th>
                 <th className="px-6 py-4">Contacto</th>
-                <th className="px-6 py-4">Facturación</th>
+                <th className="px-6 py-4">Estatus de Pago</th>
                 <th className="px-6 py-4 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredStudents.length > 0 ? (
-                filteredStudents.map((student) => (
-                  <tr key={student.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                          {student.name.charAt(0)}
+                filteredStudents.map((student) => {
+                  const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
+                  return (
+                    <tr key={student.id} className="hover:bg-slate-50 transition-colors group">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                            {student.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{student.name} {student.lastName}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{student.curp || 'SIN CURP'}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{student.name} {student.lastName}</p>
-                          <p className="text-[10px] text-slate-400 font-mono">{student.curp || 'SIN CURP'}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-blue-600 uppercase tracking-tighter">{student.level}</p>
+                          <p className="text-sm text-slate-600 font-medium">{student.grade} {student.group}</p>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-bold text-blue-600 uppercase tracking-tighter">{student.level}</p>
-                        <p className="text-sm text-slate-600 font-medium">{student.grade} {student.group}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                          <Mail size={12} /> {student.email || '-'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <Mail size={12} /> {student.email || '-'}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <Phone size={12} /> {student.phone || '-'}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                          <Phone size={12} /> {student.phone || '-'}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {student.rfc ? (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-                          <FileText size={12} /> {student.rfc}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-300 italic">No configurado</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {hasPermission('payments', 'create') && (
-                          <button 
-                            onClick={() => navigate('/payments', { state: { studentId: student.id } })}
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                            title="Realizar Pago"
-                          >
-                            <CreditCard size={16} />
-                          </button>
+                      </td>
+                      <td className="px-6 py-4">
+                        {debtStatus.hasDebt ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold w-fit">
+                              ADEUDO: ${debtStatus.totalDebt.toLocaleString()}
+                            </span>
+                            <p className="text-[9px] text-red-500 font-medium">
+                              {debtStatus.debts.length} meses pendientes
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold w-fit">
+                            AL CORRIENTE
+                          </span>
                         )}
-                        {hasPermission('students', 'viewHistory') && (
-                          <button 
-                            onClick={() => handleOpenHistory(student)}
-                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                            title="Historial de Pagos"
-                          >
-                            <History size={16} />
-                          </button>
-                        )}
-                        {hasPermission('students', 'edit') && (
-                          <button 
-                            onClick={() => handleOpenModal(student)}
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                            title="Editar"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        )}
-                        {hasPermission('students', 'delete') && (
-                          <button 
-                            onClick={() => handleDelete(student.id)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                            title="Eliminar"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {hasPermission('payments', 'create') && (
+                            <button 
+                              onClick={() => navigate('/payments', { state: { studentId: student.id } })}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                              title="Realizar Pago"
+                            >
+                              <CreditCard size={16} />
+                            </button>
+                          )}
+                          {hasPermission('students', 'viewHistory') && (
+                            <button 
+                              onClick={() => handleOpenHistory(student)}
+                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                              title="Historial de Pagos"
+                            >
+                              <History size={16} />
+                            </button>
+                          )}
+                          {hasPermission('students', 'edit') && (
+                            <button 
+                              onClick={() => handleOpenModal(student)}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                              title="Editar"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
+                          {hasPermission('students', 'delete') && (
+                            <button 
+                              onClick={() => handleDelete(student.id)}
+                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-slate-400">

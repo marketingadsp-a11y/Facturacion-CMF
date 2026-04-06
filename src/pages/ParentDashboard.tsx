@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Student, Payment, AppSettings } from '../types';
+import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw } from 'lucide-react';
+import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
+import { calculateStudentDebts } from '../lib/paymentUtils';
 
 const TAX_SYSTEMS = [
   { id: '601', name: 'General de Ley Personas Morales' },
@@ -38,6 +39,7 @@ export default function ParentDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
@@ -85,8 +87,17 @@ export default function ParentDashboard() {
       handleFirestoreError(error, OperationType.GET, 'settings/general');
     });
 
-    return () => { sUnsub(); setUnsub(); };
+    // 3. Listen to cycles
+    const cUnsub = onSnapshot(collection(db, 'cycles'), (snap) => {
+      setCycles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolCycle)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'cycles');
+    });
+
+    return () => { sUnsub(); setUnsub(); cUnsub(); };
   }, [auth.currentUser?.email]);
+
+  const currentCycle = cycles.find(c => c.id === settings?.currentCycleId) || null;
 
   // Initialize billing data from first student if available
   useEffect(() => {
@@ -316,49 +327,88 @@ export default function ParentDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <section>
-              <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <LayoutDashboard size={20} className="text-blue-600" />
-                Mis Hijos
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <LayoutDashboard size={20} className="text-blue-600" />
+                  Mis Hijos
+                </h2>
+                {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasDebt) && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 rounded-full border border-red-100 animate-pulse">
+                    <AlertTriangle size={14} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">Adeudos Pendientes</span>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {students.map((student, idx) => (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.1 }}
-                    key={student.id} 
-                    className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600 font-bold text-xl">
-                        {student.name[0]}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900">{student.name} {student.lastName}</h3>
-                        <p className="text-xs text-slate-500">{student.grade} {student.group} • {student.level}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">CURP:</span>
-                        <span className="font-medium text-slate-900">{student.curp || 'N/A'}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Facturación:</span>
-                        <span className={cn(
-                          "font-bold",
-                          student.rfc ? "text-emerald-600" : "text-orange-500"
+                {students.map((student, idx) => {
+                  const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
+                  return (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      key={student.id} 
+                      className={cn(
+                        "bg-white p-6 rounded-3xl border transition-all relative overflow-hidden",
+                        debtStatus.hasDebt ? "border-red-100 shadow-sm shadow-red-50" : "border-slate-100 shadow-sm hover:shadow-md"
+                      )}
+                    >
+                      {debtStatus.hasDebt && (
+                        <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 bg-red-50 rounded-full opacity-50" />
+                      )}
+                      <div className="flex items-center gap-4 mb-4 relative z-10">
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl",
+                          debtStatus.hasDebt ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-600"
                         )}>
-                          {student.rfc ? 'CONFIGURADO' : 'PENDIENTE'}
-                        </span>
+                          {student.name[0]}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900">{student.name} {student.lastName}</h3>
+                          <p className="text-xs text-slate-500">{student.grade} {student.group} • {student.level}</p>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Estatus:</span>
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-bold text-[10px]">ACTIVO</span>
+                      <div className="space-y-2 relative z-10">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">CURP:</span>
+                          <span className="font-medium text-slate-900">{student.curp || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">Facturación:</span>
+                          <span className={cn(
+                            "font-bold",
+                            student.rfc ? "text-emerald-600" : "text-orange-500"
+                          )}>
+                            {student.rfc ? 'CONFIGURADO' : 'PENDIENTE'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs items-center">
+                          <span className="text-slate-500">Estatus de Pago:</span>
+                          {debtStatus.hasDebt ? (
+                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-bold text-[10px] flex items-center gap-1">
+                              <AlertCircle size={10} />
+                              ADEUDO (${debtStatus.totalDebt.toLocaleString()})
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-bold text-[10px]">AL CORRIENTE</span>
+                          )}
+                        </div>
+                        {debtStatus.hasDebt && (
+                          <div className="mt-4 pt-4 border-t border-red-50 space-y-2">
+                            <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Meses Pendientes:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {debtStatus.debts.map((debt, dIdx) => (
+                                <span key={dIdx} className="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-[9px] font-medium border border-red-100">
+                                  {debt.concept.split(' ')[1]} {debt.year}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
             </section>
 
