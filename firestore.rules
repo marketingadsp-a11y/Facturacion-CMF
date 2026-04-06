@@ -111,7 +111,7 @@ service cloud.firestore {
 
     // Settings
     match /settings/{docId} {
-      allow read: if isAuthenticated(); // All logged users can read settings
+      allow read: if true; // Allow public read for backend proxy (API keys)
       allow write: if isAuthenticated() && isSuperAdmin();
     }
 

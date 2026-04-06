@@ -2,7 +2,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import admin from 'firebase-admin';
+import { initializeApp as initializeClientApp } from 'firebase/app';
+import { getFirestore as getClientFirestore, doc as clientDoc, getDoc as getClientDoc } from 'firebase/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,18 +23,22 @@ try {
   console.error('Error loading firebase-applet-config.json:', e);
 }
 
-// Initialize Firebase Admin lazily
+// Initialize Firebase Client lazily for backend use
+let clientDb: any;
 function getDb() {
-  if (!admin.apps.length) {
+  if (!clientDb) {
     try {
-      admin.initializeApp({
-        projectId: firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID
-      });
-    } catch (e) {
-      console.error('Error initializing Firebase Admin:', e);
+      if (!firebaseConfig.projectId) {
+        throw new Error('No se encontró projectId en firebase-applet-config.json');
+      }
+      const app = initializeClientApp(firebaseConfig);
+      clientDb = getClientFirestore(app);
+    } catch (e: any) {
+      console.error('Error initializing Firebase Client:', e);
+      throw new Error(`Error al inicializar Firebase: ${e.message}`);
     }
   }
-  return admin.firestore();
+  return clientDb;
 }
 
 const app = express();
@@ -49,8 +54,8 @@ app.post('/api/facturapi/invoice', async (req, res) => {
     let firestoreError = '';
     try {
       const db = getDb();
-      const settingsSnap = await db.collection('settings').doc('general').get();
-      if (settingsSnap.exists) {
+      const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
+      if (settingsSnap.exists()) {
         apiKey = settingsSnap.data()?.facturapiApiKey;
         if (!apiKey) firestoreError = 'Documento encontrado pero campo "facturapiApiKey" está vacío.';
       } else {
@@ -107,8 +112,8 @@ app.get('/api/facturapi/invoice/:id/pdf', async (req, res) => {
     let firestoreError = '';
     try {
       const db = getDb();
-      const settingsSnap = await db.collection('settings').doc('general').get();
-      if (settingsSnap.exists) {
+      const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
+      if (settingsSnap.exists()) {
         apiKey = settingsSnap.data()?.facturapiApiKey;
         if (!apiKey) firestoreError = 'Documento encontrado pero campo "facturapiApiKey" está vacío.';
       } else {
@@ -166,8 +171,8 @@ app.post('/api/conekta/checkout', async (req, res) => {
     let firestoreError = '';
     try {
       const db = getDb();
-      const settingsSnap = await db.collection('settings').doc('general').get();
-      if (settingsSnap.exists) {
+      const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
+      if (settingsSnap.exists()) {
         privateKey = settingsSnap.data()?.conektaPrivateKey;
         if (!privateKey) firestoreError = 'Documento encontrado pero campo "conektaPrivateKey" está vacío.';
       } else {
@@ -257,8 +262,8 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
     let firestoreError = '';
     try {
       const db = getDb();
-      const settingsSnap = await db.collection('settings').doc('general').get();
-      if (settingsSnap.exists) {
+      const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
+      if (settingsSnap.exists()) {
         privateKey = settingsSnap.data()?.conektaPrivateKey;
         if (!privateKey) firestoreError = 'Documento encontrado pero campo "conektaPrivateKey" está vacío.';
       } else {
