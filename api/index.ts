@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -53,41 +52,41 @@ app.get('/api/facturapi/invoice/:id/pdf', async (req, res) => {
   const { id } = req.params;
   const apiKey = req.query.apiKey as string;
 
-  console.log(`Attempting to download PDF for invoice: ${id}`);
+  console.log(`[PDF Proxy] Iniciando descarga para factura: ${id}`);
 
   if (!apiKey) {
+    console.error('[PDF Proxy] Error: API Key no proporcionada');
     return res.status(400).send('La clave API es requerida.');
   }
 
   try {
+    const authHeader = `Basic ${Buffer.from(apiKey + ':').toString('base64')}`;
     const response = await fetch(`https://www.facturapi.io/v2/invoices/${id}/pdf`, {
       headers: {
-        'Authorization': `Basic ${Buffer.from(apiKey + ':').toString('base64')}`
+        'Authorization': authHeader
       }
     });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(`Facturapi PDF Error Response (${response.status}):`, text);
+      console.error(`[PDF Proxy] Error de Facturapi (${response.status}):`, text);
       return res.status(response.status).send(`Error al obtener PDF de Facturapi: ${text}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     
-    console.log(`PDF fetched successfully, size: ${buffer.length} bytes`);
+    console.log(`[PDF Proxy] PDF obtenido con éxito. Tamaño: ${buffer.length} bytes`);
 
-    res.writeHead(200, {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=factura-${id}.pdf`,
-      'Content-Length': buffer.length,
-      'Cache-Control': 'no-cache'
-    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=factura-${id}.pdf`);
+    res.setHeader('Content-Length', buffer.length.toString());
+    res.setHeader('Cache-Control', 'no-cache');
     
-    res.end(buffer);
+    return res.send(buffer);
   } catch (error: any) {
-    console.error('Facturapi PDF Proxy Error:', error);
-    res.status(500).send(`Error interno al procesar el PDF: ${error.message}`);
+    console.error('[PDF Proxy] Error crítico:', error);
+    return res.status(500).send(`Error interno al procesar el PDF: ${error.message}`);
   }
 });
 
@@ -97,19 +96,27 @@ app.all('/api/*', (req, res) => {
 });
 
 // Vite middleware for development
-if (process.env.NODE_ENV !== 'production') {
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-  app.use(vite.middlewares);
-} else {
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
+async function setupVite() {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      // En Vercel, esto puede no ser necesario si usas rewrites en vercel.json
+      // pero lo dejamos como fallback
+      const indexPath = path.join(distPath, 'index.html');
+      res.sendFile(indexPath);
+    });
+  }
 }
+
+setupVite();
 
 if (!process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
