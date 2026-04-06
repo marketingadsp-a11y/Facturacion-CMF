@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc, addDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
@@ -218,6 +218,42 @@ export default function ParentDashboard() {
     }
   };
 
+  const handlePayDebt = async (student: Student, debt: { concept: string; amount: number }) => {
+    try {
+      setPayingId(`debt-${student.id}-${debt.concept}`);
+      
+      // 1. Create a pending payment record in Firestore
+      const paymentData = {
+        studentId: student.id,
+        amount: debt.amount,
+        concept: debt.concept,
+        date: serverTimestamp(),
+        status: 'Pendiente',
+        paymentMethod: 'Conekta',
+        parentEmail: auth.currentUser?.email,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      const docRef = await addDoc(collection(db, 'payments'), paymentData);
+      
+      // 2. Initiate payment flow with the newly created payment
+      const newPayment = {
+        id: docRef.id,
+        ...paymentData,
+        status: 'Pendiente',
+        date: { toDate: () => new Date(), toMillis: () => Date.now() }
+      } as any;
+
+      await handlePayment(newPayment);
+    } catch (error: any) {
+      console.error('Error creating debt payment:', error);
+      alert('Error al iniciar el pago del adeudo: ' + error.message);
+    } finally {
+      setPayingId(null);
+    }
+  };
+
   const handleSaveBillingData = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingBilling(true);
@@ -394,13 +430,27 @@ export default function ParentDashboard() {
                           )}
                         </div>
                         {debtStatus.hasDebt && (
-                          <div className="mt-4 pt-4 border-t border-red-50 space-y-2">
+                          <div className="mt-4 pt-4 border-t border-red-50 space-y-3">
                             <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Meses Pendientes:</p>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="space-y-2">
                               {debtStatus.debts.map((debt, dIdx) => (
-                                <span key={dIdx} className="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-[9px] font-medium border border-red-100">
-                                  {debt.concept.split(' ')[1]} {debt.year}
-                                </span>
+                                <div key={dIdx} className="flex items-center justify-between p-2 bg-red-50 rounded-xl border border-red-100">
+                                  <span className="text-[10px] font-medium text-red-700">
+                                    {debt.concept}
+                                  </span>
+                                  <button
+                                    onClick={() => handlePayDebt(student, debt)}
+                                    disabled={payingId === `debt-${student.id}-${debt.concept}`}
+                                    className="px-3 py-1 bg-red-600 text-white rounded-lg text-[9px] font-bold hover:bg-red-700 transition-all flex items-center gap-1 disabled:opacity-50"
+                                  >
+                                    {payingId === `debt-${student.id}-${debt.concept}` ? (
+                                      <Loader2 size={10} className="animate-spin" />
+                                    ) : (
+                                      <Wallet size={10} />
+                                    )}
+                                    Pagar ${debt.amount.toLocaleString()}
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </div>
