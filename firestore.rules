@@ -93,7 +93,11 @@ service cloud.firestore {
     match /payments/{paymentId} {
       allow read: if isAuthenticated() && (hasPermission('payments', 'view') || (isParent() && isChildOfParent(resource.data.studentId)));
       allow create: if isAuthenticated() && hasPermission('payments', 'create');
-      allow update: if isAuthenticated() && hasPermission('payments', 'cancel');
+      allow update: if isAuthenticated() && (
+        hasPermission('payments', 'cancel') || 
+        (isParent() && isChildOfParent(resource.data.studentId) && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['conektaOrderId', 'status', 'paymentMethod', 'updatedAt']))
+      );
       allow delete: if false; // No physical deletes for payments
     }
 

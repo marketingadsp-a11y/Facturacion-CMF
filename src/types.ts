@@ -29,6 +29,8 @@ export interface Payment {
   status: 'Pagado' | 'Pendiente' | 'Cancelado';
   invoiceId?: string;
   invoiceUrl?: string;
+  conektaOrderId?: string;
+  updatedAt?: Timestamp;
   items?: { description: string; price: number }[];
 }
 
@@ -102,6 +104,8 @@ export interface AppSettings {
   logoUrl?: string;
   facturapiApiKey?: string;
   facturapiSandbox: boolean;
+  conektaPublicKey?: string;
+  conektaPrivateKey?: string;
   paymentMethods: string[];
   currentCycleId?: string;
   dueDay: number; // Max day to pay without interest

@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save } from 'lucide-react';
+import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useSearchParams } from 'react-router-dom';
 
 const TAX_SYSTEMS = [
   { id: '601', name: 'General de Ley Personas Morales' },
@@ -33,6 +34,7 @@ const TAX_SYSTEMS = [
 
 export default function ParentDashboard() {
   const { userProfile } = usePermissions();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -40,6 +42,11 @@ export default function ParentDashboard() {
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [savingBilling, setSavingBilling] = useState(false);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failure' | null>(
+    searchParams.get('payment') as 'success' | 'failure' | null
+  );
+
   const [billingData, setBillingData] = useState({
     rfc: '',
     billingName: '',
@@ -97,6 +104,16 @@ export default function ParentDashboard() {
     }
   }, [students]);
 
+  useEffect(() => {
+    if (paymentStatus === 'success') {
+      // In a real app, we would verify the payment on the backend
+      // and update the status via a webhook.
+      // For this demo, we'll show the success message.
+      // The admin can manually mark as paid or we can implement a "Verify" button.
+      console.log('Payment success detected');
+    }
+  }, [paymentStatus]);
+
   // 3. Listen to payments separately when students are loaded
   useEffect(() => {
     if (students.length === 0) return;
@@ -119,6 +136,75 @@ export default function ParentDashboard() {
     if (!settings?.facturapiApiKey) return;
     const url = `/api/facturapi/invoice/${invoiceId}/pdf?apiKey=${settings.facturapiApiKey}`;
     window.open(url, '_blank');
+  };
+
+  const handlePayment = async (payment: Payment) => {
+    setPayingId(payment.id);
+    const student = students.find(s => s.id === payment.studentId);
+    
+    try {
+      const response = await fetch('/api/conekta/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentName: `${student?.name} ${student?.lastName}`,
+          amount: payment.amount,
+          concept: payment.concept,
+          email: auth.currentUser?.email,
+          phone: student?.phone || '+525555555555'
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error al iniciar el pago');
+
+      if (data.checkout_url && data.order_id) {
+        // Guardar el order_id en Firestore para poder verificarlo después
+        const paymentRef = doc(db, 'payments', payment.id);
+        await updateDoc(paymentRef, {
+          conektaOrderId: data.order_id,
+          updatedAt: serverTimestamp()
+        });
+        
+        window.location.href = data.checkout_url;
+      } else if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+      }
+    } catch (error: any) {
+      console.error('Payment Error:', error);
+      alert('Error al procesar el pago: ' + error.message);
+    } finally {
+      setPayingId(null);
+    }
+  };
+
+  const handleVerifyPayment = async (payment: Payment) => {
+    if (!payment.conektaOrderId) return;
+    
+    setPayingId(payment.id);
+    try {
+      const response = await fetch(`/api/conekta/verify/${payment.conektaOrderId}`);
+      const data = await response.json();
+      
+      if (!response.ok) throw new Error(data.error || 'Error al verificar pago');
+      
+      if (data.status === 'paid') {
+        const paymentRef = doc(db, 'payments', payment.id);
+        await updateDoc(paymentRef, {
+          status: 'Pagado',
+          paymentMethod: 'Conekta',
+          updatedAt: serverTimestamp()
+        });
+        alert('¡Pago confirmado con éxito!');
+      } else {
+        alert('El pago aún no se ha completado o está pendiente.');
+      }
+    } catch (error: any) {
+      console.error('Verify Error:', error);
+      alert('Error al verificar el pago: ' + error.message);
+    } finally {
+      setPayingId(null);
+    }
   };
 
   const handleSaveBillingData = async (e: React.FormEvent) => {
@@ -159,6 +245,35 @@ export default function ParentDashboard() {
 
   return (
     <div className="space-y-8">
+      <AnimatePresence>
+        {paymentStatus && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={cn(
+              "p-4 rounded-2xl flex items-center justify-between gap-4",
+              paymentStatus === 'success' ? "bg-emerald-50 text-emerald-800 border border-emerald-100" : "bg-red-50 text-red-800 border border-red-100"
+            )}
+          >
+            <div className="flex items-center gap-3">
+              {paymentStatus === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+              <p className="text-sm font-bold">
+                {paymentStatus === 'success' 
+                  ? "¡Pago procesado con éxito! En breve se verá reflejado en tu historial." 
+                  : "Hubo un problema al procesar tu pago. Por favor, intenta de nuevo."}
+              </p>
+            </div>
+            <button onClick={() => {
+              setPaymentStatus(null);
+              setSearchParams({});
+            }} className="p-1 hover:bg-black/5 rounded-full">
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
@@ -262,7 +377,8 @@ export default function ParentDashboard() {
                         <th className="px-6 py-4">Alumno</th>
                         <th className="px-6 py-4">Concepto</th>
                         <th className="px-6 py-4">Monto</th>
-                        <th className="px-6 py-4 text-right">Factura</th>
+                        <th className="px-6 py-4">Estatus</th>
+                        <th className="px-6 py-4 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -280,16 +396,48 @@ export default function ParentDashboard() {
                           <td className="px-6 py-4">
                             <p className="text-xs font-bold text-slate-900">{formatCurrency(payment.amount)}</p>
                           </td>
+                          <td className="px-6 py-4">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-full font-bold text-[10px]",
+                              payment.status === 'Pagado' ? "bg-emerald-100 text-emerald-700" :
+                              payment.status === 'Cancelado' ? "bg-red-100 text-red-700" :
+                              "bg-orange-100 text-orange-700"
+                            )}>
+                              {payment.status.toUpperCase()}
+                            </span>
+                          </td>
                           <td className="px-6 py-4 text-right">
-                            {payment.invoiceId && (
-                              <button 
-                                onClick={() => handleDownloadInvoice(payment.invoiceId!)}
-                                className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors"
-                                title="Descargar Factura PDF"
-                              >
-                                <Download size={14} />
-                              </button>
-                            )}
+                            <div className="flex items-center justify-end gap-2">
+                              {payment.status === 'Pendiente' && !payment.conektaOrderId && (
+                                <button
+                                  onClick={() => handlePayment(payment)}
+                                  disabled={payingId === payment.id}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                                >
+                                  {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
+                                  Pagar
+                                </button>
+                              )}
+                              {payment.status === 'Pendiente' && payment.conektaOrderId && (
+                                <button
+                                  onClick={() => handleVerifyPayment(payment)}
+                                  disabled={payingId === payment.id}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                                >
+                                  {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                  Verificar Pago
+                                </button>
+                              )}
+                              {payment.invoiceId && (
+                                <button 
+                                  onClick={() => handleDownloadInvoice(payment.invoiceId!)}
+                                  className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors"
+                                  title="Descargar Factura PDF"
+                                >
+                                  <Download size={14} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -314,14 +462,36 @@ export default function ParentDashboard() {
                       </div>
                       <div className="flex justify-between items-center">
                         <p className="text-xs text-slate-600">{payment.concept}</p>
-                        {payment.invoiceId && (
-                          <button 
-                            onClick={() => handleDownloadInvoice(payment.invoiceId!)}
-                            className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg"
-                          >
-                            <Download size={12} /> PDF
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {payment.status === 'Pendiente' && !payment.conektaOrderId && (
+                            <button
+                              onClick={() => handlePayment(payment)}
+                              disabled={payingId === payment.id}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                            >
+                              {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
+                              Pagar
+                            </button>
+                          )}
+                          {payment.status === 'Pendiente' && payment.conektaOrderId && (
+                            <button
+                              onClick={() => handleVerifyPayment(payment)}
+                              disabled={payingId === payment.id}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                            >
+                              {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                              Verificar
+                            </button>
+                          )}
+                          {payment.invoiceId && (
+                            <button 
+                              onClick={() => handleDownloadInvoice(payment.invoiceId!)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg"
+                            >
+                              <Download size={12} /> PDF
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}

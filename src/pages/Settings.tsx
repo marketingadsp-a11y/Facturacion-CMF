@@ -23,7 +23,8 @@ import {
   Edit2,
   Trash2,
   Check,
-  X as XIcon
+  X as XIcon,
+  CreditCard
 } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 
@@ -40,6 +41,8 @@ export default function Settings() {
     logoUrl: '',
     facturapiApiKey: '',
     facturapiSandbox: true,
+    conektaPublicKey: '',
+    conektaPrivateKey: '',
     paymentMethods: ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'],
     dueDay: 10,
     lateFeeAmount: 0,
@@ -369,36 +372,70 @@ export default function Settings() {
           )}
 
           {activeTab === 'billing' && (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-              <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                <Key size={20} className="text-emerald-600" />
-                Integración Facturapi
-              </h2>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">API Key (Secret Key)</label>
-                  <input
-                    type="password"
-                    placeholder="sk_test_..."
-                    value={settings.facturapiApiKey}
-                    onChange={(e) => setSettings({...settings, facturapiApiKey: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Obtén tu llave en dashboard.facturapi.io</p>
-                </div>
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <Key size={20} className="text-emerald-600" />
+                  Integración Facturapi
+                </h2>
                 
-                <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                  <input
-                    type="checkbox"
-                    id="sandbox"
-                    checked={settings.facturapiSandbox}
-                    onChange={(e) => setSettings({...settings, facturapiSandbox: e.target.checked})}
-                    className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500"
-                  />
-                  <label htmlFor="sandbox" className="text-sm font-medium text-emerald-900 cursor-pointer">
-                    Modo Sandbox (Pruebas)
-                  </label>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">API Key (Secret Key)</label>
+                    <input
+                      type="password"
+                      placeholder="sk_test_..."
+                      value={settings.facturapiApiKey}
+                      onChange={(e) => setSettings({...settings, facturapiApiKey: e.target.value})}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Obtén tu llave en dashboard.facturapi.io</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                    <input
+                      type="checkbox"
+                      id="sandbox"
+                      checked={settings.facturapiSandbox}
+                      onChange={(e) => setSettings({...settings, facturapiSandbox: e.target.checked})}
+                      className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500"
+                    />
+                    <label htmlFor="sandbox" className="text-sm font-medium text-emerald-900 cursor-pointer">
+                      Modo Sandbox (Pruebas)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <CreditCard size={20} className="text-blue-600" />
+                  Integración Conekta (Pagos en Línea)
+                </h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Public Key</label>
+                    <input
+                      placeholder="key_..."
+                      value={settings.conektaPublicKey}
+                      onChange={(e) => setSettings({...settings, conektaPublicKey: e.target.value})}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Private Key (Secret Key)</label>
+                    <input
+                      type="password"
+                      placeholder="key_..."
+                      value={settings.conektaPrivateKey}
+                      onChange={(e) => setSettings({...settings, conektaPrivateKey: e.target.value})}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Configura estas llaves para permitir que los padres paguen colegiaturas con tarjeta, transferencia o efectivo (OXXO) desde la app.
+                  </p>
                 </div>
               </div>
             </div>
