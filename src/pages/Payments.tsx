@@ -276,7 +276,14 @@ export default function Payments() {
         })
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`El servidor devolvió una respuesta no válida (no es JSON). Esto suele indicar un error de configuración en el servidor o una ruta no encontrada (404). Detalle: ${text.substring(0, 100)}...`);
+      }
+
       if (result.id) {
         await updateDoc(doc(db, 'payments', paymentId), {
           invoiceId: result.id,

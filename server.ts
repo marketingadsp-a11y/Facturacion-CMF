@@ -17,7 +17,7 @@ async function startServer() {
     const { apiKey, invoiceData } = req.body;
     
     if (!apiKey) {
-      return res.status(400).json({ error: 'Facturapi API Key is required' });
+      return res.status(400).json({ error: 'La clave API de Facturapi es requerida.' });
     }
 
     try {
@@ -30,9 +30,16 @@ async function startServer() {
         body: JSON.stringify(invoiceData)
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Respuesta no válida de Facturapi (no es JSON): ${text.substring(0, 100)}`);
+      }
+
       if (!response.ok) {
-        throw new Error(data.message || 'Error creating invoice');
+        throw new Error(data.message || `Error de Facturapi (${response.status}): ${JSON.stringify(data)}`);
       }
 
       res.json(data);
@@ -48,7 +55,7 @@ async function startServer() {
     const apiKey = req.query.apiKey as string;
 
     if (!apiKey) {
-      return res.status(400).send('API Key is required');
+      return res.status(400).send('La clave API es requerida.');
     }
 
     try {
@@ -58,15 +65,24 @@ async function startServer() {
         }
       });
 
-      if (!response.ok) throw new Error('Error fetching PDF');
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Error al obtener PDF (${response.status}): ${text.substring(0, 100)}`);
+      }
 
       const buffer = await response.arrayBuffer();
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=factura-${id}.pdf`);
       res.send(Buffer.from(buffer));
     } catch (error: any) {
+      console.error('Facturapi PDF Error:', error);
       res.status(500).send(error.message);
     }
+  });
+
+  // Catch-all for undefined API routes
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.url}` });
   });
 
   // Vite middleware for development
