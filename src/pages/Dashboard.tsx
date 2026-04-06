@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Payment, Expense } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
@@ -17,6 +17,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, BarChart, Bar, Cell 
 } from 'recharts';
+import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Dashboard() {
@@ -30,10 +31,19 @@ export default function Dashboard() {
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
 
   useEffect(() => {
-    const studentsUnsub = onSnapshot(collection(db, 'students'), (snap) => {
-      setStudentsCount(snap.size);
-    });
+    // Use getCountFromServer for students count to avoid fetching all documents
+    const fetchStudentsCount = async () => {
+      try {
+        const coll = collection(db, 'students');
+        const snapshot = await getCountFromServer(coll);
+        setStudentsCount(snapshot.data().count);
+      } catch (err) {
+        console.error("Error fetching students count:", err);
+      }
+    };
+    fetchStudentsCount();
 
+    // For dashboard totals, we still need the data, but we can optimize the listeners
     const paymentsUnsub = onSnapshot(
       query(collection(db, 'payments'), orderBy('date', 'desc')),
       (snap) => {
@@ -41,7 +51,8 @@ export default function Dashboard() {
         setAllPayments(payments);
         const total = payments.filter(p => p.status === 'Pagado').reduce((acc, p) => acc + (p.amount || 0), 0);
         setTotalRevenue(total);
-      }
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'payments')
     );
 
     const expensesUnsub = onSnapshot(
@@ -52,17 +63,17 @@ export default function Dashboard() {
         const total = expenses.filter(e => e.status === 'Pagado').reduce((acc, e) => acc + (e.amount || 0), 0);
         setTotalExpenses(total);
         setLoading(false);
-      }
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'expenses')
     );
 
     const settingsUnsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists()) {
         setSchoolName(snap.data().schoolName || 'Colegio México Franciscano');
       }
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/general'));
 
     return () => {
-      studentsUnsub();
       paymentsUnsub();
       expensesUnsub();
       settingsUnsub();

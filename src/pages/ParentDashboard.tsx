@@ -20,28 +20,18 @@ export default function ParentDashboard() {
   useEffect(() => {
     if (!auth.currentUser?.email) return;
 
+    // 1. Listen to students
     const sQuery = query(collection(db, 'students'), where('parentEmail', '==', auth.currentUser.email));
     const sUnsub = onSnapshot(sQuery, (snap) => {
       const sData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
       setStudents(sData);
-      
-      if (sData.length > 0) {
-        const studentIds = sData.map(s => s.id);
-        const pQuery = query(collection(db, 'payments'), where('studentId', 'in', studentIds), orderBy('date', 'desc'));
-        const pUnsub = onSnapshot(pQuery, (pSnap) => {
-          setPayments(pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment)));
-          setLoading(false);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.LIST, 'payments');
-        });
-        return () => pUnsub();
-      } else {
-        setLoading(false);
-      }
+      if (sData.length === 0) setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'students');
+      setLoading(false);
     });
 
+    // 2. Listen to settings
     const setUnsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists()) setSettings(snap.data() as AppSettings);
     }, (error) => {
@@ -49,7 +39,26 @@ export default function ParentDashboard() {
     });
 
     return () => { sUnsub(); setUnsub(); };
-  }, []);
+  }, [auth.currentUser?.email]);
+
+  // 3. Listen to payments separately when students are loaded
+  useEffect(() => {
+    if (students.length === 0) return;
+
+    const studentIds = students.map(s => s.id);
+    // Firestore 'in' query limit is 30, usually parents have fewer children
+    const pQuery = query(collection(db, 'payments'), where('studentId', 'in', studentIds), orderBy('date', 'desc'));
+    
+    const pUnsub = onSnapshot(pQuery, (pSnap) => {
+      setPayments(pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment)));
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'payments');
+      setLoading(false);
+    });
+
+    return () => pUnsub();
+  }, [students.map(s => s.id).join(',')]);
 
   const handleDownloadInvoice = (invoiceId: string) => {
     if (!settings?.facturapiApiKey) return;
