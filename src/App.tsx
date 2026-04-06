@@ -44,14 +44,20 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const [user] = useAuthState(auth);
   const { userProfile, hasPermission, loading } = usePermissions();
   const [logoUrl, setLogoUrl] = useState('');
+  const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
   
   useEffect(() => {
     testConnection();
     
-    // Fetch logo from settings
+    // Fetch settings for logo and name
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists()) {
-        setLogoUrl(snap.data().logoUrl || '');
+        const data = snap.data();
+        setLogoUrl(data.logoUrl || '');
+        if (data.schoolName) {
+          setSchoolName(data.schoolName);
+          document.title = data.schoolName;
+        }
       }
     });
 
@@ -129,8 +135,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
             )}
           </div>
           <div>
-            <h1 className="font-bold text-slate-800 text-sm leading-tight">Colegio México</h1>
-            <p className="text-xs text-slate-500">Franciscano</p>
+            <h1 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[140px]">
+              {schoolName}
+            </h1>
           </div>
         </div>
 

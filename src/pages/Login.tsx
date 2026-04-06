@@ -11,6 +11,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
+  const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -18,7 +19,12 @@ export default function Login() {
       try {
         const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
         if (settingsDoc.exists()) {
-          setLogoUrl(settingsDoc.data().logoUrl || '');
+          const data = settingsDoc.data();
+          setLogoUrl(data.logoUrl || '');
+          if (data.schoolName) {
+            setSchoolName(data.schoolName);
+            document.title = data.schoolName;
+          }
         }
       } catch (err) {
         console.error("Error fetching settings:", err);
@@ -57,8 +63,8 @@ export default function Login() {
               <GraduationCap size={40} className="text-blue-600" />
             )}
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Colegio México Franciscano</h1>
-          <p className="text-slate-500 mt-1">Sistema de Control Escolar</p>
+          <h1 className="text-2xl font-bold text-slate-900">{schoolName}</h1>
+          <p className="text-slate-500 mt-1">Sistema de Control Escolar - {schoolName}</p>
         </div>
 
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">

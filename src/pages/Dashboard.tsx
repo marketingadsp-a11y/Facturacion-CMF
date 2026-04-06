@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Payment } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [recentPayments, setRecentPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
 
   useEffect(() => {
     const studentsUnsub = onSnapshot(collection(db, 'students'), (snap) => {
@@ -35,10 +36,17 @@ export default function Dashboard() {
       setLoading(false);
     });
 
+    const settingsUnsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists()) {
+        setSchoolName(snap.data().schoolName || 'Colegio México Franciscano');
+      }
+    });
+
     return () => {
       studentsUnsub();
       paymentsUnsub();
       revenueUnsub();
+      settingsUnsub();
     };
   }, []);
 
@@ -82,7 +90,7 @@ export default function Dashboard() {
             <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
               Hola {userProfile?.name.split(' ')[0] || 'Cajero'}, ¡Buen día!
             </h1>
-            <p className="text-slate-500 mt-1 text-lg">Panel de Control de Caja</p>
+            <p className="text-slate-500 mt-1 text-lg">Panel de Control de Caja - {schoolName}</p>
           </div>
           <div className="bg-indigo-600 px-6 py-4 rounded-[2rem] text-white shadow-xl shadow-indigo-200 flex items-center gap-4">
             <div className="bg-white/20 p-2 rounded-xl">
@@ -214,7 +222,7 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold text-slate-900">
           Hola {userProfile?.name || 'Usuario'}, Bienvenido
         </h1>
-        <p className="text-slate-500">Resumen general del Colegio México Franciscano</p>
+        <p className="text-slate-500">Resumen general de {schoolName}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
