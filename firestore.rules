@@ -81,7 +81,11 @@ service cloud.firestore {
     match /students/{studentId} {
       allow read: if isAuthenticated() && (hasPermission('students', 'view') || resource.data.parentEmail == request.auth.token.email);
       allow create: if isAuthenticated() && hasPermission('students', 'create');
-      allow update: if isAuthenticated() && hasPermission('students', 'edit');
+      allow update: if isAuthenticated() && (
+        hasPermission('students', 'edit') || 
+        (resource.data.parentEmail == request.auth.token.email && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rfc', 'billingName', 'billingAddress', 'zipCode', 'taxSystem']))
+      );
       allow delete: if isAuthenticated() && hasPermission('students', 'delete');
     }
 
