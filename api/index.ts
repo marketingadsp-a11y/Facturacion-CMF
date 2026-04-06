@@ -10,9 +10,13 @@ const __dirname = path.dirname(__filename);
 // Load Firebase Config safely
 let firebaseConfig: any = {};
 try {
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const rootConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  const apiConfigPath = path.join(__dirname, '..', 'firebase-applet-config.json');
+  
+  if (fs.existsSync(rootConfigPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(rootConfigPath, 'utf8'));
+  } else if (fs.existsSync(apiConfigPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(apiConfigPath, 'utf8'));
   }
 } catch (e) {
   console.error('Error loading firebase-applet-config.json:', e);
@@ -42,19 +46,27 @@ app.post('/api/facturapi/invoice', async (req, res) => {
   let { apiKey, invoiceData } = req.body;
   
   if (!apiKey) {
+    let firestoreError = '';
     try {
       const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         apiKey = settingsSnap.data()?.facturapiApiKey;
+        if (!apiKey) firestoreError = 'Documento encontrado pero campo "facturapiApiKey" está vacío.';
+      } else {
+        firestoreError = 'El documento "settings/general" no existe en Firestore.';
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error fetching settings from Firestore:', e);
+      firestoreError = `Error de Firestore: ${e.message}`;
     }
-  }
 
-  if (!apiKey) {
-    return res.status(400).json({ error: 'La clave API de Facturapi no está configurada.' });
+    if (!apiKey) {
+      return res.status(400).json({ 
+        error: `La clave API de Facturapi no está configurada. ${firestoreError}`,
+        debug: { hasConfig: !!firebaseConfig.projectId, projectId: firebaseConfig.projectId }
+      });
+    }
   }
 
   try {
@@ -92,22 +104,25 @@ app.get('/api/facturapi/invoice/:id/pdf', async (req, res) => {
   let apiKey = req.query.apiKey as string;
 
   if (!apiKey) {
+    let firestoreError = '';
     try {
       const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         apiKey = settingsSnap.data()?.facturapiApiKey;
+        if (!apiKey) firestoreError = 'Documento encontrado pero campo "facturapiApiKey" está vacío.';
+      } else {
+        firestoreError = 'El documento "settings/general" no existe en Firestore.';
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error fetching settings from Firestore:', e);
+      firestoreError = `Error de Firestore: ${e.message}`;
     }
-  }
 
-  console.log(`[PDF Proxy] Iniciando descarga para factura: ${id}`);
-
-  if (!apiKey) {
-    console.error('[PDF Proxy] Error: API Key no proporcionada');
-    return res.status(400).send('La clave API no está configurada.');
+    if (!apiKey) {
+      console.error('[PDF Proxy] Error: API Key no proporcionada');
+      return res.status(400).send(`La clave API no está configurada. ${firestoreError}`);
+    }
   }
 
   try {
@@ -148,19 +163,27 @@ app.post('/api/conekta/checkout', async (req, res) => {
   let privateKey = process.env.CONEKTA_PRIVATE_KEY;
 
   if (!privateKey) {
+    let firestoreError = '';
     try {
       const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         privateKey = settingsSnap.data()?.conektaPrivateKey;
+        if (!privateKey) firestoreError = 'Documento encontrado pero campo "conektaPrivateKey" está vacío.';
+      } else {
+        firestoreError = 'El documento "settings/general" no existe en Firestore.';
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error fetching settings from Firestore:', e);
+      firestoreError = `Error de Firestore: ${e.message}`;
     }
-  }
 
-  if (!privateKey) {
-    return res.status(500).json({ error: 'La clave privada de Conekta no está configurada en los ajustes del sistema.' });
+    if (!privateKey) {
+      return res.status(500).json({ 
+        error: `La clave privada de Conekta no está configurada. ${firestoreError}`,
+        debug: { hasConfig: !!firebaseConfig.projectId, projectId: firebaseConfig.projectId }
+      });
+    }
   }
 
   // Sanitize inputs for Conekta
@@ -231,19 +254,27 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
   let privateKey = process.env.CONEKTA_PRIVATE_KEY;
 
   if (!privateKey) {
+    let firestoreError = '';
     try {
       const db = getDb();
       const settingsSnap = await db.collection('settings').doc('general').get();
       if (settingsSnap.exists) {
         privateKey = settingsSnap.data()?.conektaPrivateKey;
+        if (!privateKey) firestoreError = 'Documento encontrado pero campo "conektaPrivateKey" está vacío.';
+      } else {
+        firestoreError = 'El documento "settings/general" no existe en Firestore.';
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error fetching settings from Firestore:', e);
+      firestoreError = `Error de Firestore: ${e.message}`;
     }
-  }
 
-  if (!privateKey) {
-    return res.status(500).json({ error: 'La clave privada de Conekta no está configurada en los ajustes del sistema.' });
+    if (!privateKey) {
+      return res.status(500).json({ 
+        error: `La clave privada de Conekta no está configurada. ${firestoreError}`,
+        debug: { hasConfig: !!firebaseConfig.projectId, projectId: firebaseConfig.projectId }
+      });
+    }
   }
 
   try {
