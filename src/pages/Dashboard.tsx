@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Payment } from '../types';
+import { Payment, Expense } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   Users, CreditCard, TrendingUp, AlertCircle, Clock, ShieldAlert, 
   PlusCircle, History, ChevronRight, ArrowUpRight, ArrowDownRight, 
-  Calendar, FileText, Download, Wallet, GraduationCap
+  Calendar, FileText, Download, Wallet, GraduationCap, TrendingDown,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subDays } from 'date-fns';
@@ -22,7 +23,9 @@ export default function Dashboard() {
   const { hasPermission, userProfile } = usePermissions();
   const [studentsCount, setStudentsCount] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [totalExpenses, setTotalExpenses] = useState(0);
   const [allPayments, setAllPayments] = useState<Payment[]>([]);
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
 
@@ -36,8 +39,18 @@ export default function Dashboard() {
       (snap) => {
         const payments = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment));
         setAllPayments(payments);
-        const total = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
+        const total = payments.filter(p => p.status === 'Pagado').reduce((acc, p) => acc + (p.amount || 0), 0);
         setTotalRevenue(total);
+      }
+    );
+
+    const expensesUnsub = onSnapshot(
+      query(collection(db, 'expenses'), orderBy('date', 'desc')),
+      (snap) => {
+        const expenses = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
+        setAllExpenses(expenses);
+        const total = expenses.filter(e => e.status === 'Pagado').reduce((acc, e) => acc + (e.amount || 0), 0);
+        setTotalExpenses(total);
         setLoading(false);
       }
     );
@@ -51,6 +64,7 @@ export default function Dashboard() {
     return () => {
       studentsUnsub();
       paymentsUnsub();
+      expensesUnsub();
       settingsUnsub();
     };
   }, []);
@@ -62,32 +76,34 @@ export default function Dashboard() {
     });
 
     return last7Days.map(day => {
-      const dayTotal = allPayments
+      const dayIncome = allPayments
         .filter(p => {
           const pDate = p.date?.toDate ? p.date.toDate() : null;
           return pDate && isSameDay(pDate, day) && p.status === 'Pagado';
         })
         .reduce((acc, p) => acc + (p.amount || 0), 0);
 
+      const dayExpense = allExpenses
+        .filter(e => {
+          const eDate = e.date?.toDate ? e.date.toDate() : null;
+          return eDate && isSameDay(eDate, day) && e.status === 'Pagado';
+        })
+        .reduce((acc, e) => acc + (e.amount || 0), 0);
+
       return {
         name: format(day, 'EEE', { locale: es }),
-        total: dayTotal
+        ingresos: dayIncome,
+        gastos: dayExpense,
+        utilidad: dayIncome - dayExpense
       };
     });
-  }, [allPayments]);
+  }, [allPayments, allExpenses]);
 
   const recentPayments = useMemo(() => allPayments.slice(0, 5), [allPayments]);
 
+  const netProfit = totalRevenue - totalExpenses;
+
   const stats = [
-    { 
-      name: 'Alumnos Inscritos', 
-      value: studentsCount, 
-      icon: Users, 
-      color: 'text-blue-600', 
-      bg: 'bg-blue-50',
-      trend: '+2.5%',
-      trendUp: true
-    },
     { 
       name: 'Ingresos Totales', 
       value: formatCurrency(totalRevenue), 
@@ -98,16 +114,22 @@ export default function Dashboard() {
       trendUp: true
     },
     { 
-      name: 'Pagos del Mes', 
-      value: allPayments.filter(p => {
-        const pDate = p.date?.toDate ? p.date.toDate() : null;
-        return pDate && pDate >= startOfMonth(new Date()) && pDate <= endOfMonth(new Date());
-      }).length, 
-      icon: CreditCard, 
-      color: 'text-indigo-600', 
-      bg: 'bg-indigo-50',
-      trend: '-1.2%',
+      name: 'Gastos Totales', 
+      value: formatCurrency(totalExpenses), 
+      icon: TrendingDown, 
+      color: 'text-red-600', 
+      bg: 'bg-red-50',
+      trend: '+5.4%',
       trendUp: false
+    },
+    { 
+      name: 'Utilidad Neta', 
+      value: formatCurrency(netProfit), 
+      icon: PieChartIcon, 
+      color: 'text-blue-600', 
+      bg: 'bg-blue-50',
+      trend: netProfit >= 0 ? '+8.2%' : '-15%',
+      trendUp: netProfit >= 0
     },
   ];
 
@@ -346,9 +368,13 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -372,15 +398,23 @@ export default function Dashboard() {
                     boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
                     padding: '15px'
                   }}
-                  itemStyle={{ fontWeight: 800, color: '#10b981' }}
+                  itemStyle={{ fontWeight: 800 }}
                 />
                 <Area 
                   type="monotone" 
-                  dataKey="total" 
+                  dataKey="ingresos" 
                   stroke="#10b981" 
                   strokeWidth={4}
                   fillOpacity={1} 
-                  fill="url(#colorTotal)" 
+                  fill="url(#colorIngresos)" 
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="gastos" 
+                  stroke="#ef4444" 
+                  strokeWidth={4}
+                  fillOpacity={1} 
+                  fill="url(#colorGastos)" 
                 />
               </AreaChart>
             </ResponsiveContainer>

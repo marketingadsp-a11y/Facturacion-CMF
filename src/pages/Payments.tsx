@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, query, orderBy, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Payment, Student, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, CreditCard, Download, FileText, X, AlertCircle, CheckCircle2, Loader2, Calendar, History, Check, ChevronDown } from 'lucide-react';
+import { 
+  Plus, Search, CreditCard, Download, FileText, X, AlertCircle, 
+  CheckCircle2, Loader2, Calendar, History, Check, ChevronDown,
+  MessageSquare, Bell, Send, User, ExternalLink
+} from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
-import { format, getDate, getMonth, getYear } from 'date-fns';
+import { format, getDate, getMonth, getYear, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
+import { motion, AnimatePresence } from 'motion/react';
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -26,6 +31,9 @@ export default function Payments() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [invoiceLoading, setInvoiceLoading] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'historial' | 'recordatorios'>('historial');
+
+  // ... (previous useEffects and logic)
 
   useEffect(() => {
     if (location.state?.studentId && students.length > 0) {
@@ -320,6 +328,28 @@ export default function Payments() {
     );
   };
 
+  const pendingStudents = useMemo(() => {
+    if (!currentCycle) return [];
+    const currentMonth = getMonth(new Date());
+    
+    return students.filter(student => {
+      const paid = getPaidMonthsForStudent(student.id);
+      return !paid.includes(currentMonth);
+    });
+  }, [students, payments, currentCycle]);
+
+  const sendWhatsAppReminder = (student: Student) => {
+    const currentMonthName = MONTHS[getMonth(new Date())];
+    const message = `Hola, te recordamos que el pago de colegiatura de ${student.name} ${student.lastName} correspondiente al mes de ${currentMonthName} está pendiente. Por favor, realiza tu pago a la brevedad para evitar recargos. ¡Gracias!`;
+    const phone = student.phone?.replace(/\D/g, '');
+    if (!phone) {
+      alert('El alumno no tiene un número de teléfono configurado.');
+      return;
+    }
+    const url = `https://wa.me/52${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -327,82 +357,165 @@ export default function Payments() {
           <h1 className="text-2xl font-bold text-slate-900">Control de Pagos</h1>
           <p className="text-slate-500">Historial de colegiaturas y otros ingresos.</p>
         </div>
-        {hasPermission('payments', 'create') && (
-          <button
-            onClick={() => {
-              setFormData({ studentId: '', amount: '', concept: '', paymentMethod: 'Efectivo', shouldInvoice: false, type: 'Colegiatura' });
-              setStudentSearch('');
-              setIsModalOpen(true);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-semibold shadow-lg shadow-blue-100 transition-all active:scale-95"
-          >
-            <Plus size={18} />
-            Registrar Pago
-          </button>
-        )}
-      </div>
-
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                <th className="px-6 py-4">Fecha</th>
-                <th className="px-6 py-4">Alumno</th>
-                <th className="px-6 py-4">Concepto</th>
-                <th className="px-6 py-4">Monto</th>
-                <th className="px-6 py-4">Método</th>
-                <th className="px-6 py-4 text-right">Factura</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {payments.map((payment) => (
-                <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 text-sm text-slate-500">
-                    {payment.date?.toDate ? format(payment.date.toDate(), 'dd/MM/yyyy') : '-'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-bold text-slate-900">{getStudentName(payment.studentId)}</p>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{payment.concept}</td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-bold text-slate-900">{formatCurrency(payment.amount)}</p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded-lg font-medium">
-                      {payment.paymentMethod}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    {payment.invoiceId ? (
-                      hasPermission('payments', 'downloadInvoice') && (
-                        <button 
-                          onClick={() => handleDownloadInvoice(payment.invoiceId!)}
-                          className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors"
-                          title="Descargar Factura PDF"
-                        >
-                          <Download size={16} />
-                        </button>
-                      )
-                    ) : (
-                      hasPermission('payments', 'invoice') && (
-                        <button 
-                          disabled={invoiceLoading === payment.id}
-                          onClick={() => handleInvoice(payment.id, payment, payment.studentId)}
-                          className="text-slate-400 hover:text-blue-600 p-2 rounded-lg transition-colors disabled:opacity-50"
-                          title="Generar Factura"
-                        >
-                          {invoiceLoading === payment.id ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                        </button>
-                      )
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex items-center gap-3">
+          <div className="bg-white p-1 rounded-xl border border-slate-100 flex shadow-sm">
+            <button 
+              onClick={() => setActiveTab('historial')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                activeTab === 'historial' ? "bg-blue-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              <History size={14} />
+              Historial
+            </button>
+            <button 
+              onClick={() => setActiveTab('recordatorios')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                activeTab === 'recordatorios' ? "bg-orange-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              <Bell size={14} />
+              Recordatorios
+              {pendingStudents.length > 0 && (
+                <span className="bg-white text-orange-600 px-1.5 py-0.5 rounded-full text-[10px]">
+                  {pendingStudents.length}
+                </span>
+              )}
+            </button>
+          </div>
+          {hasPermission('payments', 'create') && (
+            <button
+              onClick={() => {
+                setFormData({ studentId: '', amount: '', concept: '', paymentMethod: 'Efectivo', shouldInvoice: false, type: 'Colegiatura' });
+                setStudentSearch('');
+                setIsModalOpen(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-semibold shadow-lg shadow-blue-100 transition-all active:scale-95"
+            >
+              <Plus size={18} />
+              Registrar Pago
+            </button>
+          )}
         </div>
       </div>
+
+      {activeTab === 'historial' ? (
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                  <th className="px-6 py-4">Fecha</th>
+                  <th className="px-6 py-4">Alumno</th>
+                  <th className="px-6 py-4">Concepto</th>
+                  <th className="px-6 py-4">Monto</th>
+                  <th className="px-6 py-4">Método</th>
+                  <th className="px-6 py-4 text-right">Factura</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {payments.map((payment) => (
+                  <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-slate-500">
+                      {payment.date?.toDate ? format(payment.date.toDate(), 'dd/MM/yyyy') : '-'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-bold text-slate-900">{getStudentName(payment.studentId)}</p>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600">{payment.concept}</td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-bold text-slate-900">{formatCurrency(payment.amount)}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded-lg font-medium">
+                        {payment.paymentMethod}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {payment.invoiceId ? (
+                        hasPermission('payments', 'downloadInvoice') && (
+                          <button 
+                            onClick={() => handleDownloadInvoice(payment.invoiceId!)}
+                            className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors"
+                            title="Descargar Factura PDF"
+                          >
+                            <Download size={16} />
+                          </button>
+                        )
+                      ) : (
+                        hasPermission('payments', 'invoice') && (
+                          <button 
+                            disabled={invoiceLoading === payment.id}
+                            onClick={() => handleInvoice(payment.id, payment, payment.studentId)}
+                            className="text-slate-400 hover:text-blue-600 p-2 rounded-lg transition-colors disabled:opacity-50"
+                            title="Generar Factura"
+                          >
+                            {invoiceLoading === payment.id ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                          </button>
+                        )
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="bg-orange-50 p-6 rounded-3xl border border-orange-100 flex items-center gap-4">
+            <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <h3 className="font-bold text-orange-900">Alumnos con Pago Pendiente ({MONTHS[getMonth(new Date())]})</h3>
+              <p className="text-sm text-orange-700">Se listan los alumnos que no han registrado su pago de colegiatura este mes.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingStudents.map((student) => (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                key={student.id} 
+                className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600 font-bold text-xl">
+                    {student.name[0]}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">{student.name} {student.lastName}</h4>
+                    <p className="text-xs text-slate-500">{student.grade} {student.group} • {student.level}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Adeudo</span>
+                    <span className="text-sm font-bold text-red-600">{formatCurrency(currentCycle?.tuitionAmount || 0)}</span>
+                  </div>
+                  <button 
+                    onClick={() => sendWhatsAppReminder(student)}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95"
+                  >
+                    <MessageSquare size={14} />
+                    Recordatorio
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+            {pendingStudents.length === 0 && (
+              <div className="col-span-full py-12 text-center bg-white rounded-3xl border border-slate-100 italic text-slate-400">
+                ¡Excelente! Todos los alumnos están al día este mes.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {isModalOpen && (

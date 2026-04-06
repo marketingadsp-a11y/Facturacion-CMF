@@ -58,24 +58,35 @@ export default function Settings() {
       dashboard: { view: true },
       students: { view: true, create: true, edit: true, delete: true, viewHistory: true },
       payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
+      expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true }
     },
     Administrador: {
       dashboard: { view: true },
       students: { view: true, create: true, edit: true, delete: false, viewHistory: true },
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
+      expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false }
     },
     Visor: {
       dashboard: { view: true },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
+      expenses: { view: true, create: false, edit: false, delete: false },
       settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
     },
     Cajero: {
       dashboard: { view: true },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
+      expenses: { view: true, create: true, edit: false, delete: false },
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+    },
+    Padre: {
+      dashboard: { view: true },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
+      payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
+      expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
     }
   };
@@ -561,9 +572,19 @@ export default function Settings() {
                         />
                       </div>
 
-                      {/* Payments & Settings */}
+                      {/* Expenses & Settings */}
                       <div className="space-y-3">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase">Pagos y Ajustes</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">Gastos y Ajustes</p>
+                        <PermissionToggle 
+                          label="Ver Gastos" 
+                          checked={userFormData.permissions?.expenses.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, expenses: {...userFormData.permissions!.expenses, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Registrar Gastos" 
+                          checked={userFormData.permissions?.expenses.create} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, expenses: {...userFormData.permissions!.expenses, create: v}}})}
+                        />
                         <PermissionToggle 
                           label="Ver Pagos" 
                           checked={userFormData.permissions?.payments.view} 

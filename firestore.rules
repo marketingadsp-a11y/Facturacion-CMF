@@ -62,15 +62,24 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isParent() {
+      return isAuthenticated() && getUserData().role == 'Padre';
+    }
+
     function hasPermission(section, action) {
       return isSuperAdmin() || 
              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions[section][action] == true);
+              getUserData().permissions[section][action] == true);
+    }
+
+    function isChildOfParent(studentId) {
+      let student = get(/databases/$(database)/documents/students/$(studentId)).data;
+      return student.parentEmail == request.auth.token.email;
     }
 
     // Students
     match /students/{studentId} {
-      allow read: if isAuthenticated() && hasPermission('students', 'view');
+      allow read: if isAuthenticated() && (hasPermission('students', 'view') || resource.data.parentEmail == request.auth.token.email);
       allow create: if isAuthenticated() && hasPermission('students', 'create');
       allow update: if isAuthenticated() && hasPermission('students', 'edit');
       allow delete: if isAuthenticated() && hasPermission('students', 'delete');
@@ -78,15 +87,23 @@ service cloud.firestore {
 
     // Payments
     match /payments/{paymentId} {
-      allow read: if isAuthenticated() && hasPermission('payments', 'view');
+      allow read: if isAuthenticated() && (hasPermission('payments', 'view') || (isParent() && isChildOfParent(resource.data.studentId)));
       allow create: if isAuthenticated() && hasPermission('payments', 'create');
       allow update: if isAuthenticated() && hasPermission('payments', 'cancel');
       allow delete: if false; // No physical deletes for payments
     }
 
+    // Expenses
+    match /expenses/{expenseId} {
+      allow read: if isAuthenticated() && hasPermission('expenses', 'view');
+      allow create: if isAuthenticated() && hasPermission('expenses', 'create');
+      allow update: if isAuthenticated() && hasPermission('expenses', 'edit');
+      allow delete: if isAuthenticated() && hasPermission('expenses', 'delete');
+    }
+
     // Settings
     match /settings/{docId} {
-      allow read: if isAuthenticated() && hasPermission('settings', 'view');
+      allow read: if isAuthenticated(); // All logged users can read settings
       allow write: if isAuthenticated() && isSuperAdmin();
     }
 
@@ -99,7 +116,8 @@ service cloud.firestore {
     // Users (for role management)
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || hasPermission('settings', 'manageUsers'));
-      allow create, update: if isAuthenticated() && isSuperAdmin();
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
       allow delete: if isAuthenticated() && isSuperAdmin() && request.auth.uid != userId;
     }
   }

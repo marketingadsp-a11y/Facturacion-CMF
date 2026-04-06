@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendEmailVerification } from 'firebase/auth';
 import { auth, db } from '../firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { GraduationCap, Lock, Mail, AlertCircle } from 'lucide-react';
+import { doc, getDoc, collection, query, where, getDocs, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { GraduationCap, Lock, Mail, AlertCircle, UserPlus, ArrowLeft, User, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { cn } from '../lib/utils';
 
 export default function Login() {
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
@@ -38,19 +42,109 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate('/');
+      if (isRegistering) {
+        // 1. Validate if email is a parent email in students collection BEFORE creating account
+        const studentsQuery = query(
+          collection(db, 'students'), 
+          where('parentEmail', '==', email.toLowerCase().trim())
+        );
+        const querySnapshot = await getDocs(studentsQuery);
+
+        if (querySnapshot.empty) {
+          setError('Este correo no está registrado como padre en nuestro sistema. Por favor, contacta a la administración del colegio.');
+          setLoading(false);
+          return;
+        }
+
+        // 2. Create Auth User
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // 3. Send Verification Email
+        await sendEmailVerification(user);
+
+        // 4. Create User Profile
+        await setDoc(doc(db, 'users', user.uid), {
+          id: user.uid,
+          email: email.toLowerCase().trim(),
+          name: name,
+          role: 'Padre',
+          permissions: {
+            dashboard: { view: true },
+            students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
+            payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
+            expenses: { view: false, create: false, edit: false, delete: false },
+            settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+          },
+          createdAt: serverTimestamp()
+        });
+
+        setVerificationSent(true);
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Check if user is a parent and if email is verified
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const userData = userDoc.data();
+
+        if (userData?.role === 'Padre' && !user.emailVerified) {
+          setVerificationSent(true);
+          setLoading(false);
+          return;
+        }
+
+        navigate('/');
+      }
     } catch (err: any) {
       console.error("Auth Error:", err);
       if (err.code === 'auth/invalid-credential') {
         setError('Correo o contraseña incorrectos.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Este correo ya tiene una cuenta registrada.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('La contraseña debe tener al menos 6 caracteres.');
       } else {
         setError(`Error: ${err.message || 'Problema de conexión'}`);
       }
     } finally {
-      setLoading(false);
+      if (!verificationSent) setLoading(false);
     }
   };
+
+  if (verificationSent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center">
+          <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 size={40} />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">¡Verifica tu correo!</h2>
+          <p className="text-slate-500 mb-6">
+            Hemos enviado un enlace de confirmación a <strong>{email}</strong>. 
+            Por favor, revisa tu bandeja de entrada (y la carpeta de spam) para activar tu cuenta.
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all"
+            >
+              Ya lo verifiqué, entrar
+            </button>
+            <button
+              onClick={() => {
+                setVerificationSent(false);
+                signOut(auth);
+              }}
+              className="w-full text-slate-500 font-medium py-2 hover:text-slate-800 transition-colors"
+            >
+              Volver al inicio
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -68,11 +162,42 @@ export default function Login() {
         </div>
 
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-          <h2 className="text-xl font-semibold text-slate-800 mb-6">
-            Iniciar Sesión
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-800">
+              {isRegistering ? 'Registro de Padre' : 'Iniciar Sesión'}
+            </h2>
+            {isRegistering && (
+              <button 
+                onClick={() => {
+                  setIsRegistering(false);
+                  setError('');
+                }}
+                className="text-blue-600 text-sm font-bold flex items-center gap-1 hover:underline"
+              >
+                <ArrowLeft size={14} />
+                Volver
+              </button>
+            )}
+          </div>
           
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isRegistering && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Nombre Completo</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                    placeholder="Tu nombre completo"
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Correo Electrónico</label>
               <div className="relative">
@@ -83,9 +208,14 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
-                  placeholder="admin@colegiomexico.edu.mx"
+                  placeholder={isRegistering ? "correo@ejemplo.com" : "admin@colegiomexico.edu.mx"}
                 />
               </div>
+              {isRegistering && (
+                <p className="text-[10px] text-slate-400 mt-1 italic">
+                  * Debe ser el mismo correo registrado en el colegio.
+                </p>
+              )}
             </div>
 
             <div>
@@ -104,19 +234,38 @@ export default function Login() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100">
-                <AlertCircle size={16} />
-                {error}
+              <div className="flex items-start gap-2 p-3 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>{error}</span>
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-[0.98] disabled:opacity-70"
+              className={cn(
+                "w-full text-white font-semibold py-3 rounded-xl shadow-lg transition-all active:scale-[0.98] disabled:opacity-70",
+                isRegistering ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100" : "bg-blue-600 hover:bg-blue-700 shadow-blue-100"
+              )}
             >
-              {loading ? 'Cargando...' : 'Entrar al Sistema'}
+              {loading ? 'Procesando...' : isRegistering ? 'Crear mi Cuenta' : 'Entrar al Sistema'}
             </button>
+
+            {!isRegistering && (
+              <div className="pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegistering(true);
+                    setError('');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors"
+                >
+                  <UserPlus size={16} />
+                  ¿Eres Padre? Regístrate aquí
+                </button>
+              </div>
+            )}
           </form>
         </div>
 

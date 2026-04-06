@@ -7,6 +7,7 @@ const DEFAULT_PERMISSIONS: AppPermissions = {
   dashboard: { view: true },
   students: { view: true, create: true, edit: true, delete: true, viewHistory: true },
   payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
+  expenses: { view: true, create: true, edit: true, delete: true },
   settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true }
 };
 

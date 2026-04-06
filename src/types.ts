@@ -7,6 +7,7 @@ export interface Student {
   curp?: string;
   email?: string;
   phone?: string;
+  parentEmail?: string; // Link to parent user
   level: string; // Preescolar, Primaria, Secundaria, etc.
   grade: string;
   group?: string;
@@ -39,7 +40,18 @@ export interface SchoolCycle {
   createdAt: Timestamp;
 }
 
-export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero';
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  date: Timestamp;
+  status: 'Pagado' | 'Pendiente';
+  createdBy: string;
+  createdAt: Timestamp;
+}
+
+export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre';
 
 export interface AppPermissions {
   dashboard: {
@@ -58,6 +70,12 @@ export interface AppPermissions {
     cancel: boolean;
     invoice: boolean;
     downloadInvoice: boolean;
+  };
+  expenses: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
   };
   settings: {
     view: boolean;

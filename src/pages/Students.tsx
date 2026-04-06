@@ -32,6 +32,7 @@ export default function Students() {
     curp: '',
     email: '',
     phone: '',
+    parentEmail: '',
     level: 'Primaria',
     grade: '',
     group: '',
@@ -72,6 +73,7 @@ export default function Students() {
         curp: student.curp || '',
         email: student.email || '',
         phone: student.phone || '',
+        parentEmail: student.parentEmail || '',
         level: student.level || 'Primaria',
         grade: student.grade || '',
         group: student.group || '',
@@ -84,7 +86,7 @@ export default function Students() {
     } else {
       setEditingStudent(null);
       setFormData({
-        name: '', lastName: '', curp: '', email: '', phone: '', level: 'Primaria', grade: '', group: '', rfc: '', billingName: '', billingAddress: '', zipCode: '', taxSystem: '605'
+        name: '', lastName: '', curp: '', email: '', phone: '', parentEmail: '', level: 'Primaria', grade: '', group: '', rfc: '', billingName: '', billingAddress: '', zipCode: '', taxSystem: '605'
       });
     }
     setIsModalOpen(true);
@@ -98,14 +100,17 @@ export default function Students() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const dataToSave = {
+        ...formData,
+        parentEmail: formData.parentEmail.toLowerCase().trim(),
+        updatedAt: serverTimestamp()
+      };
+
       if (editingStudent) {
-        await updateDoc(doc(db, 'students', editingStudent.id), {
-          ...formData,
-          updatedAt: serverTimestamp()
-        });
+        await updateDoc(doc(db, 'students', editingStudent.id), dataToSave);
       } else {
         await addDoc(collection(db, 'students'), {
-          ...formData,
+          ...dataToSave,
           createdAt: serverTimestamp()
         });
       }
@@ -417,12 +422,22 @@ export default function Students() {
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contacto y Facturación</h3>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Correo Electrónico</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Correo Electrónico Alumno</label>
                     <input
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
                       className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 text-blue-600">Correo del Padre (Acceso Portal) *</label>
+                    <input
+                      type="email"
+                      value={formData.parentEmail}
+                      onChange={(e) => setFormData({...formData, parentEmail: e.target.value})}
+                      className="w-full px-4 py-2 bg-blue-50/50 border border-blue-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="correo@padre.com"
                     />
                   </div>
                   <div>
