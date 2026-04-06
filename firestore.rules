@@ -1,0 +1,106 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: students
+// Document ID: auto-generated
+// Fields:
+//   - name: string (required)
+//   - lastName: string (required)
+//   - level: string (required)
+//   - grade: string (required)
+//   - group: string
+//   - createdAt: timestamp
+//
+// Collection: payments
+// Document ID: auto-generated
+// Fields:
+//   - studentId: string (required)
+//   - amount: number (required)
+//   - concept: string (required)
+//   - date: timestamp (required)
+//   - status: string
+//
+// Collection: settings
+// Document ID: general
+// Fields:
+//   - schoolName: string
+//   - facturapiApiKey: string
+//
+// Collection: cycles
+// Document ID: auto-generated
+// Fields:
+//   - name: string
+//   - tuitionAmount: number
+//
+// Collection: users
+// Document ID: userId (auth.uid)
+// Fields:
+//   - email: string
+//   - name: string
+//   - role: string (Superadministrador, Administrador, Visor, Cajero)
+//   - permissions: map
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email.lower() == "cramonmb@gmail.com" || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Superadministrador');
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasPermission(section, action) {
+      return isSuperAdmin() || 
+             (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions[section][action] == true);
+    }
+
+    // Students
+    match /students/{studentId} {
+      allow read: if isAuthenticated() && hasPermission('students', 'view');
+      allow create: if isAuthenticated() && hasPermission('students', 'create');
+      allow update: if isAuthenticated() && hasPermission('students', 'edit');
+      allow delete: if isAuthenticated() && hasPermission('students', 'delete');
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && hasPermission('payments', 'view');
+      allow create: if isAuthenticated() && hasPermission('payments', 'create');
+      allow update: if isAuthenticated() && hasPermission('payments', 'cancel');
+      allow delete: if false; // No physical deletes for payments
+    }
+
+    // Settings
+    match /settings/{docId} {
+      allow read: if isAuthenticated() && hasPermission('settings', 'view');
+      allow write: if isAuthenticated() && isSuperAdmin();
+    }
+
+    // Cycles
+    match /cycles/{cycleId} {
+      allow read: if isAuthenticated() && hasPermission('settings', 'view');
+      allow write: if isAuthenticated() && hasPermission('settings', 'editCycles');
+    }
+
+    // Users (for role management)
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || hasPermission('settings', 'manageUsers'));
+      allow create, update: if isAuthenticated() && isSuperAdmin();
+      allow delete: if isAuthenticated() && isSuperAdmin() && request.auth.uid != userId;
+    }
+  }
+}

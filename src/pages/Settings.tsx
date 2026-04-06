@@ -1,0 +1,696 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
+import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
+import { 
+  Settings as SettingsIcon, 
+  Save, 
+  Shield, 
+  Globe, 
+  Image as ImageIcon, 
+  Key, 
+  CheckCircle2, 
+  Calendar, 
+  Plus, 
+  Clock, 
+  DollarSign,
+  Users,
+  Lock,
+  Edit2,
+  Trash2,
+  Check,
+  X as XIcon
+} from 'lucide-react';
+import { formatCurrency } from '../lib/utils';
+
+const MONTHS = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+export default function Settings() {
+  const { hasPermission } = usePermissions();
+  const [settings, setSettings] = useState<AppSettings>({
+    schoolName: 'Colegio México Franciscano',
+    legalName: 'ASOCIACION EDUCADORA DEL SUR DE JALISCO',
+    logoUrl: '',
+    facturapiApiKey: '',
+    facturapiSandbox: true,
+    paymentMethods: ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'],
+    dueDay: 10,
+    lateFeeAmount: 0,
+    lateFeeType: 'fixed'
+  });
+  const [cycles, setCycles] = useState<SchoolCycle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users'>('general');
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+
+  const DEFAULT_PERMISSIONS: Record<UserRole, AppPermissions> = {
+    Superadministrador: {
+      dashboard: { view: true },
+      students: { view: true, create: true, edit: true, delete: true, viewHistory: true },
+      payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
+      settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true }
+    },
+    Administrador: {
+      dashboard: { view: true },
+      students: { view: true, create: true, edit: true, delete: false, viewHistory: true },
+      payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
+      settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false }
+    },
+    Visor: {
+      dashboard: { view: true },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
+      payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
+      settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+    },
+    Cajero: {
+      dashboard: { view: true },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
+      payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+    }
+  };
+
+  const [userFormData, setUserFormData] = useState<Partial<AppUser> & { password?: string }>({
+    email: '',
+    name: '',
+    password: '',
+    role: 'Cajero',
+    permissions: DEFAULT_PERMISSIONS['Cajero']
+  });
+
+  // New Cycle Form
+  const [newCycle, setNewCycle] = useState({
+    name: '',
+    tuitionAmount: 0,
+    billableMonths: [7, 8, 9, 10, 11, 1, 2, 3, 4, 5] // Default Aug-Dec, Feb-Jun
+  });
+
+  useEffect(() => {
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists()) {
+        setSettings(prev => ({ ...prev, ...snap.data() }));
+      }
+      setLoading(false);
+    });
+
+    const unsubCycles = onSnapshot(query(collection(db, 'cycles'), orderBy('createdAt', 'desc')), (snap) => {
+      setCycles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolCycle)));
+    });
+
+    const unsubUsers = onSnapshot(query(collection(db, 'users'), orderBy('createdAt', 'desc')), (snap) => {
+      setAppUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppUser)));
+    });
+
+    return () => { unsubSettings(); unsubCycles(); unsubUsers(); };
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'general'), settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (error) {
+      console.error("Error saving settings:", error);
+    }
+  };
+
+  const handleAddCycle = async () => {
+    if (!newCycle.name || newCycle.tuitionAmount <= 0) return;
+    try {
+      await addDoc(collection(db, 'cycles'), {
+        ...newCycle,
+        createdAt: serverTimestamp()
+      });
+      setNewCycle({ name: '', tuitionAmount: 0, billableMonths: [7, 8, 9, 10, 11, 1, 2, 3, 4, 5] });
+    } catch (error) {
+      console.error("Error adding cycle:", error);
+    }
+  };
+
+  const toggleMonth = (monthIndex: number) => {
+    setNewCycle(prev => ({
+      ...prev,
+      billableMonths: prev.billableMonths.includes(monthIndex)
+        ? prev.billableMonths.filter(m => m !== monthIndex)
+        : [...prev.billableMonths, monthIndex].sort((a, b) => a - b)
+    }));
+  };
+
+  return (
+    <div className="max-w-5xl space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Ajustes del Sistema</h1>
+        <p className="text-slate-500">Configura la información de tu colegio, ciclos escolares y facturación.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        {/* Sidebar Tabs */}
+        <div className="space-y-1">
+          <button 
+            onClick={() => setActiveTab('general')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'general' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <Globe size={18} /> General
+          </button>
+          <button 
+            onClick={() => setActiveTab('cycles')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'cycles' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <Calendar size={18} /> Ciclos y Colegiaturas
+          </button>
+          <button 
+            onClick={() => setActiveTab('billing')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'billing' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <Key size={18} /> Facturación
+          </button>
+          {hasPermission('settings', 'manageUsers') && (
+            <button 
+              onClick={() => setActiveTab('users')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'users' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            >
+              <Shield size={18} /> Gestión de Usuarios
+            </button>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="md:col-span-3 space-y-6">
+          {activeTab === 'general' && (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+              <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                <Globe size={20} className="text-blue-600" />
+                Información del Colegio
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre Comercial</label>
+                  <input
+                    value={settings.schoolName}
+                    onChange={(e) => setSettings({...settings, schoolName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Razón Social</label>
+                  <input
+                    value={settings.legalName}
+                    onChange={(e) => setSettings({...settings, legalName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">URL del Logotipo</label>
+                  <div className="flex gap-4 items-center">
+                    <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                      {settings.logoUrl ? (
+                        <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                      ) : (
+                        <ImageIcon className="text-slate-400" size={24} />
+                      )}
+                    </div>
+                    <input
+                      placeholder="https://ejemplo.com/logo.png"
+                      value={settings.logoUrl}
+                      onChange={(e) => setSettings({...settings, logoUrl: e.target.value})}
+                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'cycles' && (
+            <div className="space-y-6">
+              {/* Tuition Rules */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <Clock size={20} className="text-orange-600" />
+                  Reglas de Pago y Recargos
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Día Máximo de Pago (Sin recargos)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={isNaN(settings.dueDay) ? '' : settings.dueDay}
+                      onChange={(e) => setSettings({...settings, dueDay: parseInt(e.target.value) || 0})}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Ejemplo: 10 para el día 10 de cada mes.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Monto de Recargo</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={isNaN(settings.lateFeeAmount) ? '' : settings.lateFeeAmount}
+                        onChange={(e) => setSettings({...settings, lateFeeAmount: parseFloat(e.target.value) || 0})}
+                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                      <select
+                        value={settings.lateFeeType}
+                        onChange={(e) => setSettings({...settings, lateFeeType: e.target.value as 'fixed' | 'percentage'})}
+                        className="w-32 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      >
+                        <option value="fixed">$ Fijo</option>
+                        <option value="percentage">% Porc.</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cycle Management */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <Calendar size={20} className="text-blue-600" />
+                  Ciclos Escolares
+                </h2>
+
+                {/* Add New Cycle */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-700">Registrar Nuevo Ciclo</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre del Ciclo</label>
+                      <input
+                        placeholder="Ej. 2025-2026"
+                        value={newCycle.name}
+                        onChange={(e) => setNewCycle({...newCycle, name: e.target.value})}
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo de Colegiatura Mensual</label>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        value={isNaN(newCycle.tuitionAmount) ? '' : newCycle.tuitionAmount}
+                        onChange={(e) => setNewCycle({...newCycle, tuitionAmount: parseFloat(e.target.value) || 0})}
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Meses a Cobrar</label>
+                    <div className="flex flex-wrap gap-2">
+                      {MONTHS.map((month, index) => (
+                        <button
+                          key={month}
+                          onClick={() => toggleMonth(index)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${newCycle.billableMonths.includes(index) ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300'}`}
+                        >
+                          {month}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleAddCycle}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Plus size={18} /> Registrar Ciclo
+                  </button>
+                </div>
+
+                {/* Cycles List */}
+                <div className="space-y-3">
+                  <label className="block text-xs font-semibold text-slate-700">Ciclo Actual y Lista de Ciclos</label>
+                  {cycles.map(cycle => (
+                    <div key={cycle.id} className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${settings.currentCycleId === cycle.id ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100'}`}>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800">{cycle.name}</span>
+                          {settings.currentCycleId === cycle.id && (
+                            <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full uppercase">Actual</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Colegiatura: {formatCurrency(cycle.tuitionAmount)} • {cycle.billableMonths.length} meses cobrables
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setSettings({...settings, currentCycleId: cycle.id})}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${settings.currentCycleId === cycle.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        {settings.currentCycleId === cycle.id ? 'Seleccionado' : 'Seleccionar'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'billing' && (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+              <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                <Key size={20} className="text-emerald-600" />
+                Integración Facturapi
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">API Key (Secret Key)</label>
+                  <input
+                    type="password"
+                    placeholder="sk_test_..."
+                    value={settings.facturapiApiKey}
+                    onChange={(e) => setSettings({...settings, facturapiApiKey: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Obtén tu llave en dashboard.facturapi.io</p>
+                </div>
+                
+                <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                  <input
+                    type="checkbox"
+                    id="sandbox"
+                    checked={settings.facturapiSandbox}
+                    onChange={(e) => setSettings({...settings, facturapiSandbox: e.target.checked})}
+                    className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500"
+                  />
+                  <label htmlFor="sandbox" className="text-sm font-medium text-emerald-900 cursor-pointer">
+                    Modo Sandbox (Pruebas)
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Shield size={20} className="text-indigo-600" />
+                    Usuarios Administrativos
+                  </h2>
+                  <button 
+                    onClick={() => {
+                      setEditingUser(null);
+                      setUserFormData({ email: '', name: '', password: '', role: 'Cajero', permissions: DEFAULT_PERMISSIONS['Cajero'] });
+                      setIsUserModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all"
+                  >
+                    <Plus size={16} /> Nuevo Usuario
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {appUsers.map(user => (
+                    <div key={user.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between group">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                          {user.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{user.name}</p>
+                          <p className="text-[10px] text-slate-500">{user.email} • <span className="font-bold text-indigo-600 uppercase">{user.role}</span></p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => {
+                            setEditingUser(user);
+                            setUserFormData({ ...user, password: '' });
+                            setIsUserModalOpen(true);
+                          }}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            if (window.confirm('¿Estás seguro de eliminar este usuario?')) {
+                              try {
+                                await deleteDoc(doc(db, 'users', user.id));
+                              } catch (error) {
+                                console.error("Error deleting user:", error);
+                              }
+                            }
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isUserModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+              <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                    <Shield className="text-indigo-600" />
+                    {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
+                  </h2>
+                  <button onClick={() => setIsUserModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                    <XIcon size={20} />
+                  </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre Completo *</label>
+                      <input
+                        required
+                        value={userFormData.name}
+                        onChange={(e) => setUserFormData({...userFormData, name: e.target.value})}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Correo Electrónico *</label>
+                      <input
+                        required
+                        type="email"
+                        value={userFormData.email}
+                        onChange={(e) => setUserFormData({...userFormData, email: e.target.value})}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        disabled={!!editingUser}
+                      />
+                    </div>
+                    {!editingUser && (
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Contraseña Inicial *</label>
+                        <input
+                          required
+                          type="password"
+                          value={userFormData.password}
+                          onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                          placeholder="Mínimo 6 caracteres"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Rol del Usuario *</label>
+                    <select
+                      value={userFormData.role}
+                      onChange={(e) => {
+                        const role = e.target.value as UserRole;
+                        setUserFormData({...userFormData, role, permissions: DEFAULT_PERMISSIONS[role]});
+                      }}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="Superadministrador">Superadministrador</option>
+                      <option value="Administrador">Administrador</option>
+                      <option value="Visor">Visor</option>
+                      <option value="Cajero">Cajero</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                      <Lock size={14} /> Permisos Personalizados
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Dashboard & Students */}
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">Dashboard y Alumnos</p>
+                        <PermissionToggle 
+                          label="Ver Dashboard" 
+                          checked={userFormData.permissions?.dashboard.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, dashboard: {view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Ver Alumnos" 
+                          checked={userFormData.permissions?.students.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Crear Alumnos" 
+                          checked={userFormData.permissions?.students.create} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, create: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Editar Alumnos" 
+                          checked={userFormData.permissions?.students.edit} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, edit: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Eliminar Alumnos" 
+                          checked={userFormData.permissions?.students.delete} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, delete: v}}})}
+                        />
+                      </div>
+
+                      {/* Payments & Settings */}
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase">Pagos y Ajustes</p>
+                        <PermissionToggle 
+                          label="Ver Pagos" 
+                          checked={userFormData.permissions?.payments.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions!.payments, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Registrar Pagos" 
+                          checked={userFormData.permissions?.payments.create} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions!.payments, create: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Facturar" 
+                          checked={userFormData.permissions?.payments.invoice} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions!.payments, invoice: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Usuarios" 
+                          checked={userFormData.permissions?.settings.manageUsers} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions!.settings, manageUsers: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Editar Ciclos/Reglas" 
+                          checked={userFormData.permissions?.settings.editCycles} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions!.settings, editCycles: v, editRules: v}}})}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+                  <button
+                    onClick={() => setIsUserModalOpen(false)}
+                    className="px-6 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!userFormData.email || !userFormData.name) return;
+                      if (!editingUser && !userFormData.password) {
+                        alert('Por favor ingresa una contraseña para el nuevo usuario.');
+                        return;
+                      }
+
+                      try {
+                        let uid = editingUser?.id;
+
+                        // If creating a new user, register them in Firebase Auth first
+                        if (!editingUser) {
+                          const secondaryApp = initializeApp(firebaseConfig, `SecondaryApp_${Date.now()}`);
+                          const secondaryAuth = getAuth(secondaryApp);
+                          try {
+                            const userCredential = await createUserWithEmailAndPassword(
+                              secondaryAuth, 
+                              userFormData.email!, 
+                              userFormData.password!
+                            );
+                            uid = userCredential.user.uid;
+                          } finally {
+                            await deleteApp(secondaryApp);
+                          }
+                        }
+
+                        if (!uid) throw new Error("No se pudo obtener el UID del usuario");
+
+                        const userRef = doc(db, 'users', uid);
+                        const { password, ...firestoreData } = userFormData;
+                        
+                        await setDoc(userRef, {
+                          ...firestoreData,
+                          id: uid,
+                          createdAt: editingUser ? editingUser.createdAt : serverTimestamp(),
+                          updatedAt: serverTimestamp()
+                        });
+                        
+                        setIsUserModalOpen(false);
+                      } catch (error: any) {
+                        console.error("Error saving user:", error);
+                        alert(`Error al guardar usuario: ${error.message}`);
+                      }
+                    }}
+                    className="px-8 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-100 transition-all active:scale-95"
+                  >
+                    {editingUser ? 'Guardar Cambios' : 'Crear Usuario'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-4">
+            {saved && (
+              <div className="flex items-center gap-2 text-emerald-600 font-medium animate-in fade-in slide-in-from-left-2">
+                <CheckCircle2 size={20} />
+                Cambios guardados correctamente
+              </div>
+            )}
+            <div className="flex-1" />
+            {(activeTab === 'general' ? hasPermission('settings', 'editGeneral') : 
+              activeTab === 'cycles' ? hasPermission('settings', 'editCycles') : 
+              activeTab === 'billing' ? hasPermission('settings', 'editRules') : false) && (
+              <button
+                onClick={handleSave}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl flex items-center gap-2 font-bold shadow-lg shadow-blue-100 transition-all active:scale-95"
+              >
+                <Save size={20} />
+                Guardar Configuración
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PermissionToggle({ label, checked, onChange }: { label: string, checked?: boolean, onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100">
+      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <button
+        onClick={() => onChange(!checked)}
+        className={`w-8 h-4 rounded-full transition-all relative ${checked ? 'bg-indigo-600' : 'bg-slate-200'}`}
+      >
+        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${checked ? 'left-4.5' : 'left-0.5'}`} />
+      </button>
+    </div>
+  );
+}

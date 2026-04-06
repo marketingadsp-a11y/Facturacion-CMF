@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "student": {
+      "title": "Alumno",
+      "description": "Información del estudiante inscrito.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "lastName": { "type": "string" },
+        "curp": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "grade": { "type": "string" },
+        "group": { "type": "string" },
+        "rfc": { "type": "string", "description": "RFC para facturación" },
+        "billingName": { "type": "string", "description": "Nombre o razón social para facturación" },
+        "billingAddress": { "type": "string" },
+        "zipCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "lastName", "grade"]
+    },
+    "payment": {
+      "title": "Pago",
+      "description": "Registro de pago de colegiatura u otros conceptos.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "amount": { "type": "number" },
+        "concept": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["Efectivo", "Transferencia", "Tarjeta", "Cheque"] },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Pagado", "Pendiente", "Cancelado"] },
+        "invoiceId": { "type": "string", "description": "ID de la factura en Facturapi" },
+        "invoiceUrl": { "type": "string", "description": "URL del PDF de la factura" },
+        "facturapiStatus": { "type": "string" }
+      },
+      "required": ["studentId", "amount", "concept", "paymentMethod", "date"]
+    },
+    "settings": {
+      "title": "Configuración",
+      "description": "Ajustes del sistema, Facturapi y datos de la escuela.",
+      "type": "object",
+      "properties": {
+        "schoolName": { "type": "string" },
+        "legalName": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "facturapiApiKey": { "type": "string" },
+        "facturapiSandbox": { "type": "boolean" },
+        "paymentMethods": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "appUser": {
+      "title": "Usuario del Sistema",
+      "description": "Personal administrativo con acceso al sistema.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["Superadministrador", "Administrador", "Visor", "Cajero"] },
+        "permissions": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "name", "role", "permissions"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "student",
+      "description": "Colección de alumnos."
+    },
+    "/payments/{paymentId}": {
+      "schema": "payment",
+      "description": "Colección de pagos realizados."
+    },
+    "/settings/general": {
+      "schema": "settings",
+      "description": "Documento único de configuración."
+    },
+    "/users/{userId}": {
+      "schema": "appUser",
+      "description": "Colección de usuarios administrativos."
+    }
+  }
+}

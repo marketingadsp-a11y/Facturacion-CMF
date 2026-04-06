@@ -1,0 +1,5 @@
+{
+  "name": "Colegio México Franciscano",
+  "description": "Sistema de control escolar para el Colegio México Franciscano. Gestión de alumnos, historial de pagos e integración con Facturapi para facturación CFDI.",
+  "requestFramePermissions": []
+}
