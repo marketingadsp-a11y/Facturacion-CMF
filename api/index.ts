@@ -144,6 +144,20 @@ app.post('/api/conekta/checkout', async (req, res) => {
     return res.status(500).json({ error: 'La clave privada de Conekta no está configurada en los ajustes del sistema.' });
   }
 
+  // Sanitize inputs for Conekta
+  let sanitizedPhone = phone ? phone.replace(/[^0-9+]/g, '') : '';
+  if (!sanitizedPhone || sanitizedPhone.length < 10) {
+    sanitizedPhone = '+525555555555';
+  }
+
+  let sanitizedName = studentName ? studentName.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '').trim() : '';
+  if (!sanitizedName || sanitizedName.length < 2) {
+    sanitizedName = 'Cliente Escolar';
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  let sanitizedEmail = email && emailRegex.test(email) ? email : 'cliente@ejemplo.com';
+
   try {
     const response = await fetch('https://api.conekta.io/orders', {
       method: 'POST',
@@ -155,9 +169,9 @@ app.post('/api/conekta/checkout', async (req, res) => {
       body: JSON.stringify({
         currency: 'MXN',
         customer_info: {
-          name: studentName,
-          email: email || 'cliente@ejemplo.com',
-          phone: phone || '+525555555555'
+          name: sanitizedName,
+          email: sanitizedEmail,
+          phone: sanitizedPhone
         },
         line_items: [{
           name: concept,
@@ -167,8 +181,8 @@ app.post('/api/conekta/checkout', async (req, res) => {
         checkout: {
           allowed_payment_methods: ['card', 'cash', 'bank_transfer'],
           type: 'HostedCheckout',
-          success_url: `${process.env.APP_URL}/parent-dashboard?payment=success`,
-          failure_url: `${process.env.APP_URL}/parent-dashboard?payment=failure`,
+          success_url: `${process.env.APP_URL || 'http://localhost:3000'}/parent-dashboard?payment=success`,
+          failure_url: `${process.env.APP_URL || 'http://localhost:3000'}/parent-dashboard?payment=failure`,
           monthly_installments_enabled: false,
           redirection_time: 3
         }
