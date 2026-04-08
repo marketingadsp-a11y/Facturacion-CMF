@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendEmailVerification } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { GraduationCap, Lock, Mail, AlertCircle, UserPlus, ArrowLeft, User, CheckCircle2, Phone } from 'lucide-react';
+import { GraduationCap, Lock, Mail, AlertCircle, UserPlus, ArrowLeft, User, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
 export default function Login() {
   const [isRegistering, setIsRegistering] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
   const [registrationStep, setRegistrationStep] = useState<'code' | 'form'>('code');
   const [registrationCode, setRegistrationCode] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -66,14 +66,17 @@ export default function Login() {
           return;
         }
 
+        if (email.toLowerCase().trim() !== confirmEmail.toLowerCase().trim()) {
+          setError('Los correos electrónicos no coinciden.');
+          setLoading(false);
+          return;
+        }
+
         // 2. Create Auth User
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
-        // 3. Send Verification Email
-        await sendEmailVerification(user);
-
-        // 4. Create User Profile
+        // 3. Create User Profile
         await setDoc(doc(db, 'users', user.uid), {
           id: user.uid,
           email: email.toLowerCase().trim(),
@@ -106,7 +109,7 @@ export default function Login() {
         );
         await Promise.all(updatePromises);
 
-        setVerificationSent(true);
+        navigate('/');
       } else {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
@@ -114,12 +117,6 @@ export default function Login() {
         // Check if user is a parent and if email is verified
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         const userData = userDoc.data();
-
-        if (userData?.role === 'Padre' && !user.emailVerified) {
-          setVerificationSent(true);
-          setLoading(false);
-          return;
-        }
 
         navigate('/');
       }
@@ -135,43 +132,9 @@ export default function Login() {
         setError(`Error: ${err.message || 'Problema de conexión'}`);
       }
     } finally {
-      if (!verificationSent) setLoading(false);
+      setLoading(false);
     }
   };
-
-  if (verificationSent) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center">
-          <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 size={40} />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">¡Verifica tu correo!</h2>
-          <p className="text-slate-500 mb-6">
-            Hemos enviado un enlace de confirmación a <strong>{email}</strong>. 
-            Por favor, revisa tu bandeja de entrada (y la carpeta de spam) para activar tu cuenta.
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all"
-            >
-              Ya lo verifiqué, entrar
-            </button>
-            <button
-              onClick={() => {
-                setVerificationSent(false);
-                signOut(auth);
-              }}
-              className="w-full text-slate-500 font-medium py-2 hover:text-slate-800 transition-colors"
-            >
-              Volver al inicio
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -261,6 +224,21 @@ export default function Login() {
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                       placeholder="correo@ejemplo.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Confirmar Correo Electrónico</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="email"
+                      required
+                      value={confirmEmail}
+                      onChange={(e) => setConfirmEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="Repite tu correo"
                     />
                   </div>
                 </div>
