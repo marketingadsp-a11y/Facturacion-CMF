@@ -139,9 +139,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden">
-      {/* Parent Top Navigation Bar */}
+      {/* Parent Bottom Navigation Bar */}
       {isParent && (
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 px-6 py-4">
+        <header className="bg-white/80 backdrop-blur-md border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 px-6 py-3">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
@@ -311,7 +311,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
         )}
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Mobile Top Bar - Hidden for parents as they have the TopNav */}
+          {/* Mobile Top Bar - Hidden for parents as they have the BottomNav */}
           {!isParent && (
             <div className="md:hidden bg-white border-b border-slate-100 p-4 flex items-center justify-between sticky top-0 z-30">
               <div className="flex items-center gap-3 min-w-0">
@@ -343,7 +343,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
           {/* Main Content */}
           <main className={cn(
             "flex-1 overflow-y-auto p-4 md:p-8",
-            isParent ? "max-w-7xl mx-auto w-full" : ""
+            isParent ? "max-w-7xl mx-auto w-full pb-24" : ""
           )}>
             {children}
           </main>
