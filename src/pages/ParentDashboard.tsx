@@ -61,6 +61,19 @@ export default function ParentDashboard() {
   });
 
   useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'hijos' || tab === 'facturas') {
+      if (tab !== activeTab) setActiveTab(tab as any);
+    } else if (tab === 'billing') {
+      setIsBillingModalOpen(true);
+      // Clean up the URL but keep the current active tab
+      setSearchParams({ tab: activeTab });
+    } else if (!tab && activeTab !== 'hijos') {
+      setActiveTab('hijos');
+    }
+  }, [searchParams, activeTab]);
+
+  useEffect(() => {
     if (!auth.currentUser?.email) return;
 
     // 1. Listen to students
@@ -430,64 +443,23 @@ export default function ParentDashboard() {
         )}
       </AnimatePresence>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
-            {settings?.logoUrl ? (
-              <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" referrerPolicy="no-referrer" />
-            ) : (
-              <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
-                <GraduationCap size={32} />
-              </div>
-            )}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 font-display leading-tight">
-              {settings?.schoolName || 'Portal de Padres'}
-            </h1>
-            <p className="text-slate-500">Bienvenido, {userProfile?.name}. Consulta el estatus de tus hijos.</p>
-          </div>
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl shadow-blue-200 relative overflow-hidden"
+      >
+        <div className="relative z-10">
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight mb-2">
+            Hola, {userProfile?.name.split(' ')[0] || 'Padre'}
+          </h1>
+          <p className="text-blue-100 text-lg md:text-xl font-medium max-w-2xl">
+            Bienvenido a tu portal escolar. Aquí puedes consultar el progreso y estatus de tus hijos de manera sencilla.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setIsBillingModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 rounded-2xl text-slate-700 font-bold hover:bg-slate-50 transition-all shadow-sm"
-          >
-            <FileText size={20} className="text-blue-600" />
-            Datos de Facturación
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
-        <button
-          onClick={() => {
-            setActiveTab('hijos');
-            setSearchParams({ tab: 'hijos' });
-          }}
-          className={cn(
-            "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-            activeTab === 'hijos' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-          )}
-        >
-          <Users size={18} />
-          Mis Hijos
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('facturas');
-            setSearchParams({ tab: 'facturas' });
-          }}
-          className={cn(
-            "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-            activeTab === 'facturas' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-          )}
-        >
-          <FileText size={18} />
-          Facturas
-        </button>
-      </div>
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
+        <div className="absolute right-10 top-10 w-32 h-32 bg-blue-400/20 rounded-full blur-2xl" />
+        <GraduationCap size={200} className="absolute -right-20 -bottom-20 text-white/5 -rotate-12" />
+      </motion.div>
 
       {students.length === 0 ? (
         <div className="bg-white p-12 rounded-3xl border border-slate-100 shadow-sm text-center">

@@ -94,6 +94,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const navItems = isParent ? [
     { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
     { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
+    { name: 'Datos Fiscales', path: '/?tab=billing', icon: SettingsIcon, section: 'dashboard', action: 'view' },
   ] : [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard, section: 'dashboard', action: 'view' },
     { name: 'Alumnos', path: '/students', icon: Users, section: 'students', action: 'view' },
@@ -132,91 +133,165 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-slate-50 font-sans">
-      {/* Sidebar - Hidden on mobile for parents, toggleable for others */}
-      <aside className={cn(
-        "bg-white border-r border-slate-200 flex flex-col transition-all duration-300",
-        isParent ? "hidden md:flex md:w-64" : "hidden md:flex md:w-64"
-      )}>
-        <div className="p-6 flex items-center gap-3 border-b border-slate-100">
-          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
-            ) : (
-              <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
-                <GraduationCap size={20} />
+    <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden">
+      {/* Parent Top Navigation Bar */}
+      {isParent && (
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 px-6 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
+                    <GraduationCap size={20} />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div>
-            <h1 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[140px]">
-              {schoolName}
-            </h1>
-          </div>
-        </div>
-
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.filter(item => hasPermission(item.section as any, item.action)).map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
-                location.pathname === item.path
-                  ? "bg-blue-50 text-blue-600 shadow-sm"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <item.icon size={18} />
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-slate-100">
-          <div className="flex items-center gap-3 px-4 py-3 mb-2">
-            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs">
-              {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+              <span className="font-black text-slate-900 text-lg tracking-tight hidden sm:block">
+                {schoolName}
+              </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-slate-900 truncate">{userProfile?.name || user?.email}</p>
-              <p className="text-[10px] text-slate-500">{userProfile?.role || 'Sin Rol'}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200"
-          >
-            <LogOut size={18} />
-            Cerrar Sesión
-          </button>
-        </div>
-      </aside>
 
-      {/* Mobile Top Bar */}
-      <div className="md:hidden bg-white border-b border-slate-100 p-4 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3 min-w-0">
-          <button 
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 -ml-2 text-slate-600 hover:bg-slate-50 rounded-xl transition-colors shrink-0"
-          >
-            <Menu size={24} />
-          </button>
-          <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
-            ) : (
-              <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
-                <GraduationCap size={18} />
+            <nav className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-2xl">
+              {navItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-300",
+                    (location.pathname === item.path && !location.search) || (item.path.includes('tab=') && location.search.includes(item.path.split('=')[1]))
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+                  )}
+                >
+                  <item.icon size={18} />
+                  <span className="hidden md:block">{item.name}</span>
+                </Link>
+              ))}
+            </nav>
+
+            <div className="flex items-center gap-4">
+              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-[10px]">
+                  {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-slate-900 leading-none truncate max-w-[100px]">
+                    {userProfile?.name?.split(' ')[0] || user?.email?.split('@')[0]}
+                  </span>
+                  <span className="text-[8px] text-slate-500 font-bold uppercase tracking-tighter">Padre</span>
+                </div>
               </div>
-            )}
+              <button
+                onClick={handleLogout}
+                className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                title="Cerrar Sesión"
+              >
+                <LogOut size={20} />
+              </button>
+            </div>
           </div>
-          <span className="font-bold text-slate-800 text-sm leading-tight">
-            {schoolName}
-          </span>
-        </div>
-        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0 ml-2">
-          {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+        </header>
+      )}
+
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Sidebar - Hidden for parents */}
+        {!isParent && (
+          <aside className="bg-white border-r border-slate-200 flex flex-col transition-all duration-300 hidden md:flex md:w-64">
+            <div className="p-6 flex items-center gap-3 border-b border-slate-100">
+              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
+                    <GraduationCap size={20} />
+                  </div>
+                )}
+              </div>
+              <div>
+                <h1 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[140px]">
+                  {schoolName}
+                </h1>
+              </div>
+            </div>
+
+            <nav className="flex-1 p-4 space-y-1">
+              {navItems.filter(item => hasPermission(item.section as any, item.action)).map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
+                    location.pathname === item.path
+                      ? "bg-blue-50 text-blue-600 shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  )}
+                >
+                  <item.icon size={18} />
+                  {item.name}
+                </Link>
+              ))}
+            </nav>
+
+            <div className="p-4 border-t border-slate-100">
+              <div className="flex items-center gap-3 px-4 py-3 mb-2">
+                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs">
+                  {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-slate-900 truncate">{userProfile?.name || user?.email}</p>
+                  <p className="text-[10px] text-slate-500">{userProfile?.role || 'Sin Rol'}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200"
+              >
+                <LogOut size={18} />
+                Cerrar Sesión
+              </button>
+            </div>
+          </aside>
+        )}
+
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Mobile Top Bar - Hidden for parents as they have the TopNav */}
+          {!isParent && (
+            <div className="md:hidden bg-white border-b border-slate-100 p-4 flex items-center justify-between sticky top-0 z-30">
+              <div className="flex items-center gap-3 min-w-0">
+                <button 
+                  onClick={() => setIsMobileMenuOpen(true)}
+                  className="p-2 -ml-2 text-slate-600 hover:bg-slate-50 rounded-xl transition-colors shrink-0"
+                >
+                  <Menu size={24} />
+                </button>
+                <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
+                      <GraduationCap size={18} />
+                    </div>
+                  )}
+                </div>
+                <span className="font-bold text-slate-800 text-sm leading-tight">
+                  {schoolName}
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0 ml-2">
+                {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+              </div>
+            </div>
+          )}
+
+          {/* Main Content */}
+          <main className={cn(
+            "flex-1 overflow-y-auto p-4 md:p-8",
+            isParent ? "max-w-7xl mx-auto w-full" : ""
+          )}>
+            {children}
+          </main>
         </div>
       </div>
 
@@ -306,11 +381,6 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
           </>
         )}
       </AnimatePresence>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-8">
-        {children}
-      </main>
     </div>
   );
 };
