@@ -21,7 +21,9 @@ import {
   ShieldAlert,
   Menu,
   X,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -29,6 +31,7 @@ import { motion, AnimatePresence } from 'motion/react';
 // Pages
 import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
+import Parents from './pages/Parents';
 import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import ParentDashboard from './pages/ParentDashboard';
@@ -42,6 +45,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const [logoUrl, setLogoUrl] = useState('');
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   
   useEffect(() => {
     // Fetch settings for logo and name
@@ -96,8 +100,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
     { name: 'Datos Fiscales', path: '/?tab=billing', icon: SettingsIcon, section: 'dashboard', action: 'view' },
   ] : [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, section: 'dashboard', action: 'view' },
+    { name: 'Panel', path: '/', icon: LayoutDashboard, section: 'dashboard', action: 'view' },
     { name: 'Alumnos', path: '/students', icon: Users, section: 'students', action: 'view' },
+    { name: 'Padres', path: '/parents', icon: Users, section: 'settings', action: 'manageUsers' },
     { name: 'Pagos', path: '/payments', icon: CreditCard, section: 'payments', action: 'view' },
     { name: 'Gastos', path: '/expenses', icon: CreditCard, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/settings', icon: SettingsIcon, section: 'settings', action: 'view' },
@@ -198,9 +203,15 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
       <div className="flex flex-1 overflow-hidden relative">
         {/* Sidebar - Hidden for parents */}
         {!isParent && (
-          <aside className="bg-white border-r border-slate-200 flex flex-col transition-all duration-300 hidden md:flex md:w-64">
-            <div className="p-6 flex items-center gap-3 border-b border-slate-100">
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+          <aside className={cn(
+            "bg-white border-r border-slate-200 flex flex-col transition-all duration-300 hidden md:flex relative",
+            isSidebarCollapsed ? "w-20" : "w-64"
+          )}>
+            <div className={cn(
+              "p-6 flex items-center border-b border-slate-100",
+              isSidebarCollapsed ? "justify-center" : "gap-3"
+            )}>
+              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
                 {logoUrl ? (
                   <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
                 ) : (
@@ -209,47 +220,91 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                   </div>
                 )}
               </div>
-              <div>
-                <h1 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[140px]">
-                  {schoolName}
-                </h1>
-              </div>
+              {!isSidebarCollapsed && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="overflow-hidden"
+                >
+                  <h1 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[140px]">
+                    {schoolName}
+                  </h1>
+                </motion.div>
+              )}
             </div>
 
-            <nav className="flex-1 p-4 space-y-1">
+            {/* Toggle Button */}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="absolute -right-3 top-20 bg-white border border-slate-200 rounded-full p-1 shadow-sm text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all z-10"
+            >
+              {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
+
+            <nav className={cn("flex-1 p-4 space-y-1", isSidebarCollapsed ? "flex flex-col items-center" : "")}>
               {navItems.filter(item => hasPermission(item.section as any, item.action)).map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
+                    "flex items-center rounded-xl text-sm font-medium transition-all duration-200 relative group",
+                    isSidebarCollapsed ? "justify-center w-12 h-12 p-0" : "gap-3 px-4 py-3 w-full",
                     location.pathname === item.path
                       ? "bg-blue-50 text-blue-600 shadow-sm"
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   )}
                 >
-                  <item.icon size={18} />
-                  {item.name}
+                  <item.icon size={isSidebarCollapsed ? 24 : 18} className="shrink-0" />
+                  {!isSidebarCollapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                    >
+                      {item.name}
+                    </motion.span>
+                  )}
+                  
+                  {/* Tooltip for collapsed state */}
+                  {isSidebarCollapsed && (
+                    <div className="absolute left-full ml-4 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                      {item.name}
+                    </div>
+                  )}
                 </Link>
               ))}
             </nav>
 
-            <div className="p-4 border-t border-slate-100">
-              <div className="flex items-center gap-3 px-4 py-3 mb-2">
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs">
+            <div className={cn("p-4 border-t border-slate-100", isSidebarCollapsed ? "flex flex-col items-center" : "")}>
+              <div className={cn("flex items-center mb-2", isSidebarCollapsed ? "justify-center" : "gap-3 px-4 py-3")}>
+                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0">
                   {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-slate-900 truncate">{userProfile?.name || user?.email}</p>
-                  <p className="text-[10px] text-slate-500">{userProfile?.role || 'Sin Rol'}</p>
-                </div>
+                {!isSidebarCollapsed && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex-1 min-w-0"
+                  >
+                    <p className="text-xs font-medium text-slate-900 truncate">{userProfile?.name || user?.email}</p>
+                    <p className="text-[10px] text-slate-500">{userProfile?.role || 'Sin Rol'}</p>
+                  </motion.div>
+                )}
               </div>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200"
+                className={cn(
+                  "flex items-center rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200 group relative",
+                  isSidebarCollapsed ? "justify-center w-12 h-12 p-0" : "gap-3 px-4 py-3 w-full"
+                )}
               >
-                <LogOut size={18} />
-                Cerrar Sesión
+                <LogOut size={isSidebarCollapsed ? 24 : 18} className="shrink-0" />
+                {!isSidebarCollapsed && <span>Cerrar Sesión</span>}
+                
+                {isSidebarCollapsed && (
+                  <div className="absolute left-full ml-4 px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                    Cerrar Sesión
+                  </div>
+                )}
               </button>
             </div>
           </aside>
@@ -427,6 +482,14 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {isParent ? <Navigate to="/" /> : <Students />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/parents" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Navigate to="/" /> : <Parents />}
           </ProtectedRoute>
         } 
       />

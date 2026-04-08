@@ -82,6 +82,21 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "name", "role", "permissions"]
+    },
+    "announcement": {
+      "title": "Aviso",
+      "description": "Comunicados oficiales para los padres.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "warning", "important"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["title", "content", "type", "active"]
     }
   },
   "firestore": {
@@ -104,6 +119,10 @@
     "/users/{userId}": {
       "schema": "appUser",
       "description": "Colección de usuarios administrativos y padres."
+    },
+    "/announcements/{announcementId}": {
+      "schema": "announcement",
+      "description": "Colección de avisos para padres."
     }
   }
 }

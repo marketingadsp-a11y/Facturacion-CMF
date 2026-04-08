@@ -16,6 +16,7 @@ export interface Student {
   billingAddress?: string;
   zipCode?: string;
   taxSystem?: string;
+  registrationCode?: string; // 5-digit code for parent registration
   createdAt: Timestamp;
 }
 
@@ -86,6 +87,10 @@ export interface AppPermissions {
     editRules: boolean;
     manageUsers: boolean;
   };
+  announcements: {
+    view: boolean;
+    manage: boolean;
+  };
 }
 
 export interface AppUser {
@@ -96,6 +101,16 @@ export interface AppUser {
   permissions: AppPermissions;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  type: 'info' | 'warning' | 'important';
+  active: boolean;
+  createdAt: Timestamp;
+  createdBy: string;
 }
 
 export interface Course {

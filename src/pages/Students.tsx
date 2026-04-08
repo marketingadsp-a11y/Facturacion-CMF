@@ -44,7 +44,8 @@ export default function Students() {
     billingName: '',
     billingAddress: '',
     zipCode: '',
-    taxSystem: '605'
+    taxSystem: '605',
+    registrationCode: ''
   });
 
   useEffect(() => {
@@ -80,6 +81,10 @@ export default function Students() {
 
   const currentCycle = cycles.find(c => c.id === settings?.currentCycleId) || null;
 
+  const generateRegistrationCode = () => {
+    return Math.floor(10000 + Math.random() * 90000).toString();
+  };
+
   const handleOpenModal = (student?: Student) => {
     if (student) {
       setEditingStudent(student);
@@ -97,12 +102,13 @@ export default function Students() {
         billingName: student.billingName || '',
         billingAddress: student.billingAddress || '',
         zipCode: student.zipCode || '',
-        taxSystem: student.taxSystem || '605'
+        taxSystem: student.taxSystem || '605',
+        registrationCode: student.registrationCode || generateRegistrationCode()
       });
     } else {
       setEditingStudent(null);
       setFormData({
-        name: '', lastName: '', curp: '', email: '', phone: '', parentEmail: '', level: 'Primaria', grade: '', group: '', rfc: '', billingName: '', billingAddress: '', zipCode: '', taxSystem: '605'
+        name: '', lastName: '', curp: '', email: '', phone: '', parentEmail: '', level: 'Primaria', grade: '', group: '', rfc: '', billingName: '', billingAddress: '', zipCode: '', taxSystem: '605', registrationCode: generateRegistrationCode()
       });
     }
     setIsModalOpen(true);
@@ -267,103 +273,111 @@ export default function Students() {
       </div>
 
       {/* Students Table */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                <th className="px-6 py-4">Alumno</th>
-                <th className="px-6 py-4">Nivel / Grado / Grupo</th>
-                <th className="px-6 py-4">Contacto</th>
-                <th className="px-6 py-4">Estatus de Pago</th>
-                <th className="px-6 py-4 text-right">Acciones</th>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
+          <table className="w-full text-left border-collapse table-fixed min-w-[1200px]">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                <th className="px-3 py-2 border-r border-slate-200 w-48">Apellidos</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-40">Nombre(s)</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-36">CURP</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-28">Nivel</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-20">Grado</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-16 text-center">Gpo</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-24 text-center">Cód. Reg</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-48">Correo Padre</th>
+                <th className="px-3 py-2 border-r border-slate-200 w-32">Estatus Pago</th>
+                <th className="px-3 py-2 w-28 text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-200">
               {filteredStudents.length > 0 ? (
                 filteredStudents.map((student) => {
                   const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
                   return (
-                    <tr key={student.id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                            {student.name.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">{student.name} {student.lastName}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">{student.curp || 'SIN CURP'}</p>
-                          </div>
-                        </div>
+                    <tr key={student.id} className="hover:bg-blue-50/30 transition-colors group text-[11px]">
+                      <td className="px-3 py-1.5 border-r border-slate-100 font-bold text-slate-900 truncate">
+                        {student.lastName}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-bold text-blue-600 uppercase tracking-tighter">{student.level}</p>
-                          <p className="text-sm text-slate-600 font-medium">{student.grade} {student.group}</p>
-                        </div>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-700 truncate">
+                        {student.name}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <Mail size={12} /> {student.email || '-'}
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <Phone size={12} /> {student.phone || '-'}
-                          </div>
-                        </div>
+                      <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-slate-500 uppercase">
+                        {student.curp || '-'}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-1.5 border-r border-slate-100">
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter",
+                          student.level === 'Preescolar' ? "bg-purple-100 text-purple-700" :
+                          student.level === 'Primaria' ? "bg-blue-100 text-blue-700" :
+                          student.level === 'Secundaria' ? "bg-orange-100 text-orange-700" : "bg-indigo-100 text-indigo-700"
+                        )}>
+                          {student.level}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600">
+                        {student.grade}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600">
+                        {student.group || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-emerald-600">
+                        {student.registrationCode || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500 truncate">
+                        {student.parentEmail || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">
                         {debtStatus.hasDebt ? (
-                          <div className="flex flex-col gap-1">
-                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold w-fit">
-                              ADEUDO: ${debtStatus.totalDebt.toLocaleString()}
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                            <span className="text-red-600 font-black">
+                              ${debtStatus.totalDebt.toLocaleString()}
                             </span>
-                            <p className="text-[9px] text-red-500 font-medium">
-                              {debtStatus.debts.length} meses pendientes
-                            </p>
                           </div>
                         ) : (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold w-fit">
-                            AL CORRIENTE
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span className="text-emerald-600 font-bold">AL DÍA</span>
+                          </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <td className="px-3 py-1.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
                           {hasPermission('payments', 'create') && (
                             <button 
                               onClick={() => navigate('/payments', { state: { studentId: student.id } })}
-                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                              title="Realizar Pago"
+                              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
+                              title="Pago"
                             >
-                              <CreditCard size={16} />
+                              <CreditCard size={14} />
                             </button>
                           )}
                           {hasPermission('students', 'viewHistory') && (
                             <button 
                               onClick={() => handleOpenHistory(student)}
-                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                              title="Historial de Pagos"
+                              className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all"
+                              title="Historial"
                             >
-                              <History size={16} />
+                              <History size={14} />
                             </button>
                           )}
                           {hasPermission('students', 'edit') && (
                             <button 
                               onClick={() => handleOpenModal(student)}
-                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
                               title="Editar"
                             >
-                              <Edit2 size={16} />
+                              <Edit2 size={14} />
                             </button>
                           )}
                           {hasPermission('students', 'delete') && (
                             <button 
                               onClick={() => handleDelete(student.id)}
-                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
                               title="Eliminar"
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={14} />
                             </button>
                           )}
                         </div>
@@ -373,8 +387,8 @@ export default function Students() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                    No se encontraron alumnos.
+                  <td colSpan={10} className="px-6 py-12 text-center text-slate-400 text-sm">
+                    No se encontraron alumnos con los filtros seleccionados.
                   </td>
                 </tr>
               )}
@@ -528,6 +542,20 @@ export default function Students() {
                       <option value="616">616 - Sin obligaciones fiscales</option>
                       <option value="626">626 - Régimen Simplificado de Confianza (RESICO)</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 text-emerald-600">Código de Registro (5 dígitos) *</label>
+                    <input
+                      required
+                      maxLength={5}
+                      value={formData.registrationCode}
+                      onChange={(e) => setFormData({...formData, registrationCode: e.target.value.replace(/\D/g, '').slice(0, 5)})}
+                      className="w-full px-4 py-2 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-center tracking-widest"
+                      placeholder="12345"
+                    />
+                    <p className="text-[9px] text-slate-400 mt-1 italic">
+                      Este código vincula al padre con el alumno. Úsalo para hermanos.
+                    </p>
                   </div>
                 </div>
               </div>

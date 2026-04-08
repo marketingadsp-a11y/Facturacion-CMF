@@ -6,11 +6,13 @@ export interface Debt {
   year: number;
   amount: number;
   concept: string;
+  isOverdue: boolean;
 }
 
 export interface StudentDebtStatus {
   studentId: string;
   hasDebt: boolean;
+  hasOverdueDebt: boolean;
   debts: Debt[];
   totalDebt: number;
 }
@@ -27,7 +29,7 @@ export function calculateStudentDebts(
   settings: AppSettings | null
 ): StudentDebtStatus {
   if (!currentCycle) {
-    return { studentId: student.id, hasDebt: false, debts: [], totalDebt: 0 };
+    return { studentId: student.id, hasDebt: false, hasOverdueDebt: false, debts: [], totalDebt: 0 };
   }
 
   const now = new Date();
@@ -70,11 +72,16 @@ export function calculateStudentDebts(
       );
 
       if (!hasPayment) {
+        const isCurrentMonth = year === currentYear && monthIndex === currentMonth;
+        const dueDay = settings?.dueDay || 10;
+        const isOverdue = !isCurrentMonth || now.getDate() > dueDay;
+
         debts.push({
           month: monthIndex,
           year: year,
           amount: currentCycle.tuitionAmount,
-          concept: conceptToFind
+          concept: conceptToFind,
+          isOverdue: isOverdue
         });
       }
     }
@@ -83,6 +90,7 @@ export function calculateStudentDebts(
   return {
     studentId: student.id,
     hasDebt: debts.length > 0,
+    hasOverdueDebt: debts.some(d => d.isOverdue),
     debts,
     totalDebt: debts.reduce((sum, d) => sum + d.amount, 0)
   };

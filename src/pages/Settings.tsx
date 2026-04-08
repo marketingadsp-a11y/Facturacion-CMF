@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser } from '../types';
+import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   Settings as SettingsIcon, 
@@ -25,7 +25,10 @@ import {
   Check,
   X as XIcon,
   CreditCard,
-  BookOpen
+  BookOpen,
+  Bell,
+  AlertTriangle,
+  AlertCircle
 } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
@@ -37,7 +40,6 @@ const MONTHS = [
 ];
 
 export default function Settings() {
-  const { hasPermission } = usePermissions();
   const [settings, setSettings] = useState<AppSettings>({
     schoolName: 'Colegio México Franciscano',
     legalName: 'ASOCIACION EDUCADORA DEL SUR DE JALISCO',
@@ -54,10 +56,12 @@ export default function Settings() {
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'danger'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+
+  const { hasPermission, userProfile } = usePermissions();
 
   const DEFAULT_PERMISSIONS: Record<UserRole, AppPermissions> = {
     Superadministrador: {
@@ -65,37 +69,49 @@ export default function Settings() {
       students: { view: true, create: true, edit: true, delete: true, viewHistory: true },
       payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: true, delete: true },
-      settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true }
+      settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
+      announcements: { view: true, manage: true }
     },
     Administrador: {
       dashboard: { view: true },
       students: { view: true, create: true, edit: true, delete: false, viewHistory: true },
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: true, delete: true },
-      settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false }
+      settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false },
+      announcements: { view: true, manage: true }
     },
     Visor: {
       dashboard: { view: true },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
       expenses: { view: true, create: false, edit: false, delete: false },
-      settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+      settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: false }
     },
     Cajero: {
       dashboard: { view: true },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: false, delete: false },
-      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: false }
     },
     Padre: {
       dashboard: { view: true },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
       expenses: { view: false, create: false, edit: false, delete: false },
-      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false }
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: false }
     }
   };
+
+  const [annFormData, setAnnFormData] = useState<Partial<Announcement>>({
+    title: '',
+    content: '',
+    type: 'info',
+    active: true
+  });
 
   const [userFormData, setUserFormData] = useState<Partial<AppUser> & { password?: string }>({
     email: '',
@@ -209,6 +225,14 @@ export default function Settings() {
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'users' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
             >
               <Shield size={18} /> Gestión de Usuarios
+            </button>
+          )}
+          {userProfile?.role === 'Superadministrador' && (
+            <button 
+              onClick={() => setActiveTab('danger')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'danger' ? 'bg-red-50 text-red-600 font-semibold shadow-sm border border-red-100' : 'text-slate-600 hover:bg-white'}`}
+            >
+              <AlertTriangle size={18} /> Zona de Peligro
             </button>
           )}
         </div>
@@ -460,8 +484,55 @@ export default function Settings() {
             <CoursesCatalog />
           )}
 
-          {activeTab === 'charges' && (
-            <ChargesCatalog />
+          {activeTab === 'danger' && userProfile?.role === 'Superadministrador' && (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 space-y-6">
+              <h2 className="font-bold text-red-600 flex items-center gap-2">
+                <AlertTriangle size={20} />
+                Zona de Peligro
+              </h2>
+              
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-bold text-red-900">Restablecer Datos del Sistema</h3>
+                    <p className="text-xs text-red-700 mt-1">
+                      Esta acción eliminará permanentemente todos los alumnos, pagos, gastos, ciclos y anuncios. 
+                      Las cuentas de usuario administrativas y la configuración general se mantendrán.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="pt-4 border-t border-red-200">
+                  <button
+                    onClick={async () => {
+                      const confirm1 = window.confirm('¿ESTÁS ABSOLUTAMENTE SEGURO? Esta acción no se puede deshacer.');
+                      if (!confirm1) return;
+                      
+                      const confirm2 = window.prompt('Para confirmar, escribe "ELIMINAR TODO" en mayúsculas:');
+                      if (confirm2 !== 'ELIMINAR TODO') return;
+
+                      try {
+                        const collections = ['students', 'payments', 'expenses', 'cycles', 'announcements'];
+                        for (const coll of collections) {
+                          const snap = await getDocs(collection(db, coll));
+                          const deletePromises = snap.docs.map(d => deleteDoc(doc(db, coll, d.id)));
+                          await Promise.all(deletePromises);
+                        }
+                        alert('Datos restablecidos correctamente.');
+                        window.location.reload();
+                      } catch (error) {
+                        console.error("Error resetting data:", error);
+                        alert('Error al restablecer datos.');
+                      }
+                    }}
+                    className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-100 transition-all active:scale-95"
+                  >
+                    Restablecer Sistema (Borrar Todo)
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {activeTab === 'users' && (
@@ -736,6 +807,8 @@ export default function Settings() {
             </div>
           )}
 
+
+
           <div className="flex items-center justify-between pt-4">
             {saved && (
               <div className="flex items-center gap-2 text-emerald-600 font-medium animate-in fade-in slide-in-from-left-2">
@@ -770,7 +843,7 @@ function PermissionToggle({ label, checked, onChange }: { label: string, checked
         onClick={() => onChange(!checked)}
         className={`w-8 h-4 rounded-full transition-all relative ${checked ? 'bg-indigo-600' : 'bg-slate-200'}`}
       >
-        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${checked ? 'left-4.5' : 'left-0.5'}`} />
+        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${checked ? 'left-4' : 'left-0.5'}`} />
       </button>
     </div>
   );

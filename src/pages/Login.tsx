@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendEmailVerification } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { GraduationCap, Lock, Mail, AlertCircle, UserPlus, ArrowLeft, User, CheckCircle2 } from 'lucide-react';
+import { GraduationCap, Lock, Mail, AlertCircle, UserPlus, ArrowLeft, User, CheckCircle2, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
 export default function Login() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [registrationStep, setRegistrationStep] = useState<'code' | 'form'>('code');
+  const [registrationCode, setRegistrationCode] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -43,15 +46,22 @@ export default function Login() {
     setError('');
     try {
       if (isRegistering) {
-        // 1. Validate if email is a parent email in students collection BEFORE creating account
-        const studentsQuery = query(
-          collection(db, 'students'), 
-          where('parentEmail', '==', email.toLowerCase().trim())
-        );
-        const querySnapshot = await getDocs(studentsQuery);
+        if (registrationStep === 'code') {
+          // 1. Validate registration code
+          const studentsQuery = query(
+            collection(db, 'students'), 
+            where('registrationCode', '==', registrationCode.trim())
+          );
+          const querySnapshot = await getDocs(studentsQuery);
 
-        if (querySnapshot.empty) {
-          setError('Este correo no está registrado como padre en nuestro sistema. Por favor, contacta a la administración del colegio.');
+          if (querySnapshot.empty) {
+            setError('El código de registro no es válido. Por favor, contacta a la administración.');
+            setLoading(false);
+            return;
+          }
+
+          // Code is valid, move to form step
+          setRegistrationStep('form');
           setLoading(false);
           return;
         }
@@ -68,7 +78,9 @@ export default function Login() {
           id: user.uid,
           email: email.toLowerCase().trim(),
           name: name,
+          phone: phone,
           role: 'Padre',
+          registrationCode: registrationCode.trim(),
           permissions: {
             dashboard: { view: true },
             students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
@@ -78,6 +90,21 @@ export default function Login() {
           },
           createdAt: serverTimestamp()
         });
+
+        // 5. Update all students with this registration code to have this parent email
+        const studentsQuery = query(
+          collection(db, 'students'), 
+          where('registrationCode', '==', registrationCode.trim())
+        );
+        const querySnapshot = await getDocs(studentsQuery);
+        
+        const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore');
+        const updatePromises = querySnapshot.docs.map(studentDoc => 
+          updateDoc(firestoreDoc(db, 'students', studentDoc.id), {
+            parentEmail: email.toLowerCase().trim()
+          })
+        );
+        await Promise.all(updatePromises);
 
         setVerificationSent(true);
       } else {
@@ -181,57 +208,126 @@ export default function Login() {
           </div>
           
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isRegistering && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Nombre Completo</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
-                    placeholder="Tu nombre completo"
-                  />
+            {isRegistering && registrationStep === 'code' && (
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500 text-center mb-4">
+                  Ingresa el código de 5 dígitos proporcionado por el colegio para vincular tu cuenta.
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Código Temporal de Registro</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="text"
+                      required
+                      maxLength={5}
+                      value={registrationCode}
+                      onChange={(e) => setRegistrationCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none font-mono font-bold text-center text-xl tracking-[0.5em]"
+                      placeholder="00000"
+                    />
+                  </div>
                 </div>
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Correo Electrónico</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
-                  placeholder={isRegistering ? "correo@ejemplo.com" : "admin@colegiomexico.edu.mx"}
-                />
-              </div>
-              {isRegistering && (
-                <p className="text-[10px] text-slate-400 mt-1 italic">
-                  * Debe ser el mismo correo registrado en el colegio.
-                </p>
-              )}
-            </div>
+            {isRegistering && registrationStep === 'form' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Nombre Completo</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="Tu nombre completo"
+                    />
+                  </div>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Contraseña</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Correo Electrónico</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="correo@ejemplo.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Celular</label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="tel"
+                      required
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="10 dígitos"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Contraseña</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!isRegistering && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Correo Electrónico</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="admin@colegiomexico.edu.mx"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Contraseña</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
 
             {error && (
               <div className="flex items-start gap-2 p-3 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100">
@@ -248,7 +344,7 @@ export default function Login() {
                 isRegistering ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100" : "bg-blue-600 hover:bg-blue-700 shadow-blue-100"
               )}
             >
-              {loading ? 'Procesando...' : isRegistering ? 'Crear mi Cuenta' : 'Entrar al Sistema'}
+              {loading ? 'Procesando...' : isRegistering ? (registrationStep === 'code' ? 'Validar Código' : 'Crear mi Cuenta') : 'Entrar al Sistema'}
             </button>
 
             {!isRegistering && (
@@ -257,12 +353,13 @@ export default function Login() {
                   type="button"
                   onClick={() => {
                     setIsRegistering(true);
+                    setRegistrationStep('code');
                     setError('');
                   }}
                   className="w-full flex items-center justify-center gap-2 text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors"
                 >
                   <UserPlus size={16} />
-                  ¿Eres Padre? Regístrate aquí
+                  ¿Eres padre/madre de familia? Regístrate aquí
                 </button>
               </div>
             )}

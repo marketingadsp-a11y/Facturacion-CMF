@@ -128,5 +128,11 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
       allow delete: if isAuthenticated() && isSuperAdmin() && request.auth.uid != userId;
     }
+
+    // Announcements
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isSuperAdmin() || hasPermission('settings', 'editGeneral'));
+    }
   }
 }
