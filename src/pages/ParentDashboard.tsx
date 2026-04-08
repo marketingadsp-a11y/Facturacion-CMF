@@ -3,7 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch,
 import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw, AlertTriangle, Users, Clock } from 'lucide-react';
+import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw, AlertTriangle, Users, Clock, Bell } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -457,29 +457,35 @@ export default function ParentDashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.1 }}
               className={cn(
-                "p-6 rounded-[2.5rem] border shadow-sm relative overflow-hidden",
+                "p-6 rounded-[2.5rem] border shadow-sm relative overflow-hidden group",
                 ann.type === 'important' ? "bg-red-50 border-red-100 text-red-900" :
                 ann.type === 'warning' ? "bg-orange-50 border-orange-100 text-orange-900" :
                 "bg-blue-50 border-blue-100 text-blue-900"
               )}
             >
-              <div className="flex items-start gap-4 relative z-10">
+              <div className="flex items-start gap-5 relative z-10">
                 <div className={cn(
-                  "p-3 rounded-2xl shrink-0",
+                  "p-4 rounded-2xl shrink-0 shadow-sm",
                   ann.type === 'important' ? "bg-red-100 text-red-600" :
                   ann.type === 'warning' ? "bg-orange-100 text-orange-600" :
                   "bg-blue-100 text-blue-600"
                 )}>
-                  {ann.type === 'important' ? <AlertTriangle size={24} /> : 
-                   ann.type === 'warning' ? <AlertCircle size={24} /> : 
-                   <FileText size={24} />}
+                  {ann.type === 'important' ? <AlertTriangle size={28} /> : 
+                   ann.type === 'warning' ? <AlertCircle size={28} /> : 
+                   <Bell size={28} />}
                 </div>
-                <div>
-                  <h3 className="text-xl font-black tracking-tight mb-1">{ann.title}</h3>
-                  <p className="text-sm opacity-80 leading-relaxed">{ann.content}</p>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xl font-black tracking-tight">{ann.title}</h3>
+                    <p className="text-[10px] font-bold opacity-50 flex items-center gap-1">
+                      <Clock size={12} />
+                      {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd MMM', { locale: es }) : 'Reciente'}
+                    </p>
+                  </div>
+                  <p className="text-sm opacity-80 leading-relaxed font-medium">{ann.content}</p>
                 </div>
               </div>
-              <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
+              <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700" />
             </motion.div>
           ))}
         </div>

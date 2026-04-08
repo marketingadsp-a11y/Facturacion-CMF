@@ -23,7 +23,9 @@ import {
   X,
   FileText,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Wallet,
+  Receipt
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -96,15 +98,15 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const isParent = userProfile?.role === 'Padre';
 
   const navItems = isParent ? [
-    { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
+    { name: 'Mis Hijos', path: '/', icon: GraduationCap, section: 'dashboard', action: 'view' },
     { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
-    { name: 'Datos Fiscales', path: '/?tab=billing', icon: SettingsIcon, section: 'dashboard', action: 'view' },
+    { name: 'Datos Fiscales', path: '/?tab=billing', icon: CreditCard, section: 'dashboard', action: 'view' },
   ] : [
     { name: 'Panel', path: '/', icon: LayoutDashboard, section: 'dashboard', action: 'view' },
-    { name: 'Alumnos', path: '/students', icon: Users, section: 'students', action: 'view' },
+    { name: 'Alumnos', path: '/students', icon: GraduationCap, section: 'students', action: 'view' },
     { name: 'Padres', path: '/parents', icon: Users, section: 'settings', action: 'manageUsers' },
-    { name: 'Pagos', path: '/payments', icon: CreditCard, section: 'payments', action: 'view' },
-    { name: 'Gastos', path: '/expenses', icon: CreditCard, section: 'expenses', action: 'view' },
+    { name: 'Pagos', path: '/payments', icon: Wallet, section: 'payments', action: 'view' },
+    { name: 'Gastos', path: '/expenses', icon: Receipt, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/settings', icon: SettingsIcon, section: 'settings', action: 'view' },
   ];
 
