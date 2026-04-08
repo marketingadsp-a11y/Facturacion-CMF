@@ -649,97 +649,108 @@ export default function Dashboard() {
         {isAnnModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white w-full max-w-5xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-slate-200"
             >
-              <div className="p-6 md:p-8 border-b border-slate-100 flex items-center justify-between bg-white relative">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm">
-                    <Bell size={24} />
+              {/* Compact Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-sm">
+                    <Bell size={20} />
                   </div>
                   <div>
-                    <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
+                    <h2 className="text-lg font-bold text-slate-900 leading-tight">
                       Gestión de Avisos
                     </h2>
-                    <p className="text-xs font-medium text-slate-500">Comunícate directamente con los padres de familia</p>
+                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Panel Administrativo</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setIsAnnModalOpen(false)} 
-                  className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600"
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
                 >
-                  <XIcon size={24} />
+                  <XIcon size={20} />
                 </button>
               </div>
 
               <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-                {/* List Section */}
-                <div className="flex-1 overflow-y-auto p-6 md:p-8 border-r border-slate-100 bg-slate-50/30">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">Historial de Avisos</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-100">
+                {/* Compact List Section */}
+                <div className="flex-1 overflow-y-auto bg-slate-50/50 border-r border-slate-100">
+                  <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Historial de Comunicados</h3>
+                    <div className="flex gap-2">
+                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                         {announcements.length} Total
                       </span>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    {announcements.map(ann => (
-                      <motion.div 
-                        layout
-                        key={ann.id} 
-                        className={cn(
-                          "p-5 rounded-3xl border transition-all group relative overflow-hidden",
-                          editingAnn?.id === ann.id 
-                            ? "bg-white border-blue-200 shadow-lg shadow-blue-50 ring-2 ring-blue-500/10" 
-                            : "bg-white border-slate-100 hover:border-blue-100 hover:shadow-md"
-                        )}
-                      >
-                        <div className="flex items-start gap-4 relative z-10">
-                          <div className={cn(
-                            "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm",
-                            ann.type === 'important' ? 'bg-red-50 text-red-600' :
-                            ann.type === 'warning' ? 'bg-orange-50 text-orange-600' :
-                            'bg-blue-50 text-blue-600'
-                          )}>
-                            {ann.type === 'important' ? <AlertTriangle size={22} /> : 
-                             ann.type === 'warning' ? <AlertCircle size={22} /> : 
-                             <Bell size={22} />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <p className="text-sm font-black text-slate-900 truncate pr-4">{ann.title}</p>
-                              <span className={cn(
-                                "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter shrink-0",
-                                ann.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                              )}>
-                                {ann.active ? 'Publicado' : 'Borrador'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">{ann.content}</p>
-                            
-                            <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                              <p className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
-                                <Clock size={10} />
-                                {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd MMM, HH:mm', { locale: es }) : 'Reciente'}
-                              </p>
-                              <div className="flex items-center gap-1">
+                  <div className="min-w-full">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-slate-50 sticky top-[53px] z-10 border-b border-slate-100">
+                        <tr>
+                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Aviso</th>
+                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Estado</th>
+                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {announcements.map(ann => (
+                          <tr 
+                            key={ann.id} 
+                            className={cn(
+                              "group transition-colors",
+                              editingAnn?.id === ann.id ? "bg-blue-50/50" : "bg-white hover:bg-slate-50/80"
+                            )}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className={cn(
+                                  "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
+                                  ann.type === 'important' ? 'bg-red-50 text-red-600' :
+                                  ann.type === 'warning' ? 'bg-orange-50 text-orange-600' :
+                                  'bg-blue-50 text-blue-600'
+                                )}>
+                                  {ann.type === 'important' ? <AlertTriangle size={14} /> : 
+                                   ann.type === 'warning' ? <AlertCircle size={14} /> : 
+                                   <Bell size={14} />}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-900 truncate max-w-[200px]">{ann.title}</p>
+                                  <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{ann.content}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                <span className={cn(
+                                  "inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase w-fit",
+                                  ann.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                )}>
+                                  {ann.active ? 'Publicado' : 'Borrador'}
+                                </span>
+                                <span className="text-[8px] text-slate-300 font-medium">
+                                  {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd/MM/yy', { locale: es }) : 'Reciente'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button 
                                   onClick={() => {
                                     setEditingAnn(ann);
                                     setAnnFormData(ann);
                                   }}
-                                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
                                   title="Editar"
                                 >
-                                  <Edit2 size={14} />
+                                  <Edit2 size={12} />
                                 </button>
                                 <button 
                                   onClick={async () => {
-                                    if (window.confirm('¿Estás seguro de eliminar este aviso?')) {
+                                    if (window.confirm('¿Eliminar?')) {
                                       try {
                                         const { deleteDoc } = await import('firebase/firestore');
                                         await deleteDoc(doc(db, 'announcements', ann.id));
@@ -748,34 +759,30 @@ export default function Dashboard() {
                                       }
                                     }
                                   }}
-                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
                                   title="Eliminar"
                                 >
-                                  <Trash2 size={14} />
+                                  <Trash2 size={12} />
                                 </button>
                               </div>
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                     {announcements.length === 0 && (
                       <div className="py-20 text-center">
-                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-200">
-                          <Bell size={40} />
-                        </div>
-                        <p className="text-slate-400 font-bold text-sm">No hay avisos registrados</p>
-                        <p className="text-slate-300 text-xs mt-1">Los avisos que publiques aparecerán aquí</p>
+                        <p className="text-slate-400 text-xs font-medium italic">No hay registros</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Form Section */}
-                <div className="w-full lg:w-[400px] p-6 md:p-8 bg-white overflow-y-auto">
-                  <div className="flex items-center justify-between mb-8">
-                    <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">
-                      {editingAnn ? 'Editar Aviso' : 'Nuevo Aviso'}
+                {/* Compact Form Section */}
+                <div className="w-full lg:w-[320px] p-5 bg-white overflow-y-auto">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {editingAnn ? 'Editar Registro' : 'Nuevo Registro'}
                     </h3>
                     {editingAnn && (
                       <button 
@@ -783,73 +790,95 @@ export default function Dashboard() {
                           setEditingAnn(null);
                           setAnnFormData({ title: '', content: '', type: 'info', active: true });
                         }}
-                        className="text-[10px] font-black text-blue-600 uppercase hover:underline"
+                        className="text-[9px] font-bold text-blue-600 hover:underline uppercase"
                       >
-                        Cancelar Edición
+                        Nuevo
                       </button>
                     )}
                   </div>
 
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Título del Aviso</label>
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Título del Aviso</label>
                       <input
                         required
                         value={annFormData.title}
                         onChange={(e) => setAnnFormData({...annFormData, title: e.target.value})}
-                        className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-sm font-bold placeholder:text-slate-300"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-xs font-bold placeholder:text-slate-300"
                         placeholder="Ej. Suspensión de clases"
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Mensaje para los Padres</label>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje Detallado</label>
                       <textarea
                         required
-                        rows={6}
+                        rows={4}
                         value={annFormData.content}
                         onChange={(e) => setAnnFormData({...annFormData, content: e.target.value})}
-                        className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none resize-none transition-all text-sm font-medium placeholder:text-slate-300 leading-relaxed"
-                        placeholder="Escribe aquí el comunicado detallado..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none resize-none transition-all text-xs font-medium placeholder:text-slate-300 leading-relaxed"
+                        placeholder="Escribe el mensaje aquí..."
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Importancia</label>
-                        <select
-                          value={annFormData.type}
-                          onChange={(e) => setAnnFormData({...annFormData, type: e.target.value as any})}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-xs font-bold"
-                        >
-                          <option value="info">ℹ️ Informativo</option>
-                          <option value="warning">⚠️ Advertencia</option>
-                          <option value="important">🚨 Importante</option>
-                        </select>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Prioridad</label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(['info', 'warning', 'important'] as const).map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setAnnFormData({...annFormData, type: t})}
+                              className={cn(
+                                "py-1.5 rounded-md text-[8px] font-black uppercase transition-all border",
+                                annFormData.type === t 
+                                  ? t === 'important' ? 'bg-red-600 text-white border-red-600' :
+                                    t === 'warning' ? 'bg-orange-500 text-white border-orange-500' :
+                                    'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'
+                              )}
+                            >
+                              {t === 'info' ? 'Info' : t === 'warning' ? 'Aviso' : 'Urgente'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Visibilidad</label>
+                      
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Visibilidad</label>
                         <button
                           type="button"
                           onClick={() => setAnnFormData({...annFormData, active: !annFormData.active})}
                           className={cn(
-                            "w-full px-4 py-3 rounded-2xl text-[10px] font-black uppercase transition-all border flex items-center justify-center gap-2",
+                            "w-full px-3 py-2 rounded-lg text-[9px] font-black uppercase transition-all border flex items-center justify-between",
                             annFormData.active 
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
                               : 'bg-slate-50 text-slate-500 border-slate-100'
                           )}
                         >
-                          <div className={cn("w-2 h-2 rounded-full", annFormData.active ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
-                          {annFormData.active ? 'Publicado' : 'Borrador'}
+                          <span className="flex items-center gap-2">
+                            <div className={cn("w-1.5 h-1.5 rounded-full", annFormData.active ? "bg-emerald-500" : "bg-slate-400")} />
+                            {annFormData.active ? 'Publicado' : 'Borrador'}
+                          </span>
+                          <div className={cn(
+                            "w-6 h-3 rounded-full relative transition-colors",
+                            annFormData.active ? "bg-emerald-500" : "bg-slate-300"
+                          )}>
+                            <div className={cn(
+                              "absolute top-0.5 w-2 h-2 bg-white rounded-full transition-all",
+                              annFormData.active ? "right-0.5" : "left-0.5"
+                            )} />
+                          </div>
                         </button>
                       </div>
                     </div>
 
-                    <div className="pt-4">
+                    <div className="pt-2">
                       <button
                         onClick={async () => {
                           if (!annFormData.title || !annFormData.content) {
-                            alert('Por favor completa los campos obligatorios.');
+                            alert('Completa los campos.');
                             return;
                           }
                           try {
@@ -872,25 +901,11 @@ export default function Dashboard() {
                             console.error("Error saving announcement:", error);
                           }
                         }}
-                        className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 hover:shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-3"
+                        className="w-full py-2.5 bg-blue-600 text-white font-black text-[10px] rounded-lg shadow-md hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wider"
                       >
-                        {editingAnn ? <Save size={20} /> : <Plus size={20} />}
-                        {editingAnn ? 'Guardar Cambios' : 'Publicar Aviso'}
+                        {editingAnn ? <Save size={12} /> : <Plus size={12} />}
+                        {editingAnn ? 'Actualizar' : 'Publicar'}
                       </button>
-                    </div>
-
-                    {/* Preview Area */}
-                    <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Vista previa para padres</p>
-                      <div className={cn(
-                        "p-4 rounded-2xl border shadow-sm",
-                        annFormData.type === 'important' ? "bg-red-50 border-red-100 text-red-900" :
-                        annFormData.type === 'warning' ? "bg-orange-50 border-orange-100 text-orange-900" :
-                        "bg-blue-50 border-blue-100 text-blue-900"
-                      )}>
-                        <p className="text-xs font-black mb-1 truncate">{annFormData.title || 'Título del Aviso'}</p>
-                        <p className="text-[10px] opacity-70 line-clamp-2">{annFormData.content || 'Contenido del mensaje...'}</p>
-                      </div>
                     </div>
                   </div>
                 </div>
