@@ -24,9 +24,12 @@ import {
   Trash2,
   Check,
   X as XIcon,
-  CreditCard
+  CreditCard,
+  BookOpen
 } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
+import CoursesCatalog from '../components/settings/CoursesCatalog';
+import ChargesCatalog from '../components/settings/ChargesCatalog';
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -51,7 +54,7 @@ export default function Settings() {
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
@@ -181,6 +184,18 @@ export default function Settings() {
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'cycles' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
           >
             <Calendar size={18} /> Ciclos y Colegiaturas
+          </button>
+          <button 
+            onClick={() => setActiveTab('courses')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'courses' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <BookOpen size={18} /> Catálogo de Cursos
+          </button>
+          <button 
+            onClick={() => setActiveTab('charges')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'charges' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <CreditCard size={18} /> Catálogo de Cobros
           </button>
           <button 
             onClick={() => setActiveTab('billing')}
@@ -439,6 +454,14 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+          )}
+
+          {activeTab === 'courses' && (
+            <CoursesCatalog />
+          )}
+
+          {activeTab === 'charges' && (
+            <ChargesCatalog />
           )}
 
           {activeTab === 'users' && (

@@ -7,8 +7,9 @@ import {
   Users, CreditCard, TrendingUp, AlertCircle, Clock, ShieldAlert, 
   PlusCircle, History, ChevronRight, ArrowUpRight, ArrowDownRight, 
   Calendar, FileText, Download, Wallet, GraduationCap, TrendingDown,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon, LogOut, Settings as SettingsIcon
 } from 'lucide-react';
+import { auth } from '../firebase';
 import { formatCurrency, cn } from '../lib/utils';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -324,215 +325,116 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {stats.map((stat, i) => (
-          <motion.div 
-            key={stat.name}
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col gap-6 relative overflow-hidden group hover:shadow-xl transition-all duration-500"
-          >
-            <div className="flex items-center justify-between relative z-10">
-              <div className={cn("p-4 rounded-2xl", stat.bg, stat.color)}>
-                <stat.icon size={28} />
-              </div>
-              <div className={cn(
-                "flex items-center gap-1 text-xs font-black px-3 py-1 rounded-full",
-                stat.trendUp ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
-              )}>
-                {stat.trendUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                {stat.trend}
-              </div>
-            </div>
-            <div className="relative z-10">
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">{stat.name}</p>
-              <p className="text-3xl font-black text-slate-900 mt-1 tabular-nums tracking-tight">{stat.value}</p>
-            </div>
-            <div className={cn("absolute -right-4 -bottom-4 w-24 h-24 rounded-full opacity-5 transition-transform duration-700 group-hover:scale-150", stat.bg)} />
-          </motion.div>
-        ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
+        {/* Left Column */}
+        <div className="space-y-6">
+          <MenuButton 
+            label="ALUMNOS" 
+            icon={Users} 
+            to="/students" 
+            colorClass="bg-rose-500 shadow-rose-500/40" 
+            delay={0.1}
+          />
+          <MenuButton 
+            label="COLEGIATURAS" 
+            icon={CreditCard} 
+            to="/payments" 
+            colorClass="bg-emerald-500 shadow-emerald-500/40" 
+            delay={0.2}
+          />
+          <MenuButton 
+            label="CALIFICACIONES" 
+            icon={FileText} 
+            to="/students" 
+            colorClass="bg-amber-500 shadow-amber-500/40" 
+            delay={0.3}
+          />
+        </div>
+
+        {/* Right Column */}
+        <div className="space-y-6">
+          <MenuButton 
+            label="CONFIGURAR CURSOS" 
+            icon={GraduationCap} 
+            to="/settings?tab=courses" 
+            colorClass="bg-slate-700 shadow-slate-700/40" 
+            delay={0.15}
+          />
+          <MenuButton 
+            label="LISTADOS" 
+            icon={FileText} 
+            to="/students" 
+            colorClass="bg-slate-600 shadow-slate-600/40" 
+            delay={0.25}
+          />
+          <MenuButton 
+            label="UTILERIAS" 
+            icon={SettingsIcon} 
+            to="/settings" 
+            colorClass="bg-slate-500 shadow-slate-500/40" 
+            delay={0.35}
+          />
+          <MenuButton 
+            label="PROFESORES" 
+            icon={Users} 
+            to="/students" 
+            colorClass="bg-slate-400 shadow-slate-400/40" 
+            delay={0.45}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Revenue Chart */}
-        <motion.div 
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="lg:col-span-2 bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100"
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.6 }}
+        className="flex justify-center mt-10"
+      >
+        <button 
+          onClick={() => auth.signOut()}
+          className="group relative overflow-hidden bg-white border border-slate-200 shadow-sm hover:shadow-2xl hover:border-slate-300 rounded-[2rem] p-6 flex items-center justify-center gap-4 w-full max-w-md transition-all duration-500"
         >
-          <div className="flex items-center justify-between mb-10">
-            <div>
-              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                <div className="w-2.5 h-8 bg-emerald-500 rounded-full" />
-                Ingresos Semanales
-              </h2>
-              <p className="text-slate-500 text-sm font-medium mt-1">Comparativa de cobros en los últimos 7 días</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-emerald-500 rounded-full" />
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Cobros</span>
-            </div>
+          <div className="absolute inset-0 bg-slate-900 opacity-0 group-hover:opacity-5 transition-opacity duration-500" />
+          <div className="w-12 h-12 bg-slate-800 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-500">
+            <LogOut size={24} />
           </div>
-          <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }}
-                  dy={10}
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }}
-                  tickFormatter={(value) => `$${value}`}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    borderRadius: '20px', 
-                    border: 'none', 
-                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
-                    padding: '15px'
-                  }}
-                  itemStyle={{ fontWeight: 800 }}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="ingresos" 
-                  stroke="#10b981" 
-                  strokeWidth={4}
-                  fillOpacity={1} 
-                  fill="url(#colorIngresos)" 
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="gastos" 
-                  stroke="#ef4444" 
-                  strokeWidth={4}
-                  fillOpacity={1} 
-                  fill="url(#colorGastos)" 
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
+          <span className="text-xl font-black text-slate-800 tracking-tight">
+            SALIR DEL MAPN
+          </span>
+        </button>
+      </motion.div>
 
-        {/* Recent Activity */}
-        <motion.div 
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col"
-        >
-          <div className="p-10 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-              <Clock size={24} className="text-blue-600" />
-              Actividad
-            </h2>
-          </div>
-          <div className="flex-1 divide-y divide-slate-50">
-            {recentPayments.length > 0 ? (
-              recentPayments.map((payment, i) => (
-                <div key={payment.id} className="p-6 flex items-center gap-4 hover:bg-slate-50 transition-all group">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-white group-hover:shadow-lg transition-all">
-                    <CreditCard size={20} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black text-slate-900 truncate">{payment.concept}</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                      {payment.date?.toDate ? format(payment.date.toDate(), 'PP', { locale: es }) : '---'}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-slate-900">{formatCurrency(payment.amount)}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="p-20 text-center text-slate-400 font-bold">
-                Sin actividad reciente.
-              </div>
-            )}
-          </div>
-          <Link to="/payments" className="p-6 text-center text-sm font-black text-blue-600 hover:bg-blue-50 transition-all border-t border-slate-100">
-            Ver todos los pagos
-          </Link>
-        </motion.div>
-      </div>
-
-      {/* Quick Actions / Bento Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="md:col-span-2 bg-slate-900 p-10 rounded-[3rem] text-white relative overflow-hidden group"
-        >
-          <div className="relative z-10">
-            <h3 className="text-3xl font-black mb-4">Gestión de Alumnos</h3>
-            <p className="text-slate-400 text-lg mb-8 max-w-md">Inscribe nuevos alumnos, gestiona sus expedientes y revisa su historial académico en segundos.</p>
-            <Link to="/students" className="inline-flex items-center gap-3 bg-white text-slate-900 px-8 py-4 rounded-2xl font-black hover:bg-blue-50 transition-all">
-              Ir a Alumnos
-              <ChevronRight size={20} />
-            </Link>
-          </div>
-          <Users size={200} className="absolute -right-10 -bottom-10 text-white/5 group-hover:scale-110 transition-transform duration-1000" />
-        </motion.div>
-
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="bg-indigo-600 p-10 rounded-[3rem] text-white flex flex-col justify-between group"
-        >
-          <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-            <FileText size={32} />
-          </div>
-          <div>
-            <h3 className="text-2xl font-black mb-2">Facturación</h3>
-            <p className="text-indigo-100 text-sm font-medium mb-6">Emite facturas CFDI con un solo clic.</p>
-            <Link to="/payments" className="text-white font-black flex items-center gap-2 hover:translate-x-2 transition-transform">
-              Configurar
-              <ChevronRight size={18} />
-            </Link>
-          </div>
-        </motion.div>
-
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.7 }}
-          className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col justify-between group hover:border-amber-200 transition-all"
-        >
-          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-            <AlertCircle size={32} />
-          </div>
-          <div>
-            <h3 className="text-2xl font-black text-slate-900 mb-2">Ajustes</h3>
-            <p className="text-slate-500 text-sm font-medium mb-6">Personaliza ciclos y reglas de cobro.</p>
-            <Link to="/settings" className="text-amber-600 font-black flex items-center gap-2 hover:translate-x-2 transition-transform">
-              Ir a Ajustes
-              <ChevronRight size={18} />
-            </Link>
-          </div>
-        </motion.div>
-      </div>
     </div>
+  );
+}
+
+function MenuButton({ label, icon: Icon, to, colorClass, delay }: { label: string, icon: any, to: string, colorClass: string, delay: number }) {
+  return (
+    <motion.div
+      initial={{ x: -20, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ delay, duration: 0.5, type: 'spring', stiffness: 100 }}
+    >
+      <Link 
+        to={to} 
+        className="group relative overflow-hidden bg-white border border-slate-100 shadow-sm hover:shadow-2xl rounded-[2.5rem] p-6 flex items-center justify-between transition-all duration-500 hover:-translate-y-1 block"
+      >
+        <div className="flex items-center gap-6 relative z-10">
+          <div className={cn(
+            "w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3",
+            colorClass
+          )}>
+            <Icon size={32} />
+          </div>
+          <span className="text-xl font-black text-slate-800 tracking-tight group-hover:text-slate-900 transition-colors">
+            {label}
+          </span>
+        </div>
+        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-slate-100 transition-colors relative z-10">
+          <ChevronRight className="text-slate-400 group-hover:text-slate-800 group-hover:translate-x-1 transition-all duration-500" size={24} />
+        </div>
+      </Link>
+    </motion.div>
   );
 }
 

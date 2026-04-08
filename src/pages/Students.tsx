@@ -116,11 +116,16 @@ export default function Students() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const dataToSave = {
+      let dataToSave = {
         ...formData,
         parentEmail: formData.parentEmail.toLowerCase().trim(),
         updatedAt: serverTimestamp()
       };
+
+      // Validate generic RFC tax system
+      if ((formData.rfc === 'XAXX010101000' || formData.rfc === 'XEXX010101000') && formData.taxSystem !== '616') {
+        dataToSave.taxSystem = '616';
+      }
 
       if (editingStudent) {
         await updateDoc(doc(db, 'students', editingStudent.id), dataToSave);

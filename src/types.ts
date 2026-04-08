@@ -98,6 +98,49 @@ export interface AppUser {
   updatedAt?: Timestamp;
 }
 
+export interface Course {
+  id?: string;
+  clave: string;
+  year: string;
+  period: string;
+  name: string;
+  credits: string;
+  rvoe: string;
+  educationalLevel: string;
+  grades: string[];
+  subjects: { id: string; clave: string; name: string }[];
+  feeClave: string;
+  feeYear: string;
+  feePeriod: string;
+  feeNumber: string;
+  feeDescription: string;
+  satClave: string;
+  satUnit: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface ChargeItem {
+  id: string;
+  concept: string;
+  numberOfCharges: number;
+  type: '1' | '2' | '3'; // 1=Mensual, 2=Quincenal, 3=Semanal
+  startDate: string;
+  amount: number;
+}
+
+export interface ChargeCatalog {
+  id?: string;
+  clave: string;
+  year: string;
+  period: string;
+  chargeNumber: string;
+  description: string;
+  charges: ChargeItem[];
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
 export interface AppSettings {
   schoolName: string;
   legalName: string;

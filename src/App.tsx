@@ -20,7 +20,8 @@ import {
   GraduationCap,
   ShieldAlert,
   Menu,
-  X
+  X,
+  FileText
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -88,7 +89,12 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     return () => unsubSettings();
   }, [user?.uid, loading, !!userProfile]);
   
-  const navItems = [
+  const isParent = userProfile?.role === 'Padre';
+
+  const navItems = isParent ? [
+    { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
+    { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
+  ] : [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard, section: 'dashboard', action: 'view' },
     { name: 'Alumnos', path: '/students', icon: Users, section: 'students', action: 'view' },
     { name: 'Pagos', path: '/payments', icon: CreditCard, section: 'payments', action: 'view' },
@@ -97,8 +103,6 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   ];
 
   const handleLogout = () => auth.signOut();
-
-  const isParent = userProfile?.role === 'Padre';
 
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-slate-50">
@@ -327,6 +331,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 const AppContent = () => {
   const { userProfile } = usePermissions();
+  const isParent = userProfile?.role === 'Padre';
   
   return (
     <Routes>
@@ -351,7 +356,7 @@ const AppContent = () => {
         path="/students" 
         element={
           <ProtectedRoute>
-            <Students />
+            {isParent ? <Navigate to="/" /> : <Students />}
           </ProtectedRoute>
         } 
       />
@@ -359,7 +364,7 @@ const AppContent = () => {
         path="/payments" 
         element={
           <ProtectedRoute>
-            <Payments />
+            {isParent ? <Navigate to="/" /> : <Payments />}
           </ProtectedRoute>
         } 
       />
@@ -367,7 +372,7 @@ const AppContent = () => {
         path="/expenses" 
         element={
           <ProtectedRoute>
-            <Expenses />
+            {isParent ? <Navigate to="/" /> : <Expenses />}
           </ProtectedRoute>
         } 
       />
@@ -375,7 +380,7 @@ const AppContent = () => {
         path="/settings" 
         element={
           <ProtectedRoute>
-            <Settings />
+            {isParent ? <Navigate to="/" /> : <Settings />}
           </ProtectedRoute>
         } 
       />

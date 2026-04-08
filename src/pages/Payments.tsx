@@ -274,7 +274,7 @@ export default function Payments() {
             customer: {
               legal_name: student.billingName || `${student.name} ${student.lastName}`,
               tax_id: student.rfc,
-              tax_system: student.taxSystem || (student.rfc?.length === 13 ? '605' : '601'),
+              tax_system: (student.rfc === 'XAXX010101000' || student.rfc === 'XEXX010101000') ? '616' : (student.taxSystem || (student.rfc?.length === 13 ? '605' : '601')),
               address: { zip: student.zipCode || '44100' }
             },
             items: invoiceItems,
