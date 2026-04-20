@@ -70,7 +70,8 @@ export default function Settings() {
       payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
-      announcements: { view: true, manage: true }
+      announcements: { view: true, manage: true },
+      controlEscolar: { view: true, manage: true }
     },
     Administrador: {
       dashboard: { view: true },
@@ -78,7 +79,8 @@ export default function Settings() {
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false },
-      announcements: { view: true, manage: true }
+      announcements: { view: true, manage: true },
+      controlEscolar: { view: true, manage: true }
     },
     Visor: {
       dashboard: { view: true },
@@ -86,7 +88,8 @@ export default function Settings() {
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
       expenses: { view: true, create: false, edit: false, delete: false },
       settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
-      announcements: { view: true, manage: false }
+      announcements: { view: true, manage: false },
+      controlEscolar: { view: true, manage: false }
     },
     Cajero: {
       dashboard: { view: true },
@@ -94,7 +97,8 @@ export default function Settings() {
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
-      announcements: { view: true, manage: false }
+      announcements: { view: true, manage: false },
+      controlEscolar: { view: true, manage: false }
     },
     Padre: {
       dashboard: { view: true },
@@ -102,7 +106,8 @@ export default function Settings() {
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
       expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
-      announcements: { view: true, manage: false }
+      announcements: { view: true, manage: false },
+      controlEscolar: { view: false, manage: false }
     }
   };
 

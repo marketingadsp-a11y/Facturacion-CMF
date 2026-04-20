@@ -91,6 +91,76 @@ export interface AppPermissions {
     view: boolean;
     manage: boolean;
   };
+  controlEscolar: {
+    view: boolean;
+    manage: boolean;
+  };
+}
+
+export interface Enrollment {
+  id: string;
+  folio: string;
+  status: 'Pendiente' | 'Aprobado' | 'Rechazado';
+  
+  // Alumno
+  studentLastName: string;
+  studentMotherLastName: string;
+  studentName: string;
+  address: string;
+  addressNo: string;
+  neighborhood: string;
+  zipCode: string;
+  phone: string;
+  grade: string;
+  level: string;
+  birthPlaceCity: string;
+  birthPlaceState: string;
+  birthDate: string;
+  age: number;
+  gender: 'Hombre' | 'Mujer';
+  previousSchool: string;
+  curp: string;
+  medicalConditions: string;
+  medications: string;
+
+  // Cliente (Padre)
+  fatherName: string;
+  fatherAge: number;
+  fatherCivilStatus: string;
+  fatherPhone: string;
+  fatherEmail: string;
+  fatherOccupation: string;
+
+  // Cliente (Madre)
+  motherName: string;
+  motherAge: number;
+  motherCivilStatus: string;
+  motherPhone: string;
+  motherEmail: string;
+  motherOccupation: string;
+
+  // Emergencia
+  emergencyContactName: string;
+  emergencyContactAddress: string;
+  emergencyContactPhone: string;
+
+  // Otros
+  schoolChangeReason: string;
+  whyChooseSchool: string;
+  specialSupportRequired: boolean;
+  specialSupportDescription: string;
+
+  // Compromisos
+  commitments: {
+    participate: boolean;
+    discipline: boolean;
+    conferences: boolean;
+    payments: boolean;
+    timelyPayments: boolean;
+    workTogether: boolean;
+  };
+
+  createdAt: Timestamp;
 }
 
 export interface AppUser {

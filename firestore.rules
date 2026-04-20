@@ -134,5 +134,13 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && (isSuperAdmin() || hasPermission('settings', 'editGeneral'));
     }
+
+    // Enrollments
+    match /enrollments/{enrollmentId} {
+      allow create: if true; // Public enrollment form
+      allow read: if isAuthenticated() && hasPermission('controlEscolar', 'view');
+      allow update: if isAuthenticated() && hasPermission('controlEscolar', 'manage');
+      allow delete: if isAuthenticated() && isSuperAdmin();
+    }
   }
 }

@@ -39,6 +39,8 @@ import Expenses from './pages/Expenses';
 import ParentDashboard from './pages/ParentDashboard';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import AcademicControl from './pages/AcademicControl';
+import EnrollmentForm from './pages/EnrollmentForm';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
@@ -80,7 +82,8 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                 students: { view: true, create: true, edit: true, delete: true, viewHistory: true },
                 payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
                 expenses: { view: true, create: true, edit: true, delete: true },
-                settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true }
+                settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
+                controlEscolar: { view: true, manage: true }
               },
               createdAt: serverTimestamp()
             });
@@ -106,6 +109,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Alumnos', path: '/students', icon: GraduationCap, section: 'students', action: 'view' },
     { name: 'Padres', path: '/parents', icon: Users, section: 'settings', action: 'manageUsers' },
     { name: 'Pagos', path: '/payments', icon: Wallet, section: 'payments', action: 'view' },
+    { name: 'Control Escolar', path: '/academic-control', icon: FileText, section: 'controlEscolar', action: 'view' },
     { name: 'Gastos', path: '/expenses', icon: Receipt, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/settings', icon: SettingsIcon, section: 'settings', action: 'view' },
   ];
@@ -463,6 +467,7 @@ const AppContent = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/enroll" element={<EnrollmentForm />} />
       <Route 
         path="/" 
         element={
@@ -508,6 +513,14 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {isParent ? <Navigate to="/" /> : <Expenses />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/academic-control" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Navigate to="/" /> : <AcademicControl />}
           </ProtectedRoute>
         } 
       />

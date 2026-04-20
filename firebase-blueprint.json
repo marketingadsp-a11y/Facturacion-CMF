@@ -97,6 +97,23 @@
         "createdBy": { "type": "string" }
       },
       "required": ["title", "content", "type", "active"]
+    },
+    "enrollment": {
+      "title": "Solicitud de Inscripción",
+      "description": "Formulario de inscripción completado por padres.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "folio": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pendiente", "Aprobado", "Rechazado"] },
+        "studentName": { "type": "string" },
+        "studentLastName": { "type": "string" },
+        "curp": { "type": "string" },
+        "grade": { "type": "string" },
+        "level": { "type": "string" },
+        "fatherEmail": { "type": "string", "format": "email" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
@@ -123,6 +140,10 @@
     "/announcements/{announcementId}": {
       "schema": "announcement",
       "description": "Colección de avisos para padres."
+    },
+    "/enrollments/{enrollmentId}": {
+      "schema": "enrollment",
+      "description": "Colección de solicitudes de inscripción."
     }
   }
 }
