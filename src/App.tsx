@@ -463,11 +463,23 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const AppContent = () => {
   const { userProfile } = usePermissions();
   const isParent = userProfile?.role === 'Padre';
+  const [enrollmentSlug, setEnrollmentSlug] = useState('enroll');
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists() && snap.data().enrollmentSlug) {
+        setEnrollmentSlug(snap.data().enrollmentSlug);
+      }
+    });
+    return unsub;
+  }, []);
   
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/enroll" element={<EnrollmentForm />} />
+      <Route path={`/${enrollmentSlug}`} element={<EnrollmentForm />} />
+      {/* Fallback for the default /enroll if changed */}
+      {enrollmentSlug !== 'enroll' && <Route path="/enroll" element={<EnrollmentForm />} />}
       <Route 
         path="/" 
         element={

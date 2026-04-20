@@ -240,4 +240,5 @@ export interface AppSettings {
   lateFeeAmount: number;
   lateFeeType: 'fixed' | 'percentage';
   rolePermissions?: Record<UserRole, AppPermissions>;
+  enrollmentSlug?: string;
 }

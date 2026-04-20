@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Enrollment, Student } from '../types';
+import { Enrollment, Student, AppSettings } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -17,18 +17,28 @@ export default function AcademicControl() {
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'enrollments'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
+    const unsubEnrollments = onSnapshot(q, (snap) => {
       setEnrollments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Enrollment)));
       setLoading(false);
     });
-    return unsub;
+
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists()) setSettings(snap.data() as AppSettings);
+    });
+
+    return () => {
+      unsubEnrollments();
+      unsubSettings();
+    };
   }, []);
 
   const handleCopyLink = () => {
-    const link = `${window.location.origin}/enroll`;
+    const slug = settings?.enrollmentSlug || 'enroll';
+    const link = `${window.location.origin}/${slug}`;
     navigator.clipboard.writeText(link);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);

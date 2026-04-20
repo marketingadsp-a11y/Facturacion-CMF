@@ -28,7 +28,8 @@ import {
   BookOpen,
   Bell,
   AlertTriangle,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
@@ -285,6 +286,31 @@ export default function Settings() {
                       className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Enrollment Settings */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <FileText size={20} className="text-indigo-600" />
+                  Configuración de Inscripciones
+                </h2>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre del Link Público (Slug)</label>
+                  <div className="flex gap-2 items-center">
+                    <div className="px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 text-sm font-medium">
+                      {window.location.origin}/
+                    </div>
+                    <input
+                      placeholder="enroll"
+                      value={settings.enrollmentSlug || ''}
+                      onChange={(e) => setSettings({...settings, enrollmentSlug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')})}
+                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2 italic">
+                    * Este es el nombre que aparecerá en la URL para las inscripciones públicas. Solo usa letras minúsculas, números y guiones.
+                  </p>
                 </div>
               </div>
             </div>
