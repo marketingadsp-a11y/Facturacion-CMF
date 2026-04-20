@@ -3,11 +3,13 @@ import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import EnrollmentPDF from '../components/EnrollmentPDF';
 
 export default function AcademicControl() {
   const { hasPermission } = usePermissions();
@@ -44,8 +46,9 @@ export default function AcademicControl() {
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  const handleStatusUpdate = async (id: string, status: 'Aprobado' | 'Rechazado') => {
-    if (!window.confirm(`¿Estás seguro de marcar esta solicitud como ${status}?`)) return;
+  const handleStatusUpdate = async (id: string, status: 'Aprobado' | 'Rechazado' | 'Pendiente') => {
+    const statusText = status === 'Pendiente' ? 'en Revisión' : status;
+    if (!window.confirm(`¿Estás seguro de marcar esta solicitud como ${statusText}?`)) return;
     
     try {
       const enrol = enrollments.find(e => e.id === id);
@@ -322,6 +325,21 @@ export default function AcademicControl() {
                 <XCircle size={18} /> Rechazar Solicitud
               </button>
               <div className="flex gap-3">
+                {settings && (
+                  <PDFDownloadLink
+                    document={<EnrollmentPDF enrollment={selectedEnrollment} settings={settings} />}
+                    fileName={`Solicitud_Inscripcion_${selectedEnrollment.studentName.replace(/\s+/g, '_')}.pdf`}
+                    className="px-6 py-2.5 text-sm font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-all flex items-center gap-2"
+                  >
+                    {/* @ts-ignore */}
+                    {({ loading }) => (
+                      <>
+                        {loading ? <Clock size={18} className="animate-spin" /> : <Printer size={18} />}
+                        {loading ? 'Generando...' : 'Descargar PDF'}
+                      </>
+                    )}
+                  </PDFDownloadLink>
+                )}
                 <button
                   onClick={() => setSelectedEnrollment(null)}
                   className="px-6 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-all"
@@ -334,6 +352,14 @@ export default function AcademicControl() {
                     className="px-8 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-lg shadow-emerald-100 transition-all flex items-center gap-2"
                   >
                     <CheckCircle2 size={18} /> Aprobar Inscripción
+                  </button>
+                )}
+                {selectedEnrollment.status === 'Aprobado' && (
+                  <button 
+                    onClick={() => handleStatusUpdate(selectedEnrollment.id, 'Pendiente')}
+                    className="px-8 py-2.5 text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-lg shadow-amber-100 transition-all flex items-center gap-2"
+                  >
+                    <Clock size={18} /> Regresar a Revisión
                   </button>
                 )}
               </div>
