@@ -15,6 +15,7 @@ export interface StudentDebtStatus {
   hasOverdueDebt: boolean;
   debts: Debt[];
   totalDebt: number;
+  nextTuition: Debt | null;
 }
 
 const MONTH_NAMES = [
@@ -29,53 +30,46 @@ export function calculateStudentDebts(
   settings: AppSettings | null
 ): StudentDebtStatus {
   if (!currentCycle) {
-    return { studentId: student.id, hasDebt: false, hasOverdueDebt: false, debts: [], totalDebt: 0 };
+    return { studentId: student.id, hasDebt: false, hasOverdueDebt: false, debts: [], totalDebt: 0, nextTuition: null };
   }
 
   const now = new Date();
   const currentMonth = getMonth(now);
   const currentYear = getYear(now);
   
-  const studentPayments = payments.filter(p => p.studentId === student.id && p.status?.toLowerCase() === 'pagado');
+  const studentPayments = payments.filter(p => p.studentId === student.id && (p.status?.toLowerCase() === 'pagado' || p.status?.toLowerCase() === 'pendiente'));
+  
   const debts: Debt[] = [];
-
-  // We need to determine which years the cycle covers.
-  // Usually a cycle starts in one year and ends in the next.
-  // Example: 2025-2026 starts Aug 2025 (month 7) and ends Jun 2026 (month 5).
+  let nextTuition: Debt | null = null;
   
-  // For simplicity, let's look at the billable months.
-  // If a month is in billableMonths, we check if it's in the past or current month.
-  
-  // We need to know the start year of the cycle. 
-  // We can infer it from the cycle name or just use the current year logic.
-  // Let's assume the cycle name is like "2025-2026".
   const years = currentCycle.name.split('-').map(y => parseInt(y.trim()));
   const startYear = years[0] || currentYear;
   const endYear = years[1] || currentYear + 1;
 
-  currentCycle.billableMonths.forEach(monthIndex => {
-    // Determine the year for this month index
-    // If monthIndex >= 7 (Aug), it's likely the startYear
-    // If monthIndex < 7 (Jan-Jul), it's likely the endYear
+  // We want to sort the billable months chronologically
+  const chronologicalMonths = currentCycle.billableMonths.map(monthIndex => {
     const year = monthIndex >= 7 ? startYear : endYear;
-    
-    // Check if this month/year is in the past or is the current month
-    const isPastOrCurrent = (year < currentYear) || (year === currentYear && monthIndex <= currentMonth);
-    
-    if (isPastOrCurrent) {
-      // Check if there's a payment for this month
-      // We check the payment date or concept. 
-      // Checking concept is safer if payments are made in advance or late.
-      const conceptToFind = `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year}`;
-      const hasPayment = studentPayments.some(p => {
-        const pDate = p.date.toDate();
-        const dateMatches = pDate.getMonth() === monthIndex && pDate.getFullYear() === year;
-        const conceptMatches = p.concept.toUpperCase().includes(MONTH_NAMES[monthIndex].toUpperCase()) && 
-                               p.concept.includes(year.toString());
-        return dateMatches || conceptMatches;
-      });
+    return { monthIndex, year };
+  }).sort((a, b) => {
+    if (a.year !== b.year) return a.year - b.year;
+    return a.monthIndex - b.monthIndex;
+  });
 
-      if (!hasPayment) {
+  chronologicalMonths.forEach(({ monthIndex, year }) => {
+    const isPastOrCurrent = (year < currentYear) || (year === currentYear && monthIndex <= currentMonth);
+    const conceptToFind = `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year}`;
+    
+    const hasPayment = studentPayments.some(p => {
+      // In online checkouts, we mark it missing if it's not paid AND not a pending online checkout, but to keep it simple, we consider "Pendiente" as well so they don't double pay
+      const pDate = p.date.toDate();
+      const dateMatches = pDate.getMonth() === monthIndex && pDate.getFullYear() === year;
+      const conceptMatches = p.concept.toUpperCase().includes(MONTH_NAMES[monthIndex].toUpperCase()) && p.concept.includes(year.toString());
+      return dateMatches || conceptMatches;
+    });
+
+    if (!hasPayment) {
+      if (isPastOrCurrent) {
+        // It's a debt
         const isCurrentMonth = year === currentYear && monthIndex === currentMonth;
         const dueDay = settings?.dueDay || 10;
         const isOverdue = !isCurrentMonth || now.getDate() > dueDay;
@@ -87,15 +81,28 @@ export function calculateStudentDebts(
           concept: conceptToFind,
           isOverdue: isOverdue
         });
+      } else if (!nextTuition) {
+        // It's the first unpaid *future* month
+        nextTuition = {
+          month: monthIndex,
+          year: year,
+          amount: currentCycle.tuitionAmount,
+          concept: conceptToFind,
+          isOverdue: false
+        };
       }
     }
   });
 
+  // Only return nextTuition if the parent doesn't have current debts. If they have debts, they should pay those first.
+  const hasDebt = debts.length > 0;
+
   return {
     studentId: student.id,
-    hasDebt: debts.length > 0,
+    hasDebt: hasDebt,
     hasOverdueDebt: debts.some(d => d.isOverdue),
     debts,
-    totalDebt: debts.reduce((sum, d) => sum + d.amount, 0)
+    totalDebt: debts.reduce((sum, d) => sum + d.amount, 0),
+    nextTuition: hasDebt ? null : nextTuition
   };
 }

@@ -630,6 +630,28 @@ export default function ParentDashboard() {
                               ))}
                             </div>
                           )}
+
+                          {!debtStatus.hasDebt && debtStatus.nextTuition && (
+                            <div className="space-y-2 relative z-10 mt-4 pt-4 border-t border-slate-100/50">
+                              <p className="text-[10px] text-slate-500 font-medium text-center mb-2">¡Felicidades, te encuentras al corriente!</p>
+                              <button
+                                onClick={() => handlePayDebt(student, debtStatus.nextTuition!)}
+                                disabled={payingId === `debt-${student.id}-${debtStatus.nextTuition.concept}`}
+                                className="w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-between group/btn disabled:opacity-50 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-sm"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <Calendar size={14} className="group-hover/btn:scale-110 transition-transform" />
+                                  Adelantar próx. Colegiatura
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="opacity-90 font-black">{formatCurrency(debtStatus.nextTuition.amount)}</span>
+                                  {payingId === `debt-${student.id}-${debtStatus.nextTuition.concept}` && (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  )}
+                                </div>
+                              </button>
+                            </div>
+                          )}
                         </motion.div>
                       );
                     })}
