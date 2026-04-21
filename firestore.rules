@@ -132,7 +132,7 @@ service cloud.firestore {
     // Announcements
     match /announcements/{announcementId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isSuperAdmin() || hasPermission('settings', 'editGeneral'));
+      allow write: if isAuthenticated() && (isSuperAdmin() || hasPermission('announcements', 'manage'));
     }
 
     // Enrollments
@@ -141,6 +141,30 @@ service cloud.firestore {
       allow read: if isAuthenticated() && hasPermission('controlEscolar', 'view');
       allow update: if isAuthenticated() && hasPermission('controlEscolar', 'manage');
       allow delete: if isAuthenticated() && isSuperAdmin();
+    }
+
+    // Grades
+    match /grades/{gradeId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && hasPermission('grading', 'manage');
+    }
+
+    // Attendance
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && hasPermission('grading', 'manage');
+    }
+
+    // Reception Visits
+    match /reception_visits/{visitId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && hasPermission('reception', 'manage');
+    }
+
+    // Bimestre Locks
+    match /bimestreLocks/{lockId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && hasPermission('settings', 'manageUsers');
     }
   }
 }
