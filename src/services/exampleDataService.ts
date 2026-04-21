@@ -172,15 +172,19 @@ export const loadExampleData = async () => {
     const reasons: ('Inscripción' | 'Pago' | 'Información' | 'Otro')[] = ['Inscripción', 'Pago', 'Información', 'Otro'];
     for (let i = 0; i < 15; i++) {
       const visitRef = doc(collection(db, 'reception_visits'));
-      const visit: Omit<ReceptionVisit, 'id'> = {
+      const visit: any = {
         name: firstNames[Math.floor(Math.random() * firstNames.length)] + ' ' + lastNames[Math.floor(Math.random() * lastNames.length)],
         type: visitTypes[Math.floor(Math.random() * visitTypes.length)],
         reason: reasons[Math.floor(Math.random() * reasons.length)],
         notes: 'Visita de demostración cargada por el sistema.',
-        checkInTime: Timestamp.fromDate(new Date(Date.now() - Math.random() * 86400000)) as any, // Within last 24h
-        status: i < 10 ? 'Atendido' : 'Pendiente',
-        attendedAt: i < 10 ? Timestamp.now() as any : undefined
+        checkInTime: Timestamp.fromDate(new Date(Date.now() - Math.random() * 86400000)), // Within last 24h
+        status: i < 10 ? 'Atendido' : 'Pendiente'
       };
+      
+      if (i < 10) {
+        visit.attendedAt = Timestamp.now();
+      }
+      
       batch.set(visitRef, visit);
     }
 
