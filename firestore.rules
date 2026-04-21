@@ -133,7 +133,12 @@ service cloud.firestore {
     // Announcements
     match /announcements/{announcementId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isSuperAdmin() || hasPermission('announcements', 'manage'));
+      allow create, delete: if isAuthenticated() && (isSuperAdmin() || hasPermission('announcements', 'manage'));
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() || 
+        hasPermission('announcements', 'manage') ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledgedBy']))
+      );
     }
 
     // Enrollments

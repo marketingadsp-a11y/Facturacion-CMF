@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc, addDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
@@ -409,6 +409,18 @@ export default function ParentDashboard() {
     localStorage.setItem(`billing_prompt_dismissed_${auth.currentUser?.uid}`, 'true');
   };
 
+  const handleAcknowledgeAnnouncement = async (announcementId: string) => {
+    if (!auth.currentUser?.uid) return;
+    try {
+      const annRef = doc(db, 'announcements', announcementId);
+      await updateDoc(annRef, {
+        acknowledgedBy: arrayUnion(auth.currentUser.uid)
+      });
+    } catch (error) {
+      console.error("Error acknowledging announcement:", error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -450,20 +462,22 @@ export default function ParentDashboard() {
 
       {announcements.length > 0 ? (
         <div className="space-y-4">
-          {announcements.map((ann, idx) => (
+          {announcements.map((ann, idx) => {
+            const hasAcknowledged = auth.currentUser?.uid && ann.acknowledgedBy?.includes(auth.currentUser.uid);
+            return (
             <motion.div 
               key={ann.id}
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.1 }}
               className={cn(
-                "p-6 rounded-[2.5rem] border shadow-sm relative overflow-hidden group",
+                "p-6 rounded-[2.5rem] border shadow-sm relative overflow-hidden group flex flex-col",
                 ann.type === 'important' ? "bg-red-50 border-red-100 text-red-900" :
                 ann.type === 'warning' ? "bg-orange-50 border-orange-100 text-orange-900" :
                 "bg-blue-50 border-blue-100 text-blue-900"
               )}
             >
-              <div className="flex items-start gap-5 relative z-10">
+              <div className="flex items-start gap-5 relative z-10 w-full">
                 <div className={cn(
                   "p-4 rounded-2xl shrink-0 shadow-sm",
                   ann.type === 'important' ? "bg-red-100 text-red-600" :
@@ -474,7 +488,7 @@ export default function ParentDashboard() {
                    ann.type === 'warning' ? <AlertCircle size={28} /> : 
                    <Bell size={28} />}
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 w-full">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-xl font-black tracking-tight">{ann.title}</h3>
                     <p className="text-[10px] font-bold opacity-50 flex items-center gap-1">
@@ -482,12 +496,32 @@ export default function ParentDashboard() {
                       {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd MMM', { locale: es }) : 'Reciente'}
                     </p>
                   </div>
-                  <p className="text-sm opacity-80 leading-relaxed font-medium">{ann.content}</p>
+                  <p className="text-sm opacity-80 leading-relaxed font-medium mb-4">{ann.content}</p>
+                  
+                  <div className="flex justify-end mt-2">
+                    {hasAcknowledged ? (
+                      <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-100/50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                        <CheckCircle2 size={14} /> Enterado
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleAcknowledgeAnnouncement(ann.id)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95",
+                          ann.type === 'important' ? "bg-red-600 hover:bg-red-700 text-white" :
+                          ann.type === 'warning' ? "bg-orange-600 hover:bg-orange-700 text-white" :
+                          "bg-blue-600 hover:bg-blue-700 text-white"
+                        )}
+                      >
+                        Enterado
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700" />
             </motion.div>
-          ))}
+          )})}
         </div>
       ) : (
         <motion.div 

@@ -196,6 +196,7 @@ export interface Announcement {
   active: boolean;
   createdAt: Timestamp;
   createdBy: string;
+  acknowledgedBy?: string[];
 }
 
 export interface Course {

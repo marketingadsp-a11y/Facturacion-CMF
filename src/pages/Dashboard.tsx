@@ -693,11 +693,14 @@ export default function Dashboard() {
                         <tr>
                           <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Aviso</th>
                           <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Estado</th>
+                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Alcance</th>
                           <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right">Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {announcements.map(ann => (
+                        {announcements.map(ann => {
+                          const ackCount = ann.acknowledgedBy?.length || 0;
+                          return (
                           <tr 
                             key={ann.id} 
                             className={cn(
@@ -718,8 +721,8 @@ export default function Dashboard() {
                                    <Bell size={14} />}
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-900 truncate max-w-[200px]">{ann.title}</p>
-                                  <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{ann.content}</p>
+                                  <p className="text-xs font-bold text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">{ann.title}</p>
+                                  <p className="text-[10px] text-slate-400 truncate max-w-[150px] sm:max-w-[200px]">{ann.content}</p>
                                 </div>
                               </div>
                             </td>
@@ -734,6 +737,17 @@ export default function Dashboard() {
                                 <span className="text-[8px] text-slate-300 font-medium">
                                   {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd/MM/yy', { locale: es }) : 'Reciente'}
                                 </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                  <Users size={10} />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-black text-slate-700 leading-none">{ackCount}</span>
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase">Enterados</span>
+                                </div>
                               </div>
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -767,7 +781,7 @@ export default function Dashboard() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                     </table>
                     {announcements.length === 0 && (
