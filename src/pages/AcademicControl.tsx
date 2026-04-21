@@ -175,57 +175,10 @@ export default function AcademicControl() {
   };
 
   const handlePrintBoleta = (student: Student) => {
-    const studentGrades = grades.filter(g => g.studentId === student.id);
-    const currentCycle = cycles.find(c => c.id === settings?.currentCycleId);
-    
-    if (!currentCycle || !settings) {
-      alert("Configuración de ciclo escolar incompleta.");
-      return;
-    }
-
-    // Open a new window
-    const printWindow = window.open('', '_blank');
+    // Open the dedicated print page in a new window/tab
+    const printWindow = window.open(`/imprimir-boleta/${student.id}`, '_blank');
     if (!printWindow) {
       alert("Por favor habilita las ventanas emergentes (pop-ups) para imprimir la boleta.");
-      return;
-    }
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Boleta ${student.lastName} ${student.name}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <style>
-              @media print {
-                  @page { margin: 10mm; }
-              }
-          </style>
-        </head>
-        <body>
-          <div id="print-root"></div>
-        </body>
-      </html>
-    `);
-    
-    printWindow.document.close();
-
-    const container = printWindow.document.getElementById('print-root');
-    if (container) {
-      const root = createRoot(container);
-      root.render(
-        <ReportCardPrint 
-          student={student} 
-          grades={studentGrades} 
-          settings={settings} 
-          cycle={currentCycle} 
-        />
-      );
-      
-      // Wait for React to render and Tailwind to load before printing
-      setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-      }, 1000);
     }
   };
 

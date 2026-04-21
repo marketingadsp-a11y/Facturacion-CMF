@@ -44,6 +44,7 @@ import AcademicControl from './pages/AcademicControl';
 import EnrollmentForm from './pages/EnrollmentForm';
 import TeacherPortal from './pages/TeacherPortal';
 import Reception from './pages/Reception';
+import PrintBoleta from './pages/PrintBoleta';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
@@ -569,6 +570,14 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {isParent ? <Navigate to="/" /> : <TeacherPortal />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/imprimir-boleta/:studentId" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Navigate to="/" /> : <PrintBoleta />}
           </ProtectedRoute>
         } 
       />
