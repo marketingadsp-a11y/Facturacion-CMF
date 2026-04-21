@@ -66,7 +66,26 @@
         "logoUrl": { "type": "string" },
         "facturapiApiKey": { "type": "string" },
         "facturapiSandbox": { "type": "boolean" },
-        "paymentMethods": { "type": "array", "items": { "type": "string" } }
+        "paymentMethods": { "type": "array", "items": { "type": "string" } },
+        "receptionReasons": { "type": "array", "items": { "type": "string" } },
+        "receptionAreas": { "type": "array", "items": { "type": "string" } },
+        "receptionSuccessTitle": { "type": "string" },
+        "receptionSuccessMessage": { "type": "string" },
+        "developerAttribution": { "type": "string" }
+      }
+    },
+    "receptionVisit": {
+      "title": "Visita de Recepción",
+      "description": "Registro de visitas y atención al público.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "area": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pendiente", "Atendido"] },
+        "checkInTime": { "type": "string", "format": "date-time" },
+        "attendedAt": { "type": "string", "format": "date-time" }
       }
     },
     "appUser": {
@@ -144,6 +163,10 @@
     "/enrollments/{enrollmentId}": {
       "schema": "enrollment",
       "description": "Colección de solicitudes de inscripción."
+    },
+    "/reception_visits/{visitId}": {
+      "schema": "receptionVisit",
+      "description": "Colección de registros de visitas."
     }
   }
 }

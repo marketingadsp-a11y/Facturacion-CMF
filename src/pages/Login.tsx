@@ -19,6 +19,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
+  const [developerAttribution, setDeveloperAttribution] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -31,6 +32,9 @@ export default function Login() {
           if (data.schoolName) {
             setSchoolName(data.schoolName);
             document.title = data.schoolName;
+          }
+          if (data.developerAttribution) {
+            setDeveloperAttribution(data.developerAttribution);
           }
         }
       } catch (err) {
@@ -137,42 +141,51 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-2xl mb-4 shadow-lg shadow-slate-200 overflow-hidden border border-slate-100">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-2" referrerPolicy="no-referrer" />
-            ) : (
-              <GraduationCap size={40} className="text-blue-600" />
-            )}
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">{schoolName}</h1>
-          <p className="text-slate-500 mt-1">Sistema de Control Escolar - {schoolName}</p>
-        </div>
-
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-slate-800">
-              {isRegistering ? 'Registro de Padre' : 'Iniciar Sesión'}
-            </h2>
-            {isRegistering && (
-              <button 
-                onClick={() => {
-                  setIsRegistering(false);
-                  setError('');
-                }}
-                className="text-blue-600 text-sm font-bold flex items-center gap-1 hover:underline"
-              >
-                <ArrowLeft size={14} />
-                Volver
-              </button>
-            )}
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 font-sans tracking-tight">
+      <div className="w-full max-w-sm">
+        <div className="bg-white rounded-lg shadow-xl shadow-slate-200/50 border border-slate-200 overflow-hidden">
+          <div className="bg-slate-950 p-6 text-center relative overflow-hidden">
+            {/* Mesh Background */}
+            <div className="absolute inset-0 opacity-20">
+               <div className="absolute top-0 -left-1/4 w-full h-full bg-blue-500 rounded-full blur-[100px]" />
+               <div className="absolute bottom-0 -right-1/4 w-full h-full bg-emerald-500 rounded-full blur-[100px]" />
+            </div>
+            
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-lg flex items-center justify-center mb-4 border border-white/20 shadow-2xl">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-2" referrerPolicy="no-referrer" />
+                ) : (
+                  <GraduationCap size={32} className="text-white" strokeWidth={2.5} />
+                )}
+              </div>
+              <h1 className="text-white text-sm font-black uppercase tracking-[0.2em] mb-1">Sistema de Control</h1>
+              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{schoolName}</p>
+            </div>
           </div>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {isRegistering && registrationStep === 'code' && (
-              <div className="space-y-4">
+          <div className="p-6 space-y-5">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-black uppercase tracking-[0.15em] text-slate-800">
+                {isRegistering ? 'Vincular Familia' : 'Acceso Autorizado'}
+              </h2>
+              {isRegistering && (
+                <button 
+                  onClick={() => {
+                    setIsRegistering(false);
+                    setError('');
+                  }}
+                  className="text-slate-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 hover:text-slate-900 transition-colors"
+                >
+                  <ArrowLeft size={10} />
+                  Volver
+                </button>
+              )}
+            </div>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {isRegistering && registrationStep === 'code' && (
+                <div className="space-y-4">
                 <p className="text-sm text-slate-500 text-center mb-4">
                   Ingresa el código de 5 dígitos proporcionado por el colegio para vincular tu cuenta.
                 </p>
@@ -188,7 +201,7 @@ export default function Login() {
                       maxLength={5}
                       value={registrationCode}
                       onChange={(e) => setRegistrationCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none font-mono font-bold text-center text-xl tracking-[0.5em]"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none font-mono font-black text-center text-xl tracking-[0.5em]"
                       placeholder="00000"
                     />
                   </div>
@@ -207,7 +220,7 @@ export default function Login() {
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
                       placeholder="Tu nombre completo"
                     />
                   </div>
@@ -222,7 +235,7 @@ export default function Login() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
                       placeholder="correo@ejemplo.com"
                     />
                   </div>
@@ -237,7 +250,7 @@ export default function Login() {
                       required
                       value={confirmEmail}
                       onChange={(e) => setConfirmEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
                       placeholder="Repite tu correo"
                     />
                   </div>
@@ -252,7 +265,7 @@ export default function Login() {
                       required
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
                       placeholder="10 dígitos"
                     />
                   </div>
@@ -286,7 +299,7 @@ export default function Login() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
                       placeholder="admin@colegiomexico.edu.mx"
                     />
                   </div>
@@ -320,11 +333,11 @@ export default function Login() {
               type="submit"
               disabled={loading}
               className={cn(
-                "w-full text-white font-semibold py-3 rounded-xl shadow-lg transition-all active:scale-[0.98] disabled:opacity-70",
-                isRegistering ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100" : "bg-blue-600 hover:bg-blue-700 shadow-blue-100"
+                "w-full text-white font-black uppercase tracking-[0.15em] text-[10px] py-3.5 rounded-md shadow-2xl transition-all active:scale-[0.98] disabled:opacity-70",
+                isRegistering ? "bg-slate-950 hover:bg-slate-900" : "bg-slate-950 hover:bg-slate-900"
               )}
             >
-              {loading ? 'Procesando...' : isRegistering ? (registrationStep === 'code' ? 'Validar Código' : 'Crear mi Cuenta') : 'Entrar al Sistema'}
+              {loading ? 'Procesando...' : isRegistering ? (registrationStep === 'code' ? 'Validar Código' : 'Crear mi Cuenta') : 'Acceder al Sistema'}
             </button>
 
             {!isRegistering && (
@@ -345,13 +358,14 @@ export default function Login() {
             )}
           </form>
         </div>
+      </div>
 
-        <div className="text-center mt-8 space-y-1">
-          <p className="text-slate-400 text-xs font-medium">
+      <div className="text-center mt-12 space-y-2">
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
             ASOCIACION EDUCADORA DEL SUR DE JALISCO
           </p>
-          <p className="text-slate-400 text-[10px]">
-            Creado por CIUDAPP MX - Cristobal Moran
+          <p className="text-slate-500 text-[9px] font-bold uppercase tracking-widest bg-slate-950/5 inline-block px-3 py-1 rounded-full">
+            {developerAttribution || 'Powered by Antigravity'}
           </p>
         </div>
       </div>

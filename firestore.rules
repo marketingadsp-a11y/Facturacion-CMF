@@ -137,7 +137,10 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         isSuperAdmin() || 
         hasPermission('announcements', 'manage') ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledgedBy']))
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledgedBy']) ||
+          request.resource.data.keys().hasAll(['acknowledgedBy']) // Allow if it's the first time it's added
+        )
       );
     }
 

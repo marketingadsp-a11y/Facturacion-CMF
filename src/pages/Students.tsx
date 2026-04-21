@@ -4,7 +4,7 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimest
 import { db } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
@@ -195,82 +195,97 @@ export default function Students() {
     : [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
+      {/* Compact Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-4 border-b border-slate-200">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Gestión de Alumnos</h1>
-          <p className="text-slate-500">Administra la información de los estudiantes inscritos.</p>
+          <div className="flex items-center gap-2 mb-1">
+             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Matrícula Escolar</span>
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 italic">
+            Gestión de Alumnos
+            <span className="not-italic text-[9px] font-black px-2 py-0.5 bg-slate-100 text-slate-600 rounded uppercase tracking-tighter leading-none inline-flex items-center h-4">
+              {students.length} Registros
+            </span>
+          </h1>
         </div>
         {hasPermission('students', 'create') && (
           <button
             onClick={() => handleOpenModal()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-semibold shadow-lg shadow-blue-100 transition-all active:scale-95"
+            className="bg-slate-950 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-900 transition-all active:scale-95"
           >
-            <UserPlus size={18} />
-            Nuevo Alumno
+            <UserPlus size={14} />
+            Nuevo Registro
           </button>
         )}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+      {/* Filters - Minimal Utility */}
+      <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+        <div className="relative flex-1 min-w-[280px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
           <input
             type="text"
-            placeholder="Buscar por nombre o CURP..."
+            placeholder="BUSCAR POR NOMBRE O CURP..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm"
+            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 outline-none transition-all text-[10px] font-bold uppercase tracking-wide"
           />
         </div>
         
         <div className="flex items-center gap-2">
-          <Filter size={16} className="text-slate-400" />
-          <select
-            value={filterLevel}
-            onChange={(e) => setFilterLevel(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Todos los Niveles</option>
-            {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
-              <option key={level} value={level}>{level}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 rounded-md">
+            <Filter size={12} className="text-slate-400" />
+            <select
+              value={filterLevel}
+              onChange={(e) => setFilterLevel(e.target.value)}
+              className="bg-transparent py-1.5 text-[10px] font-black uppercase tracking-tight outline-none cursor-pointer"
+            >
+              <option value="">NIVEL</option>
+              {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </div>
 
-          <select
-            value={filterGrade}
-            onChange={(e) => setFilterGrade(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Todos los Grados</option>
-            {(settings?.academicGrades || Array.from(new Set(students.map(s => s.grade))).sort()).map(grade => (
-              <option key={grade} value={grade}>{grade}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 rounded-md">
+            <select
+              value={filterGrade}
+              onChange={(e) => setFilterGrade(e.target.value)}
+              className="bg-transparent py-1.5 text-[10px] font-black uppercase tracking-tight outline-none cursor-pointer"
+            >
+              <option value="">GRADO</option>
+              {(settings?.academicGrades || Array.from(new Set(students.map(s => s.grade))).sort()).map(grade => (
+                <option key={grade} value={grade}>{grade}</option>
+              ))}
+            </select>
+          </div>
 
-          <select
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Todos los Grupos</option>
-            {(settings?.academicGroups || Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort()).map(group => (
-              <option key={group} value={group}>{group}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 rounded-md">
+            <select
+              value={filterGroup}
+              onChange={(e) => setFilterGroup(e.target.value)}
+              className="bg-transparent py-1.5 text-[10px] font-black uppercase tracking-tight outline-none cursor-pointer"
+            >
+              <option value="">GRUPO</option>
+              {(settings?.academicGroups || Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort()).map(group => (
+                <option key={group} value={group}>{group}</option>
+              ))}
+            </select>
+          </div>
 
           <button
             onClick={() => setFilterDebt(!filterDebt)}
             className={cn(
-              "px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all",
-              filterDebt ? "bg-red-100 text-red-600 border border-red-200" : "bg-slate-50 text-slate-600 border border-slate-200"
+              "px-3 py-1.5 rounded-md text-[10px] font-black flex items-center gap-2 transition-all uppercase tracking-tight",
+              filterDebt ? "bg-rose-950 text-white border-rose-950" : "bg-slate-50 text-slate-600 border border-slate-200"
             )}
           >
-            <AlertCircle size={14} />
-            {filterDebt ? 'Solo con Adeudo' : 'Ver Adeudos'}
+            {filterDebt ? <AlertCircle size={12} /> : <TrendingDown size={12} />}
+            {filterDebt ? 'Con Adeudo' : 'Ver Adeudos'}
           </button>
-
+          
           {(filterLevel || filterGrade || filterGroup || searchTerm || filterDebt) && (
             <button
               onClick={() => {
@@ -283,46 +298,49 @@ export default function Students() {
               className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
               title="Limpiar filtros"
             >
-              <X size={16} />
+              <X size={14} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Students Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
-          <table className="w-full text-left border-collapse table-fixed min-w-[1200px]">
+      {/* Students Table - Specialist Grid */}
+      <div className="compact-card shadow-lg shadow-slate-100">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table className="w-full text-left border-collapse table-auto min-w-max">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
-                <th className="px-3 py-2 border-r border-slate-200 w-48">Apellidos</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-40">Nombre(s)</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-36">CURP</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-28">Nivel</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-20">Grado</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-16 text-center">Gpo</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-24 text-center">Cód. Reg</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-48">Correo Padre</th>
-                <th className="px-3 py-2 border-r border-slate-200 w-32">Estatus Pago</th>
-                <th className="px-3 py-2 w-28 text-right">Acciones</th>
+              <tr className="bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-[0.1em] border-b border-slate-200">
+                <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Apellidos</th>
+                <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Nombre(s)</th>
+                <th className="px-4 py-3 border-r border-slate-100 mono-label uppercase whitespace-nowrap">CURP</th>
+                <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Nivel</th>
+                <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap text-center">Grado</th>
+                <th className="px-4 py-3 border-r border-slate-100 text-center italic whitespace-nowrap">Gpo</th>
+                <th className="px-4 py-3 border-r border-slate-100 text-center mono-label whitespace-nowrap">Cód. Reg</th>
+                <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Correo Padre</th>
+                <th className="px-4 py-3 border-r border-slate-100 mono-label uppercase whitespace-nowrap">Estatus Pago</th>
+                <th className="px-4 py-3 text-right italic whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-slate-100">
               {filteredStudents.length > 0 ? (
                 filteredStudents.map((student) => {
                   const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
                   return (
-                    <tr key={student.id} className="hover:bg-blue-50/30 transition-colors group text-[11px]">
-                      <td className="px-3 py-1.5 border-r border-slate-100 font-bold text-slate-900 truncate">
+                    <tr 
+                      key={student.id} 
+                      className="group hover:bg-slate-950 hover:text-white transition-all cursor-default text-[10px]"
+                    >
+                      <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800">
                         {student.lastName}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-700 truncate">
+                      <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800">
                         {student.name}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-slate-500 uppercase">
+                      <td className="px-4 py-2 border-r border-slate-100 font-mono text-[9px] whitespace-nowrap group-hover:border-slate-800 group-hover:text-slate-300">
                         {student.curp || '-'}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100">
+                      <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">
                         <span className={cn(
                           "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter",
                           student.level === 'Preescolar' ? "bg-purple-100 text-purple-700" :
@@ -332,19 +350,19 @@ export default function Students() {
                           {student.level}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 whitespace-nowrap">
                         {student.grade}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 whitespace-nowrap">
                         {student.group || '-'}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-emerald-600">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-emerald-600 whitespace-nowrap">
                         {student.registrationCode || '-'}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500 truncate">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500 whitespace-nowrap">
                         {student.parentEmail || '-'}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100">
+                      <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">
                         {debtStatus.hasDebt ? (
                           <div className="flex items-center gap-1.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -359,7 +377,7 @@ export default function Students() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-1.5 text-right">
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           {hasPermission('payments', 'create') && (
                             <button 
@@ -417,14 +435,14 @@ export default function Students() {
       {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <GraduationCap className="text-blue-600" />
-                {editingStudent ? 'Editar Alumno' : 'Nuevo Alumno'}
+          <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 italic">
+                <GraduationCap className="text-blue-600 not-italic" size={20} />
+                {editingStudent ? 'Editar Expediente' : 'Nuevo Expediente'}
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                <X size={20} />
+              <button onClick={() => setIsModalOpen(false)} className="p-1.5 hover:bg-slate-200 rounded-md transition-colors">
+                <X size={18} />
               </button>
             </div>
             
@@ -608,64 +626,64 @@ export default function Students() {
       {/* History Modal */}
       {isHistoryModalOpen && selectedStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="bg-white w-full max-w-3xl rounded-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div>
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                  <History className="text-emerald-600" />
-                  Historial de Pagos
+                <h2 className="text-lg font-black text-slate-900 flex items-center gap-2 italic">
+                  <History className="text-emerald-600 not-italic" size={20} />
+                  HISTORIAL DE PAGOS
                 </h2>
-                <p className="text-xs text-slate-500 font-medium">{selectedStudent.name} {selectedStudent.lastName}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{selectedStudent.name} {selectedStudent.lastName}</p>
               </div>
-              <button onClick={() => setIsHistoryModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                <X size={20} />
+              <button onClick={() => setIsHistoryModalOpen(false)} className="p-1.5 hover:bg-slate-200 rounded-md transition-colors">
+                <X size={18} />
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto max-h-[70vh]">
+            <div className="p-5 overflow-y-auto max-h-[70vh]">
               {studentPayments.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {studentPayments.map((payment) => (
-                    <div key={payment.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-white rounded-xl border border-slate-200 text-blue-600">
-                          <CreditCard size={18} />
+                    <div key={payment.id} className="p-3 bg-white rounded-md border border-slate-100 flex items-center justify-between gap-4 hover:border-slate-300 transition-colors shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-slate-50 rounded flex items-center justify-center text-slate-400 border border-slate-100">
+                          <CreditCard size={14} />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-900">{payment.concept}</p>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                          <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{payment.concept}</p>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
                               <Calendar size={10} /> {format(payment.date.toDate(), 'dd MMM yyyy', { locale: es })}
                             </span>
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">
+                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[8px] font-black uppercase tracking-widest">
                               {payment.paymentMethod}
                             </span>
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-black text-slate-900">${payment.amount.toLocaleString()}</p>
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Pagado</span>
+                        <p className="text-sm font-black text-slate-950">${payment.amount.toLocaleString()}</p>
+                        <span className="text-[8px] font-black text-emerald-600 uppercase tracking-[0.2em]">LIQUIDADO</span>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="py-12 text-center">
-                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                    <CreditCard size={32} />
+                <div className="py-10 text-center">
+                  <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-200">
+                    <CreditCard size={24} />
                   </div>
-                  <p className="text-slate-500 font-medium">Este alumno no tiene pagos registrados.</p>
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Sin registros de pago.</p>
                 </div>
               )}
             </div>
 
-            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+            <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
               <button
                 onClick={() => setIsHistoryModalOpen(false)}
-                className="px-6 py-2.5 bg-slate-900 text-white font-bold rounded-xl shadow-lg shadow-slate-200 transition-all active:scale-95"
+                className="tech-button"
               >
-                Cerrar
+                CERRAR VENTANA
               </button>
             </div>
           </div>

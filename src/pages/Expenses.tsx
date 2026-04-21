@@ -106,12 +106,22 @@ export default function Expenses() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
+      {/* Header Minimalista y Profesional - Technical Style */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-4 border-b border-slate-200">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 font-display">Gestión de Gastos</h1>
-          <p className="text-slate-500">Control de egresos operativos de la institución.</p>
+          <div className="flex items-center gap-2 mb-1">
+             <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+             <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">Contabilidad Institucional</span>
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 italic">
+            Gestión de Gastos
+            <span className="not-italic text-[9px] font-black px-2 py-0.5 bg-rose-50 text-rose-600 rounded uppercase tracking-tighter leading-none inline-flex items-center h-4">
+              EGRESOS
+            </span>
+          </h1>
         </div>
+        
         {hasPermission('expenses', 'create') && (
           <motion.button
             whileHover={{ scale: 1.02 }}
@@ -127,54 +137,56 @@ export default function Expenses() {
               });
               setIsModalOpen(true);
             }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-semibold shadow-lg shadow-blue-100 transition-all"
+            className="bg-slate-950 hover:bg-black text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-200 transition-all active:scale-95"
           >
-            <Plus size={18} />
+            <Plus size={16} />
             Registrar Gasto
           </motion.button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm"
+          className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition-all group overflow-hidden relative"
         >
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-red-50 text-red-600 rounded-2xl">
-              <DollarSign size={24} />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 font-medium">Total Gastos (Filtrados)</p>
-              <p className="text-2xl font-bold text-slate-900">{formatCurrency(totalExpenses)}</p>
-            </div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+             <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Total Egresos</span>
+             <div className="w-7 h-7 rounded bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
+                <DollarSign size={16} />
+             </div>
           </div>
+          <div className="flex items-baseline gap-1 relative z-10">
+            <p className="text-xl font-black text-slate-950 tracking-tighter font-mono">{formatCurrency(totalExpenses)}</p>
+          </div>
+          <p className="text-[8px] font-black text-slate-400 mt-2 uppercase tracking-widest relative z-10 italic">Corte de Periodo Actual</p>
+          <div className="absolute bottom-0 left-0 w-2 h-1 bg-rose-500 transition-all group-hover:w-full" />
         </motion.div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row gap-4">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-xl overflow-hidden shadow-slate-50">
+        <div className="p-3 border-b border-slate-100 flex flex-col md:flex-row gap-3 bg-slate-50/50">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
             <input
               type="text"
-              placeholder="Buscar por descripción o categoría..."
+              placeholder="BUSCAR GASTO O CATEGORÍA..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full pl-9 pr-4 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase tracking-tight focus:border-slate-900 outline-none transition-all shadow-sm focus:bg-white"
             />
           </div>
           <div className="flex gap-2">
             <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
               <select
                 value={filterCategory}
                 onChange={(e) => setFilterCategory(e.target.value)}
-                className="pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none text-sm"
+                className="pl-8 pr-8 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-black uppercase tracking-widest outline-none appearance-none cursor-pointer focus:border-slate-900 shadow-sm"
               >
-                <option value="Todas">Todas las Categorías</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="Todas">CATEGORIAS: TODAS</option>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
               </select>
             </div>
           </div>
@@ -183,16 +195,16 @@ export default function Expenses() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                <th className="px-6 py-4">Fecha</th>
-                <th className="px-6 py-4">Descripción</th>
-                <th className="px-6 py-4">Categoría</th>
-                <th className="px-6 py-4">Monto</th>
-                <th className="px-6 py-4">Estado</th>
-                <th className="px-6 py-4 text-right">Acciones</th>
+              <tr className="bg-slate-950 border-b border-slate-800">
+                <th className="px-4 py-3 text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] italic">Fecha de Operación</th>
+                <th className="px-4 py-3 text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Descripción de Gasto</th>
+                <th className="px-4 py-3 text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Clasificación</th>
+                <th className="px-4 py-3 text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Monto NETO</th>
+                <th className="px-4 py-3 text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Status</th>
+                <th className="px-4 py-3 text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] text-right italic">Panel Admin</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 italic">
               <AnimatePresence mode="popLayout">
                 {filteredExpenses.map((expense) => (
                   <motion.tr 
@@ -201,32 +213,33 @@ export default function Expenses() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     key={expense.id} 
-                    className="hover:bg-slate-50 transition-colors"
+                    className="hover:bg-slate-950 hover:text-white transition-all cursor-default not-italic"
                   >
-                    <td className="px-6 py-4 text-sm text-slate-500">
-                      {expense.date?.toDate ? format(expense.date.toDate(), 'dd/MM/yyyy') : '-'}
+                    <td className="px-4 py-2.5 text-[10px] font-mono group-hover:text-slate-400">
+                      {expense.date?.toDate ? format(expense.date.toDate(), 'dd-MM-yy') : '-'}
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-bold text-slate-900">{expense.description}</p>
+                    <td className="px-4 py-2.5">
+                      <p className="text-[11px] font-bold uppercase tracking-tight leading-none mb-1">{expense.description}</p>
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{expense.id.slice(0, 8)}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded-lg font-medium">
+                    <td className="px-4 py-2.5 text-center">
+                      <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded-sm font-black uppercase tracking-tighter">
                         {expense.category}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-bold text-red-600">{formatCurrency(expense.amount)}</p>
+                    <td className="px-4 py-2.5 text-center">
+                      <p className="text-[11px] font-black text-rose-500 font-mono tracking-tighter">-{formatCurrency(expense.amount)}</p>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-2.5 text-center">
                       <span className={cn(
-                        "text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wider",
-                        expense.status === 'Pagado' ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700"
+                        "text-[8px] px-1.5 py-0.5 rounded-sm font-black uppercase tracking-widest",
+                        expense.status === 'Pagado' ? "bg-emerald-50 text-emerald-700" : "bg-orange-50 text-orange-700"
                       )}>
                         {expense.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {hasPermission('expenses', 'edit') && (
                           <button 
                             onClick={() => {
@@ -240,17 +253,17 @@ export default function Expenses() {
                               });
                               setIsModalOpen(true);
                             }}
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                            className="p-1 text-slate-400 hover:text-blue-400 transition-all font-black uppercase text-[8px]"
                           >
-                            <Edit2 size={16} />
+                            <Edit2 size={12} />
                           </button>
                         )}
                         {hasPermission('expenses', 'delete') && (
                           <button 
                             onClick={() => handleDelete(expense.id)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            className="p-1 text-slate-400 hover:text-rose-400 transition-all"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={12} />
                           </button>
                         )}
                       </div>
@@ -262,10 +275,10 @@ export default function Expenses() {
           </table>
           {filteredExpenses.length === 0 && (
             <div className="p-12 text-center">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertCircle className="text-slate-300" size={32} />
+              <div className="w-10 h-10 bg-slate-50 rounded flex items-center justify-center mx-auto mb-2 text-slate-200">
+                <AlertCircle size={24} />
               </div>
-              <p className="text-slate-500 font-medium">No se encontraron gastos con los filtros actuales.</p>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Cero Coincidencias en Gasto</p>
             </div>
           )}
         </div>

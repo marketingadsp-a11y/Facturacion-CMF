@@ -59,12 +59,14 @@ export default function Settings() {
     lateFeeType: 'fixed',
     academicLevels: ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'],
     academicGrades: ['1ro', '2do', '3ro', '4to', '5to', '6to'],
-    academicGroups: ['A', 'B', 'C']
+    academicGroups: ['A', 'B', 'C'],
+    receptionReasons: ['Información', 'Inscripción', 'Pago', 'Otro'],
+    receptionAreas: ['Dirección', 'Administración', 'Control Escolar', 'Finanzas']
   });
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'danger'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [gradeLocks, setGradeLocks] = useState<BimestreLock[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -81,6 +83,7 @@ export default function Settings() {
       expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
       announcements: { view: true, manage: true },
+      parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
       grading: { view: true, manage: true }
     },
@@ -92,6 +95,7 @@ export default function Settings() {
       expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false },
       announcements: { view: true, manage: true },
+      parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
       grading: { view: true, manage: true }
     },
@@ -103,6 +107,7 @@ export default function Settings() {
       expenses: { view: true, create: false, edit: false, delete: false },
       settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
+      parents: { view: true, manage: false },
       controlEscolar: { view: true, manage: false },
       grading: { view: true, manage: false }
     },
@@ -114,6 +119,7 @@ export default function Settings() {
       expenses: { view: true, create: true, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
+      parents: { view: true, manage: false },
       controlEscolar: { view: true, manage: false },
       grading: { view: false, manage: false }
     },
@@ -125,6 +131,7 @@ export default function Settings() {
       expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
+      parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: false, manage: false }
     },
@@ -136,6 +143,7 @@ export default function Settings() {
       expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: true },
+      parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
       grading: { view: false, manage: false }
     },
@@ -147,6 +155,7 @@ export default function Settings() {
       expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
+      parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: true, manage: true }
     },
@@ -158,6 +167,7 @@ export default function Settings() {
       expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
+      parents: { view: true, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: false, manage: false }
     }
@@ -267,6 +277,12 @@ export default function Settings() {
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'academic' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
           >
             <GraduationCap size={18} /> Datos Académicos
+          </button>
+          <button 
+            onClick={() => setActiveTab('reception')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'reception' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <Users size={18} /> Atención y Recepción
           </button>
           <button 
             onClick={() => setActiveTab('courses')}
@@ -382,6 +398,28 @@ export default function Settings() {
                   </p>
                 </div>
               </div>
+
+              {/* Developer Attribution Settings - Superadmin only */}
+              {userProfile?.role === 'Superadministrador' && (
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                  <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Edit2 size={20} className="text-emerald-600" />
+                    Atribución del Desarrollador (Footer)
+                  </h2>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Texto de Créditos / Desarrollador</label>
+                    <input
+                      placeholder="Creado por CIUDAPP MX - Cristobal Moran"
+                      value={settings.developerAttribution || ''}
+                      onChange={(e) => setSettings({...settings, developerAttribution: e.target.value})}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-2 italic">
+                      * Este texto aparecerá en el pie de página de la pantalla de inicio de sesión y en el formulario público de visitas.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -672,6 +710,75 @@ export default function Settings() {
                     onUpdate={(newItems) => setSettings({...settings, academicGroups: newItems})}
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'reception' && (
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Users size={20} className="text-indigo-600" />
+                      Configuración de Recepción
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Gestiona los perfiles de visitantes y los motivos de atención.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleSave}
+                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
+                  >
+                    <Save size={18} /> Guardar Cambios
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <AcademicListManager 
+                    title="Nivel o Área" 
+                    description="Departamentos o áreas de atención"
+                    items={settings.receptionAreas || []} 
+                    onUpdate={(newItems) => setSettings({...settings, receptionAreas: newItems})}
+                  />
+                  <AcademicListManager 
+                    title="Motivos de Atención" 
+                    description="Razones de la solicitud"
+                    items={settings.receptionReasons || []} 
+                    onUpdate={(newItems) => setSettings({...settings, receptionReasons: newItems})}
+                  />
+                </div>
+
+                {userProfile?.role === 'Superadministrador' && (
+                  <div className="pt-8 border-t border-slate-100 space-y-6">
+                    <div className="flex items-center gap-2">
+                       <CheckCircle2 size={18} className="text-emerald-600" />
+                       <h3 className="text-base font-bold text-slate-800">Mensaje de Éxito (Público)</h3>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Título de Éxito</label>
+                        <input
+                          placeholder="¡Registro Exitoso!"
+                          value={settings.receptionSuccessTitle || ''}
+                          onChange={(e) => setSettings({...settings, receptionSuccessTitle: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Cuerpo del Mensaje</label>
+                        <textarea
+                          rows={3}
+                          placeholder="Hemos recibido tu registro. Por favor, toma asiento, en un momento te atenderemos."
+                          value={settings.receptionSuccessMessage || ''}
+                          onChange={(e) => setSettings({...settings, receptionSuccessMessage: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

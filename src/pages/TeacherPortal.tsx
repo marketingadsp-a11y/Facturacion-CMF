@@ -278,142 +278,208 @@ export default function TeacherPortal() {
     );
   }
 
+  const presentCount = Object.values(attendance).filter(a => a.status === 'Asistió' || a.status === 'Retardo').length;
+  const attendancePercentage = students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 pb-12">
+      {/* Header - Technical Utility */}
+      <motion.div 
+        initial={{ y: -10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200"
+      >
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Portal Docente</h1>
-          <p className="text-slate-500">
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase italic">Portal Docente</h1>
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1 opacity-60">
             {userProfile?.role === 'Docente' 
-              ? `Gestionando: ${userProfile.assignedLevel} - ${userProfile.assignedGrade} ${userProfile.assignedGroup || ''}`
-              : 'Gestión de Calificaciones'}
+              ? `ASIGNACIÓN: ${userProfile.assignedLevel} - ${userProfile.assignedGrade}${userProfile.assignedGroup || ''}`
+              : 'Gestión de Calificaciones y Asistencia'}
           </p>
         </div>
         
         {activeTab === 'grading' && hasPermission('grading', 'manage') && (
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-2">
             {!isBimestreLocked && (
               <button
                 onClick={handleFinalize}
                 disabled={isLocking || isSaving}
-                className="px-6 py-2.5 bg-slate-900 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg shadow-slate-100 disabled:opacity-50"
+                className="tech-button"
               >
                 {isLocking ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1" />
                 ) : (
-                  <Lock size={18} />
+                  <Lock size={12} className="mr-1" />
                 )}
                 Finalizar Bimestre
               </button>
             )}
             {isBimestreLocked && (
-              <div className="px-6 py-2.5 bg-amber-100 text-amber-700 rounded-xl font-bold flex items-center gap-2 border border-amber-200">
-                <Lock size={18} />
-                Bimestre Bloqueado
+              <div className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded border border-amber-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                <Lock size={12} />
+                Bloqueado
               </div>
             )}
             <button
               onClick={handleSaveAll}
               disabled={isSaving || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
+              className="px-4 py-1.5 bg-white text-slate-900 border border-slate-200 rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
             >
               {isSaving ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-3 h-3 border-2 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
               ) : (
-                <Save size={18} />
+                <Save size={12} />
               )}
-              {isBimestreLocked ? 'Guardar Cambios (Admin)' : `Guardar Bimestre ${selectedBimestre}`}
+              {isBimestreLocked ? 'Guardar (Admin)' : `Guardar B${selectedBimestre}`}
             </button>
           </div>
         )}
+      </motion.div>
+
+      {/* Metrics Row - Compact Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
+        >
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Matrícula Grupo</p>
+          <div className="flex items-end justify-between">
+            <p className="text-2xl font-bold text-slate-900 tabular-nums lowercase">{students.length} <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">alumnos</span></p>
+            <Users size={16} className="text-slate-200 mb-1" />
+          </div>
+        </motion.div>
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
+        >
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Asistencia Real</p>
+          <div className="flex items-end justify-between">
+            <p className="text-2xl font-bold text-slate-900 tabular-nums">
+              {attendancePercentage}% <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">({presentCount}/{students.length})</span>
+            </p>
+            <CheckCircle2 size={16} className="text-emerald-200 mb-1" />
+          </div>
+        </motion.div>
+
+        {activeTab === 'grading' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
+          >
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Bimestre Activo</p>
+            <div className="flex items-end justify-between">
+              <p className="text-2xl font-bold text-slate-900 tabular-nums lowercase">{selectedBimestre} <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">periodo</span></p>
+              <ClipboardList size={16} className="text-slate-200 mb-1" />
+            </div>
+          </motion.div>
+        )}
+
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
+        >
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Estado Ciclo</p>
+          <div className="flex items-end justify-between">
+            <p className="text-sm font-black text-slate-950 uppercase tracking-tight truncate max-w-[120px]">
+              {isBimestreLocked ? 'Bloqueado' : 'Abierto para Edición'}
+            </p>
+            {isBimestreLocked ? <Lock size={16} className="text-amber-400 mb-1" /> : <Unlock size={16} className="text-emerald-400 mb-1" />}
+          </div>
+        </motion.div>
       </div>
 
       {savedStatus && (
         <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3 text-emerald-700"
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-emerald-50 border border-emerald-100 p-2 rounded text-center"
         >
-          <CheckCircle2 size={20} />
-          <span className="font-bold">{savedStatus}</span>
+          <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest italic">{savedStatus}</span>
         </motion.div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl w-fit">
+      {/* Tabs - Technical Strip */}
+      <div className="flex gap-1.5 p-1 bg-slate-100 rounded-md w-fit">
         <button
           onClick={() => setActiveTab('attendance')}
           className={cn(
-            "px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-            activeTab === 'attendance' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+            activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
           )}
         >
-          <Calendar size={18} /> Asistencia
+          <Calendar size={14} /> Asistencia
         </button>
         <button
           onClick={() => setActiveTab('grading')}
           className={cn(
-            "px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-            activeTab === 'grading' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+            activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
           )}
         >
-          <ClipboardList size={18} /> Calificaciones
+          <ClipboardList size={14} /> Calificaciones
         </button>
       </div>
 
       {activeTab === 'grading' ? (
-        <div className="space-y-6">
-          {/* Bimestre Selector */}
-          <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-            <span className="text-xs font-black text-slate-400 uppercase tracking-widest mr-2">Bimestre:</span>
-            {[1, 2, 3, 4, 5].map((b) => (
-              <button
-                key={b}
-                onClick={() => setSelectedBimestre(b as Bimestre)}
-                className={cn(
-                  "w-10 h-10 rounded-xl font-black text-sm transition-all border",
-                  selectedBimestre === b 
-                    ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100" 
-                    : "bg-slate-50 border-slate-100 text-slate-400 hover:bg-slate-100"
-                )}
-              >
-                {b}
-              </button>
-            ))}
-            
-            <div className="flex-1" />
+        <div className="space-y-4">
+          {/* Controls - Compact */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-200 shadow-sm">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">Bimestre:</span>
+              {[1, 2, 3, 4, 5].map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setSelectedBimestre(b as Bimestre)}
+                  className={cn(
+                    "w-7 h-7 rounded font-black text-[10px] transition-all",
+                    selectedBimestre === b 
+                      ? "bg-slate-900 text-white shadow-sm" 
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                  )}
+                >
+                  {b}
+                </button>
+              ))}
+            </div>
             
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
-                placeholder="Filtrar alumno..."
+                placeholder="Filtrar por nombre..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm w-64"
+                className="pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold w-full md:w-64 outline-none focus:ring-1 focus:ring-slate-900"
               />
             </div>
           </div>
 
-          {/* Grading Table */}
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          {/* Grading Table - High Density */}
+          <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[1200px]">
-                <thead className="bg-slate-50 border-b border-slate-100">
-                  <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                    <th className="px-4 py-3 sticky left-0 bg-slate-50 z-10 w-64 border-r border-slate-100 italic">Alumno</th>
+                <thead>
+                  <tr className="bg-slate-50/80 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                    <th className="px-4 py-3 sticky left-0 bg-slate-50/95 z-10 w-56 border-r border-slate-200 backdrop-blur-sm">Identidad Alumno</th>
                     {SUBJECTS.map(subj => (
-                      <th key={subj} className="px-2 py-3 text-center border-r border-slate-100 min-w-[80px]">{subj}</th>
+                      <th key={subj} className="px-1 py-3 text-center border-r border-slate-200 min-w-[75px] max-w-[75px]">{subj.substring(0, 10)}...</th>
                     ))}
-                    <th className="px-2 py-3 text-center text-indigo-600 border-r border-slate-100">Cond.</th>
-                    <th className="px-2 py-3 text-center text-indigo-600 border-r border-slate-100">Unif.</th>
-                    <th className="px-2 py-3 text-center text-red-600 border-r border-slate-100">Falt.</th>
-                    <th className="px-2 py-3 text-center text-red-600 border-r border-slate-100">Tareas</th>
-                    <th className="px-2 py-3 text-center text-red-600 border-r border-slate-100">Ret.</th>
-                    <th className="px-2 py-3 text-center text-indigo-600">Aseo</th>
+                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Cond.</th>
+                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Unif.</th>
+                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Falt.</th>
+                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Tareas</th>
+                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Ret.</th>
+                    <th className="px-1 py-3 text-center w-16">Aseo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-50">
+                <tbody className="divide-y divide-slate-50 font-mono">
                   {filteredStudents.map((student) => {
                     const studentGrade = grades[student.id] || {
                       subjects: {},
@@ -426,20 +492,20 @@ export default function TeacherPortal() {
                     };
 
                     return (
-                      <tr key={student.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-[10px] uppercase shrink-0">
-                              {student.name.charAt(0)}{student.lastName.charAt(0)}
+                      <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[1px_0_4px_rgba(0,0,0,0.03)] backdrop-blur-sm group-hover:bg-slate-50/80">
+                          <div className="flex items-center gap-3">
+                            <div className="w-7 h-7 rounded bg-slate-950 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0">
+                              {student.name.charAt(0)}
                             </div>
-                            <div className="truncate">
-                              <p className="text-xs font-bold text-slate-900 truncate leading-none mb-0.5">{student.lastName}</p>
-                              <p className="text-[9px] text-slate-500 truncate">{student.name}</p>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.lastName}</p>
+                              <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{student.name}</p>
                             </div>
                           </div>
                         </td>
                         {SUBJECTS.map(subj => (
-                          <td key={subj} className="px-2 py-2 border-r border-slate-100">
+                          <td key={subj} className="px-1 py-1.5 border-r border-slate-50">
                             <input
                               type="number"
                               inputMode="decimal"
@@ -449,78 +515,72 @@ export default function TeacherPortal() {
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               value={studentGrade.subjects?.[subj] ?? ''}
                               onChange={(e) => handleGradeChange(student.id, subj, e.target.value, true)}
-                              className="w-full bg-slate-50 border-none rounded-lg px-2 py-2 text-center text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                              className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                               placeholder="-"
                             />
                           </td>
                         ))}
-                        <td className="px-2 py-2 border-r border-slate-100">
+                        <td className="px-1 py-1.5 border-r border-slate-50">
                           <input
                             type="number"
-                            inputMode="decimal"
                             min="0"
                             max="10"
                             disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                             value={studentGrade.conduct ?? ''}
                             onChange={(e) => handleGradeChange(student.id, 'conduct', e.target.value)}
-                            className="w-full bg-indigo-50/30 border-none rounded-lg px-2 py-2 text-center text-sm font-black text-indigo-600 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
                           />
                         </td>
-                        <td className="px-2 py-2 border-r border-slate-100">
+                        <td className="px-1 py-1.5 border-r border-slate-50">
                           <input
                             type="number"
-                            inputMode="decimal"
                             min="0"
                             max="10"
                             disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                             value={studentGrade.uniform ?? ''}
                             onChange={(e) => handleGradeChange(student.id, 'uniform', e.target.value)}
-                            className="w-full bg-indigo-50/30 border-none rounded-lg px-2 py-2 text-center text-sm font-black text-indigo-600 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
                           />
                         </td>
-                        <td className="px-2 py-2 border-r border-slate-100">
+                        <td className="px-1 py-1.5 border-r border-slate-50">
                           <input
                             type="number"
-                            inputMode="numeric"
                             min="0"
                             disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                             value={studentGrade.attendance ?? ''}
                             onChange={(e) => handleGradeChange(student.id, 'attendance', e.target.value)}
-                            className="w-full bg-red-50/30 border-none rounded-lg px-2 py-2 text-center text-sm font-black text-red-600 focus:ring-2 focus:ring-red-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
                           />
                         </td>
-                        <td className="px-2 py-2 border-r border-slate-100">
+                        <td className="px-1 py-1.5 border-r border-slate-50">
                           <input
                             type="number"
-                            inputMode="numeric"
                             min="0"
                             disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                             value={studentGrade.tasksNotDone ?? ''}
                             onChange={(e) => handleGradeChange(student.id, 'tasksNotDone', e.target.value)}
-                            className="w-full bg-red-50/30 border-none rounded-lg px-2 py-2 text-center text-sm font-black text-red-600 focus:ring-2 focus:ring-red-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
                           />
                         </td>
-                        <td className="px-2 py-2 border-r border-slate-100">
+                        <td className="px-1 py-1.5 border-r border-slate-50">
                           <input
                             type="number"
-                            inputMode="numeric"
                             min="0"
                             disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                             value={studentGrade.tardies ?? ''}
                             onChange={(e) => handleGradeChange(student.id, 'tardies', e.target.value)}
-                            className="w-full bg-red-50/30 border-none rounded-lg px-2 py-2 text-center text-sm font-black text-red-600 focus:ring-2 focus:ring-red-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
                           />
                         </td>
-                        <td className="px-2 py-2">
+                        <td className="px-1 py-1.5">
                           <input
                             type="number"
-                            inputMode="decimal"
                             min="0"
                             max="10"
                             disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                             value={studentGrade.cleanliness ?? ''}
                             onChange={(e) => handleGradeChange(student.id, 'cleanliness', e.target.value)}
-                            className="w-full bg-indigo-50/30 border-none rounded-lg px-2 py-2 text-center text-sm font-black text-indigo-600 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
                           />
                         </td>
                       </tr>
@@ -533,42 +593,38 @@ export default function TeacherPortal() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Attendance Controls */}
-          <div className="flex flex-wrap items-center gap-4 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                <Calendar size={18} />
-              </div>
+          {/* Attendance Controls - Compact */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Calendar size={14} className="text-slate-400" />
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 outline-none"
+                className="bg-white border border-slate-200 rounded px-3 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
               />
             </div>
-            
-            <div className="flex-1" />
             
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
-                placeholder="Buscar por nombre..."
+                placeholder="Filtrar por nombre..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs w-48 md:w-64"
+                className="pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold w-full md:w-64 outline-none focus:ring-1 focus:ring-slate-900"
               />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-100">
-                  <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                    <th className="px-4 py-3 w-12 text-center">#</th>
-                    <th className="px-4 py-3">Alumno</th>
-                    <th className="px-4 py-3 text-center">Estado de Asistencia</th>
-                    <th className="px-4 py-3 hidden md:table-cell">CURP</th>
+                <thead>
+                  <tr className="bg-slate-50/80 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                    <th className="px-6 py-3 w-12 text-center">RT</th>
+                    <th className="px-6 py-3">Alumno / Identidad</th>
+                    <th className="px-6 py-3 text-center">Registro de Asistencia</th>
+                    <th className="px-6 py-3 hidden md:table-cell text-right pr-12">CURP</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -576,63 +632,64 @@ export default function TeacherPortal() {
                     const att = attendance[student.id]?.status || 'Asistió';
                     
                     return (
-                      <tr key={student.id} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-4 py-2 text-center text-[10px] font-bold text-slate-400">
+                      <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-6 py-3 text-center text-[9px] font-black text-slate-300 tabular-nums">
                           {index + 1}
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="px-6 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-[10px] uppercase shrink-0">
-                              {student.name.charAt(0)}{student.lastName.charAt(0)}
+                            <div className="w-8 h-8 rounded bg-slate-100 text-slate-600 flex items-center justify-center font-black text-[10px] uppercase shadow-sm">
+                              {student.lastName.charAt(0)}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate leading-tight">
+                              <p className="text-[10px] font-black text-slate-900 tracking-tight uppercase leading-none">
                                 {student.lastName} {student.name}
                               </p>
+                              <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5 tracking-tighter">Matrícula: {student.id.substring(0, 8)}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="px-6 py-3">
                           <div className="flex items-center justify-center">
-                            <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-xl w-fit">
+                            <div className="flex items-center gap-1 p-1 bg-slate-50 border border-slate-200 rounded-md w-fit shadow-inner">
                               <button
                                 onClick={() => handleAttendanceToggle(student.id, 'Asistió')}
                                 className={cn(
-                                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 border border-transparent",
+                                  "px-3 py-1 rounded text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 border border-transparent",
                                   att === 'Asistió' 
-                                    ? "bg-emerald-600 text-white border-emerald-500 shadow-sm" 
-                                    : "text-slate-500 hover:bg-white"
+                                    ? "bg-slate-900 text-white shadow-sm" 
+                                    : "text-slate-400 hover:text-slate-600"
                                 )}
                               >
-                                <Check size={12} /> <span className="hidden sm:inline">Asistió</span>
+                                <Check size={10} /> <span className="hidden sm:inline">Asistió</span>
                               </button>
                               <button
                                 onClick={() => handleAttendanceToggle(student.id, 'Falta')}
                                 className={cn(
-                                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 border border-transparent",
+                                  "px-3 py-1 rounded text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 border border-transparent",
                                   att === 'Falta' 
-                                    ? "bg-red-600 text-white border-red-500 shadow-sm" 
-                                    : "text-slate-500 hover:bg-white"
+                                    ? "bg-rose-600 text-white shadow-sm" 
+                                    : "text-slate-400 hover:text-slate-600"
                                 )}
                               >
-                                <UserX size={12} /> <span className="hidden sm:inline">Falta</span>
+                                <UserX size={10} /> <span className="hidden sm:inline">Falta</span>
                               </button>
                               <button
                                 onClick={() => handleAttendanceToggle(student.id, 'Retardo')}
                                 className={cn(
-                                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 border border-transparent",
+                                  "px-3 py-1 rounded text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 border border-transparent",
                                   att === 'Retardo' 
-                                    ? "bg-amber-500 text-white border-amber-400 shadow-sm" 
-                                    : "text-slate-500 hover:bg-white"
+                                    ? "bg-amber-500 text-white shadow-sm" 
+                                    : "text-slate-400 hover:text-slate-600"
                                 )}
                               >
-                                <ClockIcon size={12} /> <span className="hidden sm:inline">Retardo</span>
+                                <ClockIcon size={10} /> <span className="hidden sm:inline">Retardo</span>
                               </button>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-2 hidden md:table-cell">
-                          <span className="text-[10px] font-mono text-slate-400 uppercase">{student.curp || '-'}</span>
+                        <td className="px-6 py-3 hidden md:table-cell text-right pr-12">
+                          <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tabular-nums tracking-widest italic">{student.curp || 'S/N'}</span>
                         </td>
                       </tr>
                     );
@@ -642,9 +699,9 @@ export default function TeacherPortal() {
             </div>
 
             {filteredStudents.length === 0 && (
-              <div className="py-12 text-center bg-slate-50/50">
-                <Users className="mx-auto text-slate-300 mb-2" size={32} />
-                <p className="text-slate-500 text-xs font-medium tracking-tight">No se encontraron alumnos.</p>
+              <div className="py-20 text-center bg-slate-50/20 italic">
+                <Users className="mx-auto text-slate-200 mb-2 opacity-30" size={32} />
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Sin registros encontrados</p>
               </div>
             )}
           </div>

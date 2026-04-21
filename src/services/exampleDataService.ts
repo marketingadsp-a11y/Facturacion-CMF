@@ -168,17 +168,15 @@ export const loadExampleData = async () => {
     }
 
     // 7. Create Reception Visits
-    const visitTypes: ('Alumno' | 'Padre' | 'Visitante')[] = ['Alumno', 'Padre', 'Visitante'];
-    const reasons: ('Inscripción' | 'Pago' | 'Información' | 'Otro')[] = ['Inscripción', 'Pago', 'Información', 'Otro'];
+    const reasons: string[] = ['Inscripción', 'Pago', 'Información', 'Otro'];
     for (let i = 0; i < 15; i++) {
       const visitRef = doc(collection(db, 'reception_visits'));
       const visit: any = {
         name: firstNames[Math.floor(Math.random() * firstNames.length)] + ' ' + lastNames[Math.floor(Math.random() * lastNames.length)],
-        type: visitTypes[Math.floor(Math.random() * visitTypes.length)],
+        area: 'General',
         reason: reasons[Math.floor(Math.random() * reasons.length)],
-        notes: 'Visita de demostración cargada por el sistema.',
-        checkInTime: Timestamp.fromDate(new Date(Date.now() - Math.random() * 86400000)), // Within last 24h
-        status: i < 10 ? 'Atendido' : 'Pendiente'
+        status: i < 10 ? 'Atendido' : 'Pendiente',
+        checkInTime: Timestamp.fromDate(new Date(Date.now() - Math.random() * 86400000)) // Within last 24h
       };
       
       if (i < 10) {

@@ -1,17 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
   body {
-    @apply font-sans text-slate-900 antialiased bg-slate-50;
+    @apply font-sans text-slate-900 antialiased bg-[#F8FAFC] selection:bg-slate-950 selection:text-white;
   }
   
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display;
+    @apply font-display tracking-tight leading-tight uppercase font-black;
+  }
+}
+
+@layer components {
+  .compact-card {
+    @apply bg-white border border-slate-200 rounded-md shadow-sm overflow-hidden;
+  }
+  
+  .side-rail {
+    @apply border-r border-slate-200 flex flex-col items-center py-4 gap-4;
+  }
+  
+  .mono-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.2em] opacity-60 font-black;
+  }
+
+  .tech-button {
+    @apply px-4 py-2 bg-slate-950 text-white rounded-md text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-slate-900 active:scale-95 transition-all;
   }
 }

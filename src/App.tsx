@@ -26,7 +26,18 @@ import {
   ChevronRight,
   Wallet,
   Receipt,
-  ClipboardList
+  ClipboardList,
+  Activity,
+  UserRound,
+  Users2,
+  Banknote,
+  BellRing,
+  FileBadge,
+  Presentation,
+  TrendingDown,
+  SlidersHorizontal,
+  ScrollText,
+  Heart
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,6 +56,7 @@ import EnrollmentForm from './pages/EnrollmentForm';
 import TeacherPortal from './pages/TeacherPortal';
 import Reception from './pages/Reception';
 import PrintBoleta from './pages/PrintBoleta';
+import PublicVisitRegistration from './pages/PublicVisitRegistration';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
@@ -108,18 +120,18 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const navItems = isParent ? [
     { name: 'Mis Hijos', path: '/', icon: GraduationCap, section: 'dashboard', action: 'view' },
-    { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
-    { name: 'Datos Fiscales', path: '/?tab=billing', icon: CreditCard, section: 'dashboard', action: 'view' },
+    { name: 'Facturas', path: '/?tab=facturas', icon: ScrollText, section: 'dashboard', action: 'view' },
+    { name: 'Datos Fiscales', path: '/?tab=billing', icon: ShieldAlert, section: 'dashboard', action: 'view' },
   ] : [
-    { name: 'Panel', path: '/', icon: LayoutDashboard, section: 'dashboard', action: 'view' },
-    { name: 'Alumnos', path: '/alumnos', icon: GraduationCap, section: 'students', action: 'view' },
-    { name: 'Padres', path: '/padres', icon: Users, section: 'settings', action: 'manageUsers' },
-    { name: 'Pagos', path: '/pagos', icon: Wallet, section: 'payments', action: 'view' },
-    { name: 'Recepción', path: '/recepcion', icon: ClipboardList, section: 'reception', action: 'view' },
-    { name: 'Control Escolar', path: '/control-escolar', icon: FileText, section: 'controlEscolar', action: 'view' },
-    { name: 'Docente', path: '/docentes', icon: ClipboardList, section: 'grading', action: 'view' },
-    { name: 'Gastos', path: '/gastos', icon: Receipt, section: 'expenses', action: 'view' },
-    { name: 'Ajustes', path: '/ajustes', icon: SettingsIcon, section: 'settings', action: 'view' },
+    { name: 'Panel', path: '/', icon: Activity, section: 'dashboard', action: 'view' },
+    { name: 'Alumnos', path: '/alumnos', icon: UserRound, section: 'students', action: 'view' },
+    { name: 'Padres', path: '/padres', icon: Heart, section: 'parents', action: 'view' },
+    { name: 'Pagos', path: '/pagos', icon: Banknote, section: 'payments', action: 'view' },
+    { name: 'Recepción', path: '/recepcion', icon: BellRing, section: 'reception', action: 'view' },
+    { name: 'Control Escolar', path: '/control-escolar', icon: FileBadge, section: 'controlEscolar', action: 'view' },
+    { name: 'Docente', path: '/docentes', icon: Presentation, section: 'grading', action: 'view' },
+    { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
+    { name: 'Ajustes', path: '/ajustes', icon: SlidersHorizontal, section: 'settings', action: 'view' },
   ];
 
   const handleLogout = () => auth.signOut();
@@ -155,10 +167,10 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden">
       {/* Parent Bottom Navigation Bar */}
       {isParent && (
-        <header className="bg-white/90 backdrop-blur-md border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 px-4 py-4 min-h-[80px] shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+        <header className="bg-white/90 backdrop-blur-md border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 px-4 py-2 min-h-[64px] shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
                 {logoUrl ? (
                   <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
                 ) : (
@@ -172,42 +184,42 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
               </span>
             </div>
 
-            <nav className="flex items-center gap-2 bg-slate-100/50 p-1.5 rounded-2xl">
+            <nav className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-lg">
               {navItems.map((item) => (
                 <Link
                   key={item.path}
-                  to={item.path}
+                   to={item.path}
                   className={cn(
-                    "flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-4 sm:px-6 py-3 rounded-xl text-base font-black transition-all duration-300",
+                    "flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-md text-xs font-black transition-all duration-300",
                     (location.pathname === item.path && !location.search) || (item.path.includes('tab=') && location.search.includes(item.path.split('=')[1]))
-                      ? "bg-white text-blue-600 shadow-md scale-105"
+                      ? "bg-white text-blue-600 shadow-sm scale-105"
                       : "text-slate-500 hover:text-slate-800 hover:bg-white/80"
                   )}
                 >
-                  <item.icon size={24} strokeWidth={2.5} />
-                  <span className="text-[10px] sm:text-sm">{item.name}</span>
+                  <item.icon size={20} strokeWidth={2.5} />
+                  <span className="text-[10px] sm:text-xs">{item.name}</span>
                 </Link>
               ))}
             </nav>
 
-            <div className="flex items-center gap-4">
-              <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-sm">
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-100">
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">
                   {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-sm font-black text-slate-900 leading-none truncate max-w-[120px]">
+                  <span className="text-xs font-black text-slate-900 leading-none truncate max-w-[100px]">
                     {userProfile?.name?.split(' ')[0] || user?.email?.split('@')[0]}
                   </span>
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Padre</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Padre</span>
                 </div>
               </div>
               <button
                 onClick={handleLogout}
-                className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                 title="Cerrar Sesión"
               >
-                <LogOut size={24} />
+                <LogOut size={20} />
               </button>
             </div>
           </div>
@@ -219,68 +231,58 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
         {!isParent && (
           <aside className={cn(
             "bg-white border-r border-slate-200 flex flex-col transition-all duration-300 hidden md:flex relative",
-            isSidebarCollapsed ? "w-20" : "w-64"
+            isSidebarCollapsed ? "w-[72px]" : "w-56"
           )}>
             <div className={cn(
-              "p-6 flex items-center border-b border-slate-100",
-              isSidebarCollapsed ? "justify-center" : "gap-3"
+              "h-16 flex items-center border-b border-slate-100 px-4",
+              isSidebarCollapsed ? "justify-center" : "justify-between"
             )}>
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm shrink-0">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
-                    <GraduationCap size={20} />
-                  </div>
-                )}
-              </div>
-              {!isSidebarCollapsed && (
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="overflow-hidden"
-                >
-                  <h1 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[140px]">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="w-8 h-8 rounded-lg bg-slate-950 flex items-center justify-center text-white shrink-0 shadow-sm border border-slate-800">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                  ) : (
+                    <GraduationCap size={16} strokeWidth={2.5} />
+                  )}
+                </div>
+                {!isSidebarCollapsed && (
+                  <h1 className="font-black text-slate-900 text-[11px] uppercase tracking-tighter truncate">
                     {schoolName}
                   </h1>
-                </motion.div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Toggle Button */}
             <button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="absolute -right-3 top-20 bg-white border border-slate-200 rounded-full p-1 shadow-sm text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all z-10"
+              className="absolute -right-3 top-20 bg-white border border-slate-200 rounded-full p-1 shadow-sm text-slate-400 hover:text-slate-900 hover:border-slate-300 transition-all z-10"
             >
-              {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              {isSidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
             </button>
 
-            <nav className={cn("flex-1 p-4 space-y-1", isSidebarCollapsed ? "flex flex-col items-center" : "")}>
+            <nav className={cn("flex-1 px-3 py-4 space-y-1", isSidebarCollapsed ? "flex flex-col items-center" : "")}>
               {navItems.filter(item => hasPermission(item.section as any, item.action)).map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex items-center rounded-xl text-sm font-medium transition-all duration-200 relative group",
-                    isSidebarCollapsed ? "justify-center w-12 h-12 p-0" : "gap-3 px-4 py-3 w-full",
+                    "flex items-center rounded-md transition-all duration-200 relative group",
+                    isSidebarCollapsed ? "justify-center w-10 h-10 p-0" : "gap-3 px-3 py-2 w-full",
                     location.pathname === item.path
-                      ? "bg-blue-50 text-blue-600 shadow-sm"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   )}
                 >
-                  <item.icon size={isSidebarCollapsed ? 24 : 18} className="shrink-0" />
+                  <item.icon size={isSidebarCollapsed ? 20 : 18} strokeWidth={2.5} className="shrink-0" />
                   {!isSidebarCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                    >
+                    <span className="text-xs font-bold tracking-tight">
                       {item.name}
-                    </motion.span>
+                    </span>
                   )}
                   
-                  {/* Tooltip for collapsed state */}
                   {isSidebarCollapsed && (
-                    <div className="absolute left-full ml-4 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                    <div className="absolute left-full ml-3 px-2 py-1.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 shadow-xl">
                       {item.name}
                     </div>
                   )}
@@ -289,33 +291,33 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
             </nav>
 
             <div className={cn("p-4 border-t border-slate-100", isSidebarCollapsed ? "flex flex-col items-center" : "")}>
-              <div className={cn("flex items-center mb-2", isSidebarCollapsed ? "justify-center" : "gap-3 px-4 py-3")}>
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0">
+              <div className={cn("flex items-center mb-1", isSidebarCollapsed ? "justify-center" : "gap-3 px-3 py-2")}>
+                <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-black text-[10px] shrink-0">
                   {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
                 </div>
                 {!isSidebarCollapsed && (
-                  <motion.div 
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex-1 min-w-0"
-                  >
-                    <p className="text-xs font-medium text-slate-900 truncate">{userProfile?.name || user?.email}</p>
-                    <p className="text-[10px] text-slate-500">{userProfile?.role || 'Sin Rol'}</p>
-                  </motion.div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black text-slate-900 leading-none truncate mb-1">
+                      {userProfile?.name?.split(' ')[0] || user?.email?.split('@')[0]}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 leading-none uppercase tracking-widest truncate">
+                      {userProfile?.role}
+                    </p>
+                  </div>
                 )}
               </div>
               <button
                 onClick={handleLogout}
                 className={cn(
-                  "flex items-center rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200 group relative",
-                  isSidebarCollapsed ? "justify-center w-12 h-12 p-0" : "gap-3 px-4 py-3 w-full"
+                  "flex items-center rounded-lg text-xs font-bold text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all duration-200 group relative",
+                  isSidebarCollapsed ? "justify-center w-10 h-10 p-0" : "gap-3 px-3 py-2 w-full ml-0.5"
                 )}
               >
-                <LogOut size={isSidebarCollapsed ? 24 : 18} className="shrink-0" />
-                {!isSidebarCollapsed && <span>Cerrar Sesión</span>}
+                <LogOut size={isSidebarCollapsed ? 18 : 14} className="shrink-0" />
+                {!isSidebarCollapsed && <span>Salir</span>}
                 
                 {isSidebarCollapsed && (
-                  <div className="absolute left-full ml-4 px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                  <div className="absolute left-full ml-3 px-2 py-1.5 bg-red-600 text-white text-[9px] font-bold rounded-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                     Cerrar Sesión
                   </div>
                 )}
@@ -356,8 +358,8 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
           {/* Main Content */}
           <main className={cn(
-            "flex-1 overflow-y-auto p-4 md:p-8",
-            isParent ? "max-w-7xl mx-auto w-full pb-24" : ""
+            "flex-1 overflow-y-auto p-4 md:p-6",
+            isParent ? "max-w-7xl mx-auto w-full pb-20" : ""
           )}>
             {children}
           </main>
@@ -488,6 +490,7 @@ const AppContent = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/visita" element={<PublicVisitRegistration />} />
       <Route path={`/${enrollmentSlug}`} element={<EnrollmentForm />} />
       {/* Compatibility routes */}
       {enrollmentSlug !== 'inscripcion' && <Route path="/inscripcion" element={<EnrollmentForm />} />}

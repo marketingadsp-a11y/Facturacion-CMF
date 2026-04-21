@@ -95,6 +95,10 @@ export interface AppPermissions {
     view: boolean;
     manage: boolean;
   };
+  parents: {
+    view: boolean;
+    manage: boolean;
+  };
   controlEscolar: {
     view: boolean;
     manage: boolean;
@@ -260,6 +264,11 @@ export interface AppSettings {
   academicLevels?: string[]; // e.g., ["Preescolar", "Primaria"]
   academicGrades?: string[];  // e.g., ["1ro", "2do"]
   academicGroups?: string[];  // e.g., ["A", "B"]
+  receptionReasons?: string[];  // e.g., ["Inscripción", "Información", "Pago"]
+  receptionAreas?: string[];    // e.g., ["Dirección", "Administración", "Control Escolar"]
+  receptionSuccessTitle?: string;
+  receptionSuccessMessage?: string;
+  developerAttribution?: string;
 }
 
 export type Bimestre = 1 | 2 | 3 | 4 | 5;
@@ -307,9 +316,8 @@ export interface BimestreLock {
 export interface ReceptionVisit {
   id: string;
   name: string;
-  type: 'Alumno' | 'Padre' | 'Visitante';
-  reason: 'Inscripción' | 'Pago' | 'Información' | 'Otro';
-  notes?: string;
+  area?: string; // Dynamic from settings
+  reason: string; // Dynamic from settings
   checkInTime: Timestamp;
   status: 'Pendiente' | 'Atendido';
   attendedAt?: Timestamp;
