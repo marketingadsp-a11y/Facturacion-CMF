@@ -154,59 +154,59 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden">
       {/* Parent Bottom Navigation Bar */}
       {isParent && (
-        <header className="bg-white/80 backdrop-blur-md border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 px-6 py-3">
+        <header className="bg-white/90 backdrop-blur-md border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 px-4 py-4 min-h-[80px] shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
                 {logoUrl ? (
                   <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
-                    <GraduationCap size={20} />
+                    <GraduationCap size={24} />
                   </div>
                 )}
               </div>
-              <span className="font-black text-slate-900 text-lg tracking-tight hidden sm:block">
+              <span className="font-black text-slate-900 text-xl tracking-tight hidden sm:block">
                 {schoolName}
               </span>
             </div>
 
-            <nav className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-2xl">
+            <nav className="flex items-center gap-2 bg-slate-100/50 p-1.5 rounded-2xl">
               {navItems.map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-300",
+                    "flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-4 sm:px-6 py-3 rounded-xl text-base font-black transition-all duration-300",
                     (location.pathname === item.path && !location.search) || (item.path.includes('tab=') && location.search.includes(item.path.split('=')[1]))
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+                      ? "bg-white text-blue-600 shadow-md scale-105"
+                      : "text-slate-500 hover:text-slate-800 hover:bg-white/80"
                   )}
                 >
-                  <item.icon size={18} />
-                  <span className="hidden md:block">{item.name}</span>
+                  <item.icon size={24} strokeWidth={2.5} />
+                  <span className="text-[10px] sm:text-sm">{item.name}</span>
                 </Link>
               ))}
             </nav>
 
             <div className="flex items-center gap-4">
-              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-[10px]">
+              <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-sm">
                   {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-slate-900 leading-none truncate max-w-[100px]">
+                  <span className="text-sm font-black text-slate-900 leading-none truncate max-w-[120px]">
                     {userProfile?.name?.split(' ')[0] || user?.email?.split('@')[0]}
                   </span>
-                  <span className="text-[8px] text-slate-500 font-bold uppercase tracking-tighter">Padre</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Padre</span>
                 </div>
               </div>
               <button
                 onClick={handleLogout}
-                className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                 title="Cerrar Sesión"
               >
-                <LogOut size={20} />
+                <LogOut size={24} />
               </button>
             </div>
           </div>

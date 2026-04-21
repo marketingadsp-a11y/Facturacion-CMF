@@ -11,6 +11,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import EnrollmentPDF from '../components/EnrollmentPDF';
 import { calculateStudentDebts } from '../lib/paymentUtils';
+import { createRoot } from 'react-dom/client';
+import ReportCardPrint from '../components/ReportCardPrint';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
@@ -169,6 +171,61 @@ export default function AcademicControl() {
       alert('Error al actualizar alumno.');
     } finally {
       setIsSavingStudent(false);
+    }
+  };
+
+  const handlePrintBoleta = (student: Student) => {
+    const studentGrades = grades.filter(g => g.studentId === student.id);
+    const currentCycle = cycles.find(c => c.id === settings?.currentCycleId);
+    
+    if (!currentCycle || !settings) {
+      alert("Configuración de ciclo escolar incompleta.");
+      return;
+    }
+
+    // Open a new window
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Por favor habilita las ventanas emergentes (pop-ups) para imprimir la boleta.");
+      return;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Boleta ${student.lastName} ${student.name}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+              @media print {
+                  @page { margin: 10mm; }
+              }
+          </style>
+        </head>
+        <body>
+          <div id="print-root"></div>
+        </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+
+    const container = printWindow.document.getElementById('print-root');
+    if (container) {
+      const root = createRoot(container);
+      root.render(
+        <ReportCardPrint 
+          student={student} 
+          grades={studentGrades} 
+          settings={settings} 
+          cycle={currentCycle} 
+        />
+      );
+      
+      // Wait for React to render and Tailwind to load before printing
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 1000);
     }
   };
 
@@ -538,13 +595,22 @@ export default function AcademicControl() {
                           </td>
                           
                           <td className="px-4 py-3 text-right border-l border-slate-50">
-                            <button
-                              onClick={() => handleEditStudent(student)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                              title="Editar Alumno"
-                            >
-                              <Edit2 size={14} />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handlePrintBoleta(student)}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                title="Imprimir Boleta"
+                              >
+                                <Printer size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleEditStudent(student)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                title="Editar Alumno"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
