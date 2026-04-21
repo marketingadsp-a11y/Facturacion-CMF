@@ -269,6 +269,8 @@ export interface AppSettings {
   receptionSuccessTitle?: string;
   receptionSuccessMessage?: string;
   developerAttribution?: string;
+  registrationInstructions?: string;
+  pdfFooter?: string;
 }
 
 export type Bimestre = 1 | 2 | 3 | 4 | 5;

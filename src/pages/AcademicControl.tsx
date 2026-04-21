@@ -588,11 +588,18 @@ export default function AcademicControl() {
               </div>
 
               <div className="p-8 space-y-8 text-center">
-                <div className="space-y-2">
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Alumno Identificado</p>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase leading-none italic">
-                    {codeModalStudent.lastName}, {codeModalStudent.name}
-                  </h3>
+                <div className="space-y-4">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Alumnos Identificados</p>
+                  <div className="space-y-2">
+                    {students
+                      .filter(s => s.registrationCode === codeModalStudent.registrationCode)
+                      .map((sibling, idx) => (
+                        <h3 key={idx} className="text-lg font-black text-slate-900 tracking-tight uppercase leading-none italic">
+                          {sibling.lastName}, {sibling.name}
+                        </h3>
+                      ))
+                    }
+                  </div>
                 </div>
 
                 <div className="bg-slate-950 p-8 rounded-2xl shadow-inner border border-slate-800 relative group overflow-hidden">
@@ -630,9 +637,14 @@ export default function AcademicControl() {
                   <PDFDownloadLink
                     document={
                       <RegistrationCodePDF 
-                        studentName={`${codeModalStudent.lastName}, ${codeModalStudent.name}`} 
+                        studentNames={students
+                          .filter(s => s.registrationCode === codeModalStudent.registrationCode)
+                          .map(s => `${s.lastName}, ${s.name}`)
+                        } 
                         registrationCode={codeModalStudent.registrationCode || ''} 
                         schoolName={settings?.schoolName}
+                        registrationInstructions={settings?.registrationInstructions}
+                        pdfFooter={settings?.pdfFooter}
                       />
                     }
                     fileName={`REG_${codeModalStudent.lastName}_${codeModalStudent.registrationCode}.pdf`}

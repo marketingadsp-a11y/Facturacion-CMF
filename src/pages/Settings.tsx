@@ -61,7 +61,9 @@ export default function Settings() {
     academicGrades: ['1ro', '2do', '3ro', '4to', '5to', '6to'],
     academicGroups: ['A', 'B', 'C'],
     receptionReasons: ['Información', 'Inscripción', 'Pago', 'Otro'],
-    receptionAreas: ['Dirección', 'Administración', 'Control Escolar', 'Finanzas']
+    receptionAreas: ['Dirección', 'Administración', 'Control Escolar', 'Finanzas'],
+    registrationInstructions: '1. Ingrese a la plataforma oficial de padres de familia.\n2. Seleccione la opción "Registrarse" o "Vincular Alumno".\n3. Ingrese su correo electrónico personal y cree una contraseña segura.\n4. Cuando se le solicite, ingrese el CÓDIGO DE REGISTRO que aparece arriba.\n5. Una vez validado, podrá consultar calificaciones, estados de cuenta y avisos institucionales.',
+    pdfFooter: 'GENERADO POR EL SISTEMA DE GESTIÓN ESCOLAR'
   });
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -420,6 +422,37 @@ export default function Settings() {
                   </div>
                 </div>
               )}
+
+              {/* PDF & Registration Config */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <FileText size={20} className="text-indigo-600" />
+                  Configuración de PDF y Registro de Padres
+                </h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Instrucciones de Registro (Una por línea)</label>
+                    <textarea
+                      rows={5}
+                      value={settings.registrationInstructions || ''}
+                      onChange={(e) => setSettings({...settings, registrationInstructions: e.target.value})}
+                      placeholder="Escriba los pasos para el registro..."
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm leading-relaxed"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Pie de Página en PDF (Footer)</label>
+                    <input
+                      value={settings.pdfFooter || ''}
+                      onChange={(e) => setSettings({...settings, pdfFooter: e.target.value})}
+                      placeholder="Ej: GENERADO POR EL SISTEMA DE GESTIÓN ESCOLAR"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

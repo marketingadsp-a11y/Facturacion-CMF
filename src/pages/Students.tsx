@@ -4,12 +4,15 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimest
 import { db } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { calculateStudentDebts } from '../lib/paymentUtils';
+import { motion, AnimatePresence } from 'motion/react';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import RegistrationCodePDF from '../components/RegistrationCodePDF';
 
 export default function Students() {
   const navigate = useNavigate();
@@ -28,6 +31,8 @@ export default function Students() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [codeModalStudent, setCodeModalStudent] = useState<Student | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -357,7 +362,12 @@ export default function Students() {
                         {student.group || '-'}
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-emerald-600 whitespace-nowrap">
-                        {student.registrationCode || '-'}
+                        <button
+                          onClick={() => setCodeModalStudent(student)}
+                          className="hover:text-indigo-600 transition-colors uppercase tracking-tight"
+                        >
+                          {student.registrationCode || '-'}
+                        </button>
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500 whitespace-nowrap">
                         {student.parentEmail || '-'}
@@ -689,6 +699,123 @@ export default function Students() {
           </div>
         </div>
       )}
+
+      {/* Code Modal */}
+      <AnimatePresence>
+        {codeModalStudent && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-200"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-white italic font-black shadow-lg">
+                    ID
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 tracking-tighter uppercase italic">Clave de Acceso</h2>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mt-0.5">Familia / Vinculación Directa</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCodeModalStudent(null)}
+                  className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-all text-slate-400 hover:text-slate-900 shadow-sm"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-8 text-center">
+                <div className="space-y-4">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Alumnos Identificados</p>
+                  <div className="space-y-2">
+                    {students
+                      .filter(s => s.registrationCode === codeModalStudent.registrationCode)
+                      .map((sibling, idx) => (
+                        <h3 key={idx} className="text-lg font-black text-slate-900 tracking-tight uppercase leading-none italic">
+                          {sibling.lastName}, {sibling.name}
+                        </h3>
+                      ))
+                    }
+                  </div>
+                </div>
+
+                <div className="bg-slate-950 p-8 rounded-2xl shadow-inner border border-slate-800 relative group overflow-hidden">
+                  <div className="absolute top-0 right-0 p-2 opacity-5">
+                    <UserRound size={80} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4">Registro Unico</p>
+                  <p className="text-5xl font-black text-white tracking-[0.2em] font-mono shadow-sm">
+                    {codeModalStudent.registrationCode}
+                  </p>
+                  <div className="mt-6 flex justify-center">
+                     <span className="text-[8px] font-black text-indigo-400 border border-indigo-900 px-2 py-1 rounded bg-indigo-950/50 uppercase tracking-widest animate-pulse">Token Activo</span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-6 rounded-xl border border-dashed border-slate-200 text-left space-y-3">
+                  <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <ShieldAlert size={14} className="text-indigo-600" />
+                    Protocolo de Acceso
+                  </p>
+                  <ul className="space-y-2">
+                    <li className="flex gap-2 text-[10px] text-slate-500 leading-tight">
+                      <span className="font-black text-slate-900 italic">01.</span> Acceder al portal de padres de familia institucional.
+                    </li>
+                    <li className="flex gap-2 text-[10px] text-slate-500 leading-tight">
+                      <span className="font-black text-slate-900 italic">02.</span> Utilizar el ID superior para validar la vinculación.
+                    </li>
+                    <li className="flex gap-2 text-[10px] text-slate-500 leading-tight">
+                      <span className="font-black text-slate-900 italic">03.</span> Completar el perfil con datos de contacto verificados.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <PDFDownloadLink
+                    document={
+                      <RegistrationCodePDF 
+                        studentNames={students
+                          .filter(s => s.registrationCode === codeModalStudent.registrationCode)
+                          .map(s => `${s.lastName}, ${s.name}`)
+                        } 
+                        registrationCode={codeModalStudent.registrationCode || ''} 
+                        schoolName={settings?.schoolName}
+                        registrationInstructions={settings?.registrationInstructions}
+                        pdfFooter={settings?.pdfFooter}
+                      />
+                    }
+                    fileName={`REG_${codeModalStudent.lastName}_${codeModalStudent.registrationCode}.pdf`}
+                    className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all active:scale-95"
+                  >
+                    {/* @ts-ignore */}
+                    {({ loading }: any) => (
+                      <>
+                        <Download size={16} />
+                        {loading ? 'Generando...' : 'Descargar PDF'}
+                      </>
+                    )}
+                  </PDFDownloadLink>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(codeModalStudent.registrationCode || '');
+                      setCopySuccess(true);
+                      setTimeout(() => setCopySuccess(false), 2000);
+                    }}
+                    className="w-full h-12 bg-white border border-slate-200 hover:border-slate-950 text-slate-950 rounded-xl flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest transition-all"
+                  >
+                    {copySuccess ? <Check size={16} /> : <Copy size={16} />}
+                    {copySuccess ? 'Copiado' : 'Copiar Clave'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

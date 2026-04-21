@@ -1,20 +1,11 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Font } from '@react-pdf/renderer';
 
-// Register a clean font for the PDF
-Font.register({
-  family: 'Inter',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiA.woff2', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGkyAZ9hiA.woff2', fontWeight: 700 },
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGkyAZ9hiA.woff2', fontWeight: 900 },
-  ],
-});
-
+// Using built-in PDF fonts for maximum reliability
 const styles = StyleSheet.create({
   page: {
     padding: 40,
-    fontFamily: 'Inter',
+    fontFamily: 'Helvetica',
     backgroundColor: '#FFFFFF',
   },
   header: {
@@ -25,17 +16,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 900,
+    fontWeight: 'bold',
     color: '#0F172A',
     textTransform: 'uppercase',
-    letterSpacing: -1,
   },
   subtitle: {
     fontSize: 10,
-    fontWeight: 700,
+    fontWeight: 'bold',
     color: '#64748B',
     textTransform: 'uppercase',
-    letterSpacing: 2,
     marginTop: 4,
   },
   content: {
@@ -52,13 +41,13 @@ const styles = StyleSheet.create({
   },
   studentName: {
     fontSize: 18,
-    fontWeight: 700,
+    fontWeight: 'bold',
     color: '#0F172A',
     textTransform: 'uppercase',
   },
   studentLabel: {
     fontSize: 8,
-    fontWeight: 700,
+    fontWeight: 'bold',
     color: '#64748B',
     textTransform: 'uppercase',
     marginBottom: 4,
@@ -72,24 +61,22 @@ const styles = StyleSheet.create({
   },
   codeLabel: {
     fontSize: 10,
-    fontWeight: 700,
+    fontWeight: 'bold',
     color: '#94A3B8',
     textTransform: 'uppercase',
-    letterSpacing: 3,
     marginBottom: 10,
   },
   code: {
     fontSize: 48,
-    fontWeight: 900,
+    fontWeight: 'bold',
     color: '#FFFFFF',
-    letterSpacing: 5,
   },
   instructions: {
     marginTop: 30,
   },
   instructionTitle: {
     fontSize: 12,
-    fontWeight: 700,
+    fontWeight: 'bold',
     color: '#0F172A',
     textTransform: 'uppercase',
     marginBottom: 10,
@@ -115,61 +102,86 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: '#94A3B8',
     textTransform: 'uppercase',
-    letterSpacing: 1,
   },
 });
 
 interface RegistrationCodePDFProps {
-  studentName: string;
+  studentNames: string[];
   registrationCode: string;
   schoolName?: string;
+  registrationInstructions?: string;
+  pdfFooter?: string;
 }
 
-const RegistrationCodePDF: React.FC<RegistrationCodePDFProps> = ({ studentName, registrationCode, schoolName = 'Portal Escolar' }) => (
-  <Document>
-    <Page size="A4" style={styles.page}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{schoolName}</Text>
-        <Text style={styles.subtitle}>Instrucciones de Acceso para Padres</Text>
-      </View>
+const RegistrationCodePDF: React.FC<RegistrationCodePDFProps> = ({ 
+  studentNames, 
+  registrationCode, 
+  schoolName = 'Portal Escolar',
+  registrationInstructions,
+  pdfFooter
+}) => {
+  const steps = registrationInstructions 
+    ? registrationInstructions.split('\n').filter(step => step.trim() !== '')
+    : [
+        '1. Ingrese a la plataforma oficial de padres de familia.',
+        '2. Seleccione la opción "Registrarse" o "Vincular Alumno".',
+        '3. Ingrese su correo electrónico personal y cree una contraseña segura.',
+        '4. Cuando se le solicite, ingrese el CÓDIGO DE REGISTRO que aparece arriba.',
+        '5. Una vez validado, podrá consultar calificaciones, estados de cuenta y avisos institucionales.'
+      ];
 
-      <View style={styles.content}>
-        <View style={styles.section}>
-          <View style={styles.studentInfo}>
-            <Text style={styles.studentLabel}>Alumno(a):</Text>
-            <Text style={styles.studentName}>{studentName}</Text>
+  const footerLine = pdfFooter 
+    ? `${pdfFooter} • ${new Date().toLocaleDateString()}`
+    : `Generado por el Sistema de Gestión Escolar • ${new Date().toLocaleDateString()}`;
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{schoolName}</Text>
+          <Text style={styles.subtitle}>Instrucciones de Acceso para Padres</Text>
+        </View>
+
+        <View style={styles.content}>
+          <View style={styles.section}>
+            <View style={styles.studentInfo}>
+              <Text style={styles.studentLabel}>Alumnos Identificados:</Text>
+              {studentNames.map((name, index) => (
+                <Text key={index} style={[styles.studentName, { fontSize: studentNames.length > 3 ? 12 : 16, marginBottom: 2 }]}>
+                  • {name}
+                </Text>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.codeSection}>
+            <Text style={styles.codeLabel}>Código de Registro Único</Text>
+            <Text style={styles.code}>{registrationCode}</Text>
+          </View>
+
+          <View style={styles.instructions}>
+            <Text style={styles.instructionTitle}>Pasos para el Registro</Text>
+            {steps.map((step, index) => (
+              <Text key={index} style={styles.step}>{step}</Text>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <View style={{ marginTop: 20, padding: 15, backgroundColor: '#F0F9FF', borderRadius: 8, border: '1pt solid #BAE6FD' }}>
+              <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#0369A1', textTransform: 'uppercase', marginBottom: 5 }}>Nota Importante:</Text>
+              <Text style={{ fontSize: 9, color: '#075985', lineHeight: 1.4 }}>
+                Este código es confidencial y personal. Si tiene problemas para acceder, por favor contacte a la administración escolar.
+              </Text>
+            </View>
           </View>
         </View>
 
-        <View style={styles.codeSection}>
-          <Text style={styles.codeLabel}>Código de Registro Único</Text>
-          <Text style={styles.code}>{registrationCode}</Text>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>{footerLine}</Text>
         </View>
-
-        <View style={styles.instructions}>
-          <Text style={styles.instructionTitle}>Pasos para el Registro</Text>
-          <Text style={styles.step}>1. Ingrese a la plataforma oficial de padres de familia.</Text>
-          <Text style={styles.step}>2. Seleccione la opción "Registrarse" o "Vincular Alumno".</Text>
-          <Text style={styles.step}>3. Ingrese su correo electrónico personal y cree una contraseña segura.</Text>
-          <Text style={styles.step}>4. Cuando se le solicite, ingrese el CÓDIGO DE REGISTRO que aparece arriba.</Text>
-          <Text style={styles.step}>5. Una vez validado, podrá consultar calificaciones, estados de cuenta y avisos institucionales.</Text>
-        </View>
-
-        <View style={styles.section}>
-          <View style={{ marginTop: 20, padding: 15, backgroundColor: '#F0F9FF', borderRadius: 8, border: '1pt solid #BAE6FD' }}>
-            <Text style={{ fontSize: 9, fontWeight: 700, color: '#0369A1', textTransform: 'uppercase', marginBottom: 5 }}>Nota Importante:</Text>
-            <Text style={{ fontSize: 9, color: '#075985', lineHeight: 1.4 }}>
-              Este código es confidencial y personal. Si tiene problemas para acceder, por favor contacte a la administración escolar.
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Generado por el Sistema de Gestión Escolar • {new Date().toLocaleDateString()}</Text>
-      </View>
-    </Page>
-  </Document>
-);
+      </Page>
+    </Document>
+  );
+};
 
 export default RegistrationCodePDF;
