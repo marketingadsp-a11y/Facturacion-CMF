@@ -41,7 +41,7 @@ export const loadExampleData = async () => {
 
     // Update current cycle in settings
     const settingsRef = doc(db, 'settings', 'general');
-    batch.update(settingsRef, { currentCycleId: cycleRef.id });
+    batch.set(settingsRef, { currentCycleId: cycleRef.id }, { merge: true });
 
     // 2. Create Students and related data
     const students: string[] = [];

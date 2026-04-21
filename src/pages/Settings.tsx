@@ -707,7 +707,7 @@ export default function Settings() {
                         window.location.reload();
                       } catch (error) {
                         console.error("Error loading example data:", error);
-                        alert('Error al cargar datos de ejemplo.');
+                        alert('Error al cargar datos: ' + (error.message || 'Desconocido'));
                       } finally {
                         setLoading(false);
                       }

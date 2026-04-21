@@ -53,9 +53,10 @@ service cloud.firestore {
     }
     
     function isSuperAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.email.lower() == "cramonmb@gmail.com" || 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Superadministrador');
+      return isAuthenticated() && (
+        (request.auth.token.email != null && request.auth.token.email.lower() == "cramonmb@gmail.com") || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Superadministrador')
+      );
     }
 
     function getUserData() {
@@ -63,7 +64,7 @@ service cloud.firestore {
     }
 
     function isParent() {
-      return isAuthenticated() && getUserData().role == 'Padre';
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'Padre';
     }
 
     function hasPermission(section, action) {
