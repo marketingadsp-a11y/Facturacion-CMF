@@ -54,11 +54,15 @@ export interface Expense {
   createdAt: Timestamp;
 }
 
-export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre' | 'Control Escolar' | 'Docente';
+export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre' | 'Control Escolar' | 'Docente' | 'Recepción';
 
 export interface AppPermissions {
   dashboard: {
     view: boolean;
+  };
+  reception: {
+    view: boolean;
+    manage: boolean;
   };
   students: {
     view: boolean;
@@ -176,6 +180,10 @@ export interface AppUser {
   assignedLevel?: string;
   assignedGrade?: string;
   assignedGroup?: string;
+  // Granular restrictions for Control Escolar or other roles
+  restrictedLevels?: string[];
+  restrictedGrades?: string[];
+  restrictedGroups?: string[];
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -248,6 +256,9 @@ export interface AppSettings {
   lateFeeType: 'fixed' | 'percentage';
   rolePermissions?: Record<UserRole, AppPermissions>;
   enrollmentSlug?: string;
+  academicLevels?: string[]; // e.g., ["Preescolar", "Primaria"]
+  academicGrades?: string[];  // e.g., ["1ro", "2do"]
+  academicGroups?: string[];  // e.g., ["A", "B"]
 }
 
 export type Bimestre = 1 | 2 | 3 | 4 | 5;
@@ -266,4 +277,39 @@ export interface StudentGrade {
   cleanliness: number;
   updatedAt: Timestamp;
   createdBy: string;
+}
+
+export type AttendanceStatus = 'Asistió' | 'Falta' | 'Retardo' | 'Justificado';
+
+export interface Attendance {
+  id?: string;
+  studentId: string;
+  cycleId: string;
+  date: string; // ISO format YYYY-MM-DD
+  status: AttendanceStatus;
+  updatedAt: Timestamp;
+  createdBy: string;
+}
+
+export interface BimestreLock {
+  id: string; // bimestre_level_grade_group_cycleId
+  bimestre: Bimestre;
+  level: string;
+  grade: string;
+  group: string;
+  cycleId: string;
+  locked: boolean;
+  lockedAt?: Timestamp;
+  lockedBy?: string;
+}
+
+export interface ReceptionVisit {
+  id: string;
+  name: string;
+  type: 'Alumno' | 'Padre' | 'Visitante';
+  reason: 'Inscripción' | 'Pago' | 'Información' | 'Otro';
+  notes?: string;
+  checkInTime: Timestamp;
+  status: 'Pendiente' | 'Atendido';
+  attendedAt?: Timestamp;
 }

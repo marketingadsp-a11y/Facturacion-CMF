@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, onSnapshot } from 'firebase/firestore';
 import { GraduationCap, CheckCircle2, AlertCircle, Send, ArrowRight, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { AppSettings } from '../types';
 
 const SECTIONS = [
   'Bienvenida',
@@ -18,6 +19,14 @@ export default function EnrollmentForm() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+
+  React.useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists()) setSettings(snap.data() as AppSettings);
+    });
+    return unsub;
+  }, []);
 
   const [formData, setFormData] = useState({
     // Alumno
@@ -159,14 +168,25 @@ export default function EnrollmentForm() {
         {/* Header */}
         <div className="text-center mb-12">
           <div className="flex justify-center mb-4">
-            <div className="w-20 h-20 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <GraduationCap size={44} />
+            <div className="w-24 h-24 bg-white text-white rounded-2xl flex items-center justify-center shadow-xl shadow-blue-100/50 border border-slate-100 overflow-hidden relative">
+              {settings?.logoUrl ? (
+                <img 
+                  src={settings.logoUrl} 
+                  alt="Logo" 
+                  className="w-full h-full object-contain p-2"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full bg-blue-600 flex items-center justify-center">
+                  <GraduationCap size={44} />
+                </div>
+              )}
             </div>
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">COLEGIO MÉXICO FRANCISCANO</h1>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Acuerdo J200714016 • CCT 14PJN0300L</p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">{settings?.schoolName || 'COLEGIO MÉXICO FRANCISCANO'}</h1>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Solicitud de Inscripción en Línea</p>
           <div className="inline-block mt-4 px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-xs font-black uppercase tracking-wider border border-blue-100">
-            Solicitud de Inscripción 2025-2026
+            Ciclo Escolar 2025-2026
           </div>
         </div>
 
@@ -263,18 +283,18 @@ export default function EnrollmentForm() {
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Grado al que se inscribe</label>
                       <select name="grade" value={formData.grade} onChange={handleChange} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold">
                         <option value="">Selecciona grado</option>
-                        <option value="Primero">Primero</option>
-                        <option value="Segundo">Segundo</option>
-                        <option value="Tercero">Tercero</option>
+                        {(settings?.academicGrades || ['Primero', 'Segundo', 'Tercero', 'Cuarto', 'Quinto', 'Sexto']).map(grade => (
+                          <option key={grade} value={grade}>{grade}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Nivel</label>
                       <select name="level" value={formData.level} onChange={handleChange} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold">
                         <option value="">Selecciona nivel</option>
-                        <option value="Preescolar">Preescolar</option>
-                        <option value="Primaria">Primaria</option>
-                        <option value="Secundaria">Secundaria</option>
+                        {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria']).map(level => (
+                          <option key={level} value={level}>{level}</option>
+                        ))}
                       </select>
                     </div>
                   </div>

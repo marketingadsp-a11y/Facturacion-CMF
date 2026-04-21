@@ -36,7 +36,7 @@ export function calculateStudentDebts(
   const currentMonth = getMonth(now);
   const currentYear = getYear(now);
   
-  const studentPayments = payments.filter(p => p.studentId === student.id && p.status === 'Pagado');
+  const studentPayments = payments.filter(p => p.studentId === student.id && p.status?.toLowerCase() === 'pagado');
   const debts: Debt[] = [];
 
   // We need to determine which years the cycle covers.
@@ -66,10 +66,14 @@ export function calculateStudentDebts(
       // Check if there's a payment for this month
       // We check the payment date or concept. 
       // Checking concept is safer if payments are made in advance or late.
-      const conceptToFind = `Colegiatura ${MONTH_NAMES[monthIndex]} ${year}`;
-      const hasPayment = studentPayments.some(p => 
-        p.concept.includes(MONTH_NAMES[monthIndex]) && p.concept.includes(year.toString())
-      );
+      const conceptToFind = `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year}`;
+      const hasPayment = studentPayments.some(p => {
+        const pDate = p.date.toDate();
+        const dateMatches = pDate.getMonth() === monthIndex && pDate.getFullYear() === year;
+        const conceptMatches = p.concept.toUpperCase().includes(MONTH_NAMES[monthIndex].toUpperCase()) && 
+                               p.concept.includes(year.toString());
+        return dateMatches || conceptMatches;
+      });
 
       if (!hasPayment) {
         const isCurrentMonth = year === currentYear && monthIndex === currentMonth;

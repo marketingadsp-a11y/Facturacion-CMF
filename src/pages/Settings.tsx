@@ -4,7 +4,7 @@ import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement } from '../types';
+import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement, BimestreLock } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   Settings as SettingsIcon, 
@@ -20,6 +20,7 @@ import {
   DollarSign,
   Users,
   Lock,
+  Unlock,
   Edit2,
   Trash2,
   Check,
@@ -29,11 +30,14 @@ import {
   Bell,
   AlertTriangle,
   AlertCircle,
-  FileText
+  FileText,
+  GraduationCap,
+  MapPin
 } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
 import ChargesCatalog from '../components/settings/ChargesCatalog';
+import { loadExampleData } from '../services/exampleDataService';
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -52,13 +56,17 @@ export default function Settings() {
     paymentMethods: ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'],
     dueDay: 10,
     lateFeeAmount: 0,
-    lateFeeType: 'fixed'
+    lateFeeType: 'fixed',
+    academicLevels: ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'],
+    academicGrades: ['1ro', '2do', '3ro', '4to', '5to', '6to'],
+    academicGroups: ['A', 'B', 'C']
   });
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'danger'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'danger'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [gradeLocks, setGradeLocks] = useState<BimestreLock[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
 
@@ -67,6 +75,7 @@ export default function Settings() {
   const DEFAULT_PERMISSIONS: Record<UserRole, AppPermissions> = {
     Superadministrador: {
       dashboard: { view: true },
+      reception: { view: true, manage: true },
       students: { view: true, create: true, edit: true, delete: true, viewHistory: true },
       payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: true, delete: true },
@@ -77,6 +86,7 @@ export default function Settings() {
     },
     Administrador: {
       dashboard: { view: true },
+      reception: { view: true, manage: true },
       students: { view: true, create: true, edit: true, delete: false, viewHistory: true },
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: true, delete: true },
@@ -87,6 +97,7 @@ export default function Settings() {
     },
     Visor: {
       dashboard: { view: true },
+      reception: { view: true, manage: false },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
       expenses: { view: true, create: false, edit: false, delete: false },
@@ -97,6 +108,7 @@ export default function Settings() {
     },
     Cajero: {
       dashboard: { view: true },
+      reception: { view: true, manage: false },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
       payments: { view: true, create: true, cancel: false, invoice: true, downloadInvoice: true },
       expenses: { view: true, create: true, edit: false, delete: false },
@@ -107,6 +119,7 @@ export default function Settings() {
     },
     Padre: {
       dashboard: { view: true },
+      reception: { view: false, manage: false },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: true },
       payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: true },
       expenses: { view: false, create: false, edit: false, delete: false },
@@ -117,6 +130,7 @@ export default function Settings() {
     },
     'Control Escolar': {
       dashboard: { view: true },
+      reception: { view: true, manage: true },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
       payments: { view: false, create: false, cancel: false, invoice: false, downloadInvoice: false },
       expenses: { view: false, create: false, edit: false, delete: false },
@@ -127,6 +141,7 @@ export default function Settings() {
     },
     Docente: {
       dashboard: { view: true },
+      reception: { view: false, manage: false },
       students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
       payments: { view: false, create: false, cancel: false, invoice: false, downloadInvoice: false },
       expenses: { view: false, create: false, edit: false, delete: false },
@@ -134,6 +149,17 @@ export default function Settings() {
       announcements: { view: true, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: true, manage: true }
+    },
+    'Recepción': {
+      dashboard: { view: true },
+      reception: { view: true, manage: true },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
+      payments: { view: true, create: false, cancel: false, invoice: false, downloadInvoice: false },
+      expenses: { view: false, create: false, edit: false, delete: false },
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: false },
+      controlEscolar: { view: false, manage: false },
+      grading: { view: false, manage: false }
     }
   };
 
@@ -175,7 +201,11 @@ export default function Settings() {
       setAppUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppUser)));
     });
 
-    return () => { unsubSettings(); unsubCycles(); unsubUsers(); };
+    const unsubLocks = onSnapshot(query(collection(db, 'bimestreLocks'), orderBy('lockedAt', 'desc')), (snap) => {
+      setGradeLocks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BimestreLock)));
+    });
+
+    return () => { unsubSettings(); unsubCycles(); unsubUsers(); unsubLocks(); };
   }, []);
 
   const handleSave = async () => {
@@ -233,6 +263,12 @@ export default function Settings() {
             <Calendar size={18} /> Ciclos y Colegiaturas
           </button>
           <button 
+            onClick={() => setActiveTab('academic')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'academic' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+          >
+            <GraduationCap size={18} /> Datos Académicos
+          </button>
+          <button 
             onClick={() => setActiveTab('courses')}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'courses' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
           >
@@ -256,6 +292,14 @@ export default function Settings() {
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'users' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
             >
               <Shield size={18} /> Gestión de Usuarios
+            </button>
+          )}
+          {hasPermission('settings', 'manageUsers') && (
+            <button 
+              onClick={() => setActiveTab('locks')}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'locks' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            >
+              <Lock size={18} /> Bloqueos de Notas
             </button>
           )}
           {userProfile?.role === 'Superadministrador' && (
@@ -540,6 +584,98 @@ export default function Settings() {
             <CoursesCatalog />
           )}
 
+          {activeTab === 'locks' && (
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <Lock size={20} className="text-amber-600" />
+                  Bloqueos de Calificaciones
+                </h2>
+                <div className="space-y-3">
+                  {gradeLocks.length === 0 && (
+                    <div className="py-12 text-center text-slate-400">
+                      No hay bimestres bloqueados actualmente.
+                    </div>
+                  )}
+                  {gradeLocks.map(lock => (
+                    <div key={lock.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900"> Bimestre {lock.bimestre} - {lock.level}</p>
+                        <p className="text-xs text-slate-500">
+                          {lock.grade} {lock.group} • Ciclo: {cycles.find(c => c.id === lock.cycleId)?.name || lock.cycleId}
+                        </p>
+                        {lock.lockedAt && (
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Bloqueado el: {lock.lockedAt.toDate().toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      <button 
+                        onClick={async () => {
+                          if (window.confirm('¿Estás seguro de desbloquear este bimestre? El docente podrá volver a editar calificaciones.')) {
+                            try {
+                              await deleteDoc(doc(db, 'bimestreLocks', lock.id));
+                            } catch (error) {
+                              console.error("Error deleting lock:", error);
+                            }
+                          }
+                        }}
+                        className="px-4 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+                      >
+                        <Unlock size={16} /> Desbloquear
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'academic' && (
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                      <GraduationCap size={20} className="text-blue-600" />
+                      Estructura Académica Global
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Define los niveles, grados y grupos que se utilizarán en todo el sistema.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleSave}
+                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
+                  >
+                    <Save size={18} /> Guardar Cambios
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <AcademicListManager 
+                    title="Niveles" 
+                    description="Ej. Primaria, Secundaria"
+                    items={settings.academicLevels || []} 
+                    onUpdate={(newItems) => setSettings({...settings, academicLevels: newItems})}
+                  />
+                  <AcademicListManager 
+                    title="Grados" 
+                    description="Ej. 1ro, 2do"
+                    items={settings.academicGrades || []} 
+                    onUpdate={(newItems) => setSettings({...settings, academicGrades: newItems})}
+                  />
+                  <AcademicListManager 
+                    title="Grupos" 
+                    description="Ej. A, B, Verde"
+                    items={settings.academicGroups || []} 
+                    onUpdate={(newItems) => setSettings({...settings, academicGroups: newItems})}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'danger' && userProfile?.role === 'Superadministrador' && (
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 space-y-6">
               <h2 className="font-bold text-red-600 flex items-center gap-2">
@@ -559,7 +695,28 @@ export default function Settings() {
                   </div>
                 </div>
                 
-                <div className="pt-4 border-t border-red-200">
+                <div className="pt-4 border-t border-red-200 space-y-4">
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('¿Deseas cargar datos de ejemplo? Esto agregará alumnos, pagos, gastos, ciclos y anuncios para que veas el sistema funcionando.')) return;
+                      
+                      try {
+                        setLoading(true);
+                        await loadExampleData();
+                        alert('Datos de ejemplo cargados correctamente.');
+                        window.location.reload();
+                      } catch (error) {
+                        console.error("Error loading example data:", error);
+                        alert('Error al cargar datos de ejemplo.');
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-100 transition-all active:scale-95"
+                  >
+                    Cargar Datos de Ejemplo
+                  </button>
+
                   <button
                     onClick={async () => {
                       const confirm1 = window.confirm('¿ESTÁS ABSOLUTAMENTE SEGURO? Esta acción no se puede deshacer.');
@@ -569,7 +726,11 @@ export default function Settings() {
                       if (confirm2 !== 'ELIMINAR TODO') return;
 
                       try {
-                        const collections = ['students', 'payments', 'expenses', 'cycles', 'announcements'];
+                        const collections = [
+                          'students', 'payments', 'expenses', 'cycles', 
+                          'announcements', 'grades', 'attendance', 
+                          'reception_visits', 'bimestreLocks', 'enrollments'
+                        ];
                         for (const coll of collections) {
                           const snap = await getDocs(collection(db, coll));
                           const deletePromises = snap.docs.map(d => deleteDoc(doc(db, coll, d.id)));
@@ -720,10 +881,86 @@ export default function Settings() {
                         <option value="Administrador">Administrador</option>
                         <option value="Control Escolar">Control Escolar</option>
                         <option value="Docente">Docente</option>
+                        <option value="Recepción">Recepción</option>
                         <option value="Visor">Visor</option>
                         <option value="Cajero">Cajero</option>
                       </select>
                   </div>
+
+                  {userFormData.role === 'Control Escolar' && (
+                    <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 space-y-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <MapPin size={14} className="text-indigo-600" />
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase">Restricciones de Acceso (Opcional)</p>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mb-4 italic">Si no seleccionas nada, tendrá acceso a todos los niveles/grados/grupos.</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Niveles Permitidos</label>
+                          <div className="space-y-1 max-h-32 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
+                            {(settings.academicLevels || []).map(level => (
+                              <label key={level} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:text-indigo-600">
+                                <input 
+                                  type="checkbox" 
+                                  checked={(userFormData.restrictedLevels || []).includes(level)}
+                                  onChange={(e) => {
+                                    const current = userFormData.restrictedLevels || [];
+                                    const next = e.target.checked ? [...current, level] : current.filter(l => l !== level);
+                                    setUserFormData({...userFormData, restrictedLevels: next});
+                                  }}
+                                  className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
+                                />
+                                {level}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Grados Permitidos</label>
+                          <div className="space-y-1 max-h-32 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
+                            {(settings.academicGrades || []).map(grade => (
+                              <label key={grade} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:text-indigo-600">
+                                <input 
+                                  type="checkbox" 
+                                  checked={(userFormData.restrictedGrades || []).includes(grade)}
+                                  onChange={(e) => {
+                                    const current = userFormData.restrictedGrades || [];
+                                    const next = e.target.checked ? [...current, grade] : current.filter(g => g !== grade);
+                                    setUserFormData({...userFormData, restrictedGrades: next});
+                                  }}
+                                  className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
+                                />
+                                {grade}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Grupos Permitidos</label>
+                          <div className="space-y-1 max-h-32 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
+                            {(settings.academicGroups || []).map(group => (
+                              <label key={group} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:text-indigo-600">
+                                <input 
+                                  type="checkbox" 
+                                  checked={(userFormData.restrictedGroups || []).includes(group)}
+                                  onChange={(e) => {
+                                    const current = userFormData.restrictedGroups || [];
+                                    const next = e.target.checked ? [...current, group] : current.filter(g => g !== group);
+                                    setUserFormData({...userFormData, restrictedGroups: next});
+                                  }}
+                                  className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
+                                />
+                                {group}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {userFormData.role === 'Docente' && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-100">
@@ -735,32 +972,39 @@ export default function Settings() {
                         <select
                           value={userFormData.assignedLevel || ''}
                           onChange={(e) => setUserFormData({...userFormData, assignedLevel: e.target.value})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
                         >
                           <option value="">Seleccionar Nivel</option>
-                          <option value="Preescolar">Preescolar</option>
-                          <option value="Primaria">Primaria</option>
-                          <option value="Secundaria">Secundaria</option>
-                          <option value="Bachillerato">Bachillerato</option>
+                          {(settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+                            <option key={level} value={level}>{level}</option>
+                          ))}
                         </select>
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grado</label>
-                        <input
-                          placeholder="Ej. 1ro"
+                        <select
                           value={userFormData.assignedGrade || ''}
                           onChange={(e) => setUserFormData({...userFormData, assignedGrade: e.target.value})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        />
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                        >
+                          <option value="">Seleccionar Grado</option>
+                          {(settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
+                            <option key={grade} value={grade}>{grade}</option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grupo</label>
-                        <input
-                          placeholder="Ej. A"
+                        <select
                           value={userFormData.assignedGroup || ''}
-                          onChange={(e) => setUserFormData({...userFormData, assignedGroup: e.target.value.toUpperCase()})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        />
+                          onChange={(e) => setUserFormData({...userFormData, assignedGroup: e.target.value})}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                        >
+                          <option value="">Seleccionar Grupo</option>
+                          {(settings.academicGroups || ['A', 'B', 'C']).map(group => (
+                            <option key={group} value={group}>{group}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   )}
@@ -974,6 +1218,137 @@ function PermissionToggle({ label, checked, onChange }: { label: string, checked
       >
         <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${checked ? 'left-4' : 'left-0.5'}`} />
       </button>
+    </div>
+  );
+}
+
+interface AcademicListManagerProps {
+  title: string;
+  description: string;
+  items: string[];
+  onUpdate: (items: string[]) => void;
+}
+
+function AcademicListManager({ title, description, items, onUpdate }: AcademicListManagerProps) {
+  const [newItem, setNewItem] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+
+  const handleAdd = () => {
+    if (!newItem.trim()) return;
+    if (items.includes(newItem.trim())) {
+      alert('Este elemento ya existe en la lista.');
+      return;
+    }
+    onUpdate([...items, newItem.trim()]);
+    setNewItem('');
+  };
+
+  const handleRemove = (index: number) => {
+    if (window.confirm('¿Estás seguro de eliminar este elemento?')) {
+      onUpdate(items.filter((_, i) => i !== index));
+    }
+  };
+
+  const startEditing = (index: number, value: string) => {
+    setEditingIndex(index);
+    setEditingValue(value);
+  };
+
+  const cancelEditing = () => {
+    setEditingIndex(null);
+    setEditingValue('');
+  };
+
+  const saveEdit = (index: number) => {
+    if (!editingValue.trim()) return;
+    if (items.some((item, i) => item === editingValue.trim() && i !== index)) {
+      alert('Este elemento ya existe en la lista.');
+      return;
+    }
+    const newItems = [...items];
+    newItems[index] = editingValue.trim();
+    onUpdate(newItems);
+    setEditingIndex(null);
+    setEditingValue('');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-wider">{title}</h3>
+          <p className="text-[9px] text-slate-500">{description}</p>
+        </div>
+      </div>
+      
+      <div className="flex gap-2">
+        <input
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          placeholder="Agregar..."
+          className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={handleAdd}
+          className="p-1.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-sm transition-all active:scale-95 flex items-center justify-center shrink-0 w-8 h-8"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+
+      <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+        {items.map((item, index) => (
+          <div key={index} className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-100 group hover:border-slate-200 transition-all">
+            {editingIndex === index ? (
+              <div className="flex-1 flex gap-2 items-center">
+                <input
+                  autoFocus
+                  value={editingValue}
+                  onChange={(e) => setEditingValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEdit(index);
+                    if (e.key === 'Escape') cancelEditing();
+                  }}
+                  className="flex-1 px-2 py-1 bg-slate-50 border border-blue-200 rounded-lg text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button onClick={() => saveEdit(index)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded">
+                  <Check size={12} />
+                </button>
+                <button onClick={cancelEditing} className="p-1 text-slate-400 hover:bg-slate-100 rounded">
+                  <XIcon size={12} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <span className="text-[11px] font-bold text-slate-700">{item}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => startEditing(index, item)}
+                    className="p-1 text-slate-300 hover:text-blue-500 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Editar"
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                  <button
+                    onClick={() => handleRemove(index)}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Borrar"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+        {items.length === 0 && (
+          <div className="text-center py-6 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+            <p className="text-[10px] text-slate-400 font-medium italic">Lista vacía</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -82,7 +82,13 @@ export default function Students() {
   const currentCycle = cycles.find(c => c.id === settings?.currentCycleId) || null;
 
   const generateRegistrationCode = () => {
-    return Math.floor(10000 + Math.random() * 90000).toString();
+    let code = Math.floor(10000 + Math.random() * 90000).toString();
+    let attempts = 0;
+    while (students.some(s => s.registrationCode === code) && attempts < 10) {
+      code = Math.floor(10000 + Math.random() * 90000).toString();
+      attempts++;
+    }
+    return code;
   };
 
   const handleOpenModal = (student?: Student) => {
@@ -122,6 +128,18 @@ export default function Students() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Check if registrationCode already exists for another student (NOT a sibling)
+      const codeExists = students.some(s => 
+        s.registrationCode === formData.registrationCode && 
+        (!editingStudent || s.id !== editingStudent.id) &&
+        s.parentEmail.toLowerCase().trim() !== formData.parentEmail.toLowerCase().trim()
+      );
+
+      if (codeExists) {
+        alert('Este código de registro ya está en uso por otro alumno. Por favor, ingrese un código único.');
+        return;
+      }
+
       let dataToSave = {
         ...formData,
         parentEmail: formData.parentEmail.toLowerCase().trim(),
@@ -215,10 +233,9 @@ export default function Students() {
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Todos los Niveles</option>
-            <option value="Preescolar">Preescolar</option>
-            <option value="Primaria">Primaria</option>
-            <option value="Secundaria">Secundaria</option>
-            <option value="Bachillerato">Bachillerato</option>
+            {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+              <option key={level} value={level}>{level}</option>
+            ))}
           </select>
 
           <select
@@ -227,7 +244,7 @@ export default function Students() {
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Todos los Grados</option>
-            {Array.from(new Set(students.map(s => s.grade))).sort().map(grade => (
+            {(settings?.academicGrades || Array.from(new Set(students.map(s => s.grade))).sort()).map(grade => (
               <option key={grade} value={grade}>{grade}</option>
             ))}
           </select>
@@ -238,7 +255,7 @@ export default function Students() {
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Todos los Grupos</option>
-            {Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort().map(group => (
+            {(settings?.academicGroups || Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort()).map(group => (
               <option key={group} value={group}>{group}</option>
             ))}
           </select>
@@ -346,7 +363,7 @@ export default function Students() {
                         <div className="flex items-center justify-end gap-1">
                           {hasPermission('payments', 'create') && (
                             <button 
-                              onClick={() => navigate('/payments', { state: { studentId: student.id } })}
+                              onClick={() => navigate('/pagos', { state: { studentId: student.id } })}
                               className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
                               title="Pago"
                             >
@@ -443,10 +460,10 @@ export default function Students() {
                         onChange={(e) => setFormData({...formData, level: e.target.value})}
                         className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                       >
-                        <option value="Preescolar">Preescolar</option>
-                        <option value="Primaria">Primaria</option>
-                        <option value="Secundaria">Secundaria</option>
-                        <option value="Bachillerato">Bachillerato</option>
+                        <option value="">Seleccionar Nivel</option>
+                        {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+                          <option key={level} value={level}>{level}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -461,22 +478,30 @@ export default function Students() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Grado *</label>
-                      <input
+                      <select
                         required
                         value={formData.grade}
                         onChange={(e) => setFormData({...formData, grade: e.target.value})}
                         className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="Ej. 1ro"
-                      />
+                      >
+                        <option value="">Seleccionar Grado</option>
+                        {(settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
+                          <option key={grade} value={grade}>{grade}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Grupo</label>
-                      <input
+                      <select
                         value={formData.group}
                         onChange={(e) => setFormData({...formData, group: e.target.value})}
                         className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="Ej. A"
-                      />
+                      >
+                        <option value="">Seleccionar Grupo</option>
+                        {(settings?.academicGroups || ['A', 'B', 'C']).map(group => (
+                          <option key={group} value={group}>{group}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>

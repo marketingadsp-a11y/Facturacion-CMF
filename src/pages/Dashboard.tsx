@@ -226,9 +226,9 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { to: '/payments', icon: PlusCircle, label: 'Registrar Pago', desc: 'Cobros y recibos', color: 'bg-indigo-600' },
-            { to: '/students', icon: Users, label: 'Consultar Alumnos', desc: 'Expedientes y estatus', color: 'bg-blue-600' },
-            { to: '/payments', icon: History, label: 'Historial de Caja', desc: 'Ingresos y cortes', color: 'bg-emerald-600' }
+            { to: '/pagos', icon: PlusCircle, label: 'Registrar Pago', desc: 'Cobros y recibos', color: 'bg-indigo-600' },
+            { to: '/alumnos', icon: Users, label: 'Consultar Alumnos', desc: 'Expedientes y estatus', color: 'bg-blue-600' },
+            { to: '/pagos', icon: History, label: 'Historial de Caja', desc: 'Ingresos y cortes', color: 'bg-emerald-600' }
           ].map((action, i) => (
             <motion.div
               key={action.label}
@@ -268,7 +268,7 @@ export default function Dashboard() {
               <div className="w-1.5 h-6 bg-indigo-600 rounded-full" />
               Movimientos Recientes
             </h2>
-            <Link to="/payments" className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
+            <Link to="/pagos" className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
               Ver todo
               <ArrowUpRight size={14} />
             </Link>
@@ -392,7 +392,7 @@ export default function Dashboard() {
             <MenuButton 
               label="Gestión de Alumnos" 
               icon={Users} 
-              to="/students" 
+              to="/alumnos" 
               colorClass="bg-rose-500" 
               delay={0.1}
               description="Expedientes, grupos y estatus"
@@ -400,7 +400,7 @@ export default function Dashboard() {
             <MenuButton 
               label="Control de Pagos" 
               icon={CreditCard} 
-              to="/payments" 
+              to="/pagos" 
               colorClass="bg-emerald-500" 
               delay={0.2}
               description="Colegiaturas e inscripciones"
@@ -408,7 +408,7 @@ export default function Dashboard() {
             <MenuButton 
               label="Gestión de Padres" 
               icon={Users} 
-              to="/parents" 
+              to="/padres" 
               colorClass="bg-blue-500" 
               delay={0.3}
               description="Vincular familias y accesos"
@@ -416,7 +416,7 @@ export default function Dashboard() {
             <MenuButton 
               label="Gastos y Egresos" 
               icon={TrendingDown} 
-              to="/expenses" 
+              to="/gastos" 
               colorClass="bg-amber-500" 
               delay={0.4}
               description="Proveedores y servicios"
@@ -511,7 +511,7 @@ export default function Dashboard() {
             <QuickAction 
               icon={SettingsIcon} 
               label="Ajustes" 
-              to="/settings" 
+              to="/ajustes" 
               color="text-slate-600" 
               bg="bg-slate-100" 
             />
@@ -525,14 +525,14 @@ export default function Dashboard() {
             <QuickAction 
               icon={FileText} 
               label="Reportes" 
-              to="/students" 
+              to="/alumnos" 
               color="text-indigo-600" 
               bg="bg-indigo-50" 
             />
             <QuickAction 
               icon={ShieldAlert} 
               label="Seguridad" 
-              to="/settings?tab=users" 
+              to="/ajustes?tab=users" 
               color="text-rose-600" 
               bg="bg-rose-50" 
             />
@@ -542,7 +542,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <h3 className="text-sm font-bold text-slate-800">Pagos Recientes</h3>
-              <Link to="/payments" className="text-[10px] font-bold text-blue-600 hover:underline">Ver todo</Link>
+              <Link to="/pagos" className="text-[10px] font-bold text-blue-600 hover:underline">Ver todo</Link>
             </div>
             <div className="divide-y divide-slate-50">
               {recentPayments.map((payment, i) => (
