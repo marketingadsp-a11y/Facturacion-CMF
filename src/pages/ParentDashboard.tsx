@@ -421,6 +421,10 @@ export default function ParentDashboard() {
     }
   };
 
+  const unreadAnnouncements = announcements.filter(ann => 
+    !auth.currentUser?.uid || !ann.acknowledgedBy?.includes(auth.currentUser.uid)
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -460,10 +464,9 @@ export default function ParentDashboard() {
         )}
       </AnimatePresence>
 
-      {announcements.length > 0 ? (
+      {unreadAnnouncements.length > 0 ? (
         <div className="space-y-4">
-          {announcements.map((ann, idx) => {
-            const hasAcknowledged = auth.currentUser?.uid && ann.acknowledgedBy?.includes(auth.currentUser.uid);
+          {unreadAnnouncements.map((ann, idx) => {
             return (
             <motion.div 
               key={ann.id}
@@ -499,23 +502,17 @@ export default function ParentDashboard() {
                   <p className="text-sm opacity-80 leading-relaxed font-medium mb-4">{ann.content}</p>
                   
                   <div className="flex justify-end mt-2">
-                    {hasAcknowledged ? (
-                      <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-100/50 px-3 py-1.5 rounded-lg border border-emerald-200">
-                        <CheckCircle2 size={14} /> Enterado
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => handleAcknowledgeAnnouncement(ann.id)}
-                        className={cn(
-                          "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95",
-                          ann.type === 'important' ? "bg-red-600 hover:bg-red-700 text-white" :
-                          ann.type === 'warning' ? "bg-orange-600 hover:bg-orange-700 text-white" :
-                          "bg-blue-600 hover:bg-blue-700 text-white"
-                        )}
-                      >
-                        Enterado
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleAcknowledgeAnnouncement(ann.id)}
+                      className={cn(
+                        "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95",
+                        ann.type === 'important' ? "bg-red-600 hover:bg-red-700 text-white" :
+                        ann.type === 'warning' ? "bg-orange-600 hover:bg-orange-700 text-white" :
+                        "bg-blue-600 hover:bg-blue-700 text-white"
+                      )}
+                    >
+                      Enterado
+                    </button>
                   </div>
                 </div>
               </div>

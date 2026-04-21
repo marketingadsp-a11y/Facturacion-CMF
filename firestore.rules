@@ -170,7 +170,7 @@ service cloud.firestore {
     // Bimestre Locks
     match /bimestreLocks/{lockId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && hasPermission('settings', 'manageUsers');
+      allow write: if isAuthenticated() && (hasPermission('settings', 'manageUsers') || hasPermission('grading', 'manage'));
     }
   }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, doc, getCountFromServer } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, getCountFromServer, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Payment, Expense, Announcement } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
@@ -32,6 +32,8 @@ export default function Dashboard() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAnnModalOpen, setIsAnnModalOpen] = useState(false);
+  const [isMetricsModalOpen, setIsMetricsModalOpen] = useState(false);
+  const [selectedMetricsAnn, setSelectedMetricsAnn] = useState<Announcement | null>(null);
   const [editingAnn, setEditingAnn] = useState<Announcement | null>(null);
   const [annFormData, setAnnFormData] = useState<Partial<Announcement>>({
     title: '',
@@ -740,15 +742,22 @@ export default function Dashboard() {
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex items-center gap-1.5">
+                              <button 
+                                onClick={() => {
+                                  setSelectedMetricsAnn(ann);
+                                  setIsMetricsModalOpen(true);
+                                }}
+                                className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors"
+                                title="Ver Padres Enterados"
+                              >
                                 <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
                                   <Users size={10} />
                                 </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[10px] font-black text-slate-700 leading-none">{ackCount}</span>
+                                <div className="flex flex-col text-left">
+                                  <span className="text-[10px] font-black text-slate-700 leading-none hover:text-emerald-600 transition-colors">{ackCount}</span>
                                   <span className="text-[8px] font-bold text-slate-400 uppercase">Enterados</span>
                                 </div>
-                              </div>
+                              </button>
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -929,6 +938,106 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
+      <MetricsModal 
+        isOpen={isMetricsModalOpen} 
+        onClose={() => setIsMetricsModalOpen(false)} 
+        announcement={selectedMetricsAnn} 
+      />
+
+    </div>
+  );
+}
+
+function MetricsModal({ isOpen, onClose, announcement }: { isOpen: boolean, onClose: () => void, announcement: Announcement | null }) {
+  const [parents, setParents] = useState<{name: string, email: string}[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchParents = async () => {
+      if (!isOpen || !announcement || !announcement.acknowledgedBy || announcement.acknowledgedBy.length === 0) {
+        setParents([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const adminBatchSize = 10; // For chunking to avoid limits on 'in' queries
+        const uids = announcement.acknowledgedBy;
+        let fetchedParents: {name: string, email: string}[] = [];
+        
+        for (let i = 0; i < uids.length; i += adminBatchSize) {
+          const chunk = uids.slice(i, i + adminBatchSize);
+          const q = query(collection(db, 'users'), where('__name__', 'in', chunk));
+          const snap = await getDocs(q);
+          const chunkData = snap.docs.map(d => ({ name: d.data().name || 'Desconocido', email: d.data().email || 'Sin correo' }));
+          fetchedParents = [...fetchedParents, ...chunkData];
+        }
+        
+        setParents(fetchedParents);
+      } catch (error) {
+        console.error("Error fetching acknowledged parents:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchParents();
+  }, [isOpen, announcement]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.98, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 10 }}
+        className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] border border-slate-200"
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
+              <Users size={16} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 leading-tight">
+                Padres Enterados
+              </h2>
+              <p className="text-[9px] font-medium text-slate-400 capitalize tracking-wider truncate w-40">{announcement?.title}</p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose} 
+            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
+          >
+            <XIcon size={16} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 text-emerald-600"></div>
+            </div>
+          ) : parents.length > 0 ? (
+            <ul className="space-y-2">
+              {parents.map((p, i) => (
+                <li key={i} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                    <User size={14} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">{p.name}</span>
+                    <span className="text-[10px] text-slate-400">{p.email}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="py-8 text-center">
+              <p className="text-slate-400 text-xs font-medium italic">Nadie ha confirmado todavía.</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 }
