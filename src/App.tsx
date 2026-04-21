@@ -25,7 +25,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Wallet,
-  Receipt
+  Receipt,
+  ClipboardList
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -41,6 +42,7 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import AcademicControl from './pages/AcademicControl';
 import EnrollmentForm from './pages/EnrollmentForm';
+import TeacherPortal from './pages/TeacherPortal';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
@@ -83,7 +85,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                 payments: { view: true, create: true, cancel: true, invoice: true, downloadInvoice: true },
                 expenses: { view: true, create: true, edit: true, delete: true },
                 settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
-                controlEscolar: { view: true, manage: true }
+                announcements: { view: true, manage: true },
+                controlEscolar: { view: true, manage: true },
+                grading: { view: true, manage: true }
               },
               createdAt: serverTimestamp()
             });
@@ -110,6 +114,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Padres', path: '/parents', icon: Users, section: 'settings', action: 'manageUsers' },
     { name: 'Pagos', path: '/payments', icon: Wallet, section: 'payments', action: 'view' },
     { name: 'Control Escolar', path: '/academic-control', icon: FileText, section: 'controlEscolar', action: 'view' },
+    { name: 'Docente', path: '/teacher-portal', icon: ClipboardList, section: 'grading', action: 'view' },
     { name: 'Gastos', path: '/expenses', icon: Receipt, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/settings', icon: SettingsIcon, section: 'settings', action: 'view' },
   ];
@@ -469,6 +474,9 @@ const AppContent = () => {
     const unsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists() && snap.data().enrollmentSlug) {
         setEnrollmentSlug(snap.data().enrollmentSlug);
+      } else if (!snap.exists() || !snap.data().enrollmentSlug) {
+        // Default to /inscripcion as requested if not set in settings
+        setEnrollmentSlug('inscripcion');
       }
     });
     return unsub;
@@ -478,13 +486,15 @@ const AppContent = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path={`/${enrollmentSlug}`} element={<EnrollmentForm />} />
-      {/* Fallback for the default /enroll if changed */}
+      {/* Compatibility routes */}
+      {enrollmentSlug !== 'inscripcion' && <Route path="/inscripcion" element={<EnrollmentForm />} />}
       {enrollmentSlug !== 'enroll' && <Route path="/enroll" element={<EnrollmentForm />} />}
       <Route 
         path="/" 
         element={
           <ProtectedRoute>
-            {userProfile?.role === 'Padre' ? <ParentDashboard /> : <Dashboard />}
+            {userProfile?.role === 'Padre' ? <ParentDashboard /> : 
+             userProfile?.role === 'Docente' ? <TeacherPortal /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -541,6 +551,14 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {isParent ? <Navigate to="/" /> : <Settings />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/teacher-portal" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Navigate to="/" /> : <TeacherPortal />}
           </ProtectedRoute>
         } 
       />

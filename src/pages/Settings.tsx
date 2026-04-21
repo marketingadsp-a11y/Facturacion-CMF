@@ -72,7 +72,8 @@ export default function Settings() {
       expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
       announcements: { view: true, manage: true },
-      controlEscolar: { view: true, manage: true }
+      controlEscolar: { view: true, manage: true },
+      grading: { view: true, manage: true }
     },
     Administrador: {
       dashboard: { view: true },
@@ -81,7 +82,8 @@ export default function Settings() {
       expenses: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, editGeneral: false, editCycles: true, editRules: true, manageUsers: false },
       announcements: { view: true, manage: true },
-      controlEscolar: { view: true, manage: true }
+      controlEscolar: { view: true, manage: true },
+      grading: { view: true, manage: true }
     },
     Visor: {
       dashboard: { view: true },
@@ -90,7 +92,8 @@ export default function Settings() {
       expenses: { view: true, create: false, edit: false, delete: false },
       settings: { view: true, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
-      controlEscolar: { view: true, manage: false }
+      controlEscolar: { view: true, manage: false },
+      grading: { view: true, manage: false }
     },
     Cajero: {
       dashboard: { view: true },
@@ -99,7 +102,8 @@ export default function Settings() {
       expenses: { view: true, create: true, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
-      controlEscolar: { view: true, manage: false }
+      controlEscolar: { view: true, manage: false },
+      grading: { view: false, manage: false }
     },
     Padre: {
       dashboard: { view: true },
@@ -108,7 +112,28 @@ export default function Settings() {
       expenses: { view: false, create: false, edit: false, delete: false },
       settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
       announcements: { view: true, manage: false },
-      controlEscolar: { view: false, manage: false }
+      controlEscolar: { view: false, manage: false },
+      grading: { view: false, manage: false }
+    },
+    'Control Escolar': {
+      dashboard: { view: true },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
+      payments: { view: false, create: false, cancel: false, invoice: false, downloadInvoice: false },
+      expenses: { view: false, create: false, edit: false, delete: false },
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: true },
+      controlEscolar: { view: true, manage: true },
+      grading: { view: false, manage: false }
+    },
+    Docente: {
+      dashboard: { view: true },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
+      payments: { view: false, create: false, cancel: false, invoice: false, downloadInvoice: false },
+      expenses: { view: false, create: false, edit: false, delete: false },
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: false },
+      controlEscolar: { view: false, manage: false },
+      grading: { view: true, manage: true }
     }
   };
 
@@ -683,20 +708,62 @@ export default function Settings() {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Rol del Usuario *</label>
-                    <select
-                      value={userFormData.role}
-                      onChange={(e) => {
-                        const role = e.target.value as UserRole;
-                        setUserFormData({...userFormData, role, permissions: DEFAULT_PERMISSIONS[role]});
-                      }}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                    >
-                      <option value="Superadministrador">Superadministrador</option>
-                      <option value="Administrador">Administrador</option>
-                      <option value="Visor">Visor</option>
-                      <option value="Cajero">Cajero</option>
-                    </select>
+                      <select
+                        value={userFormData.role}
+                        onChange={(e) => {
+                          const role = e.target.value as UserRole;
+                          setUserFormData({...userFormData, role, permissions: DEFAULT_PERMISSIONS[role]});
+                        }}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                        <option value="Superadministrador">Superadministrador</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Control Escolar">Control Escolar</option>
+                        <option value="Docente">Docente</option>
+                        <option value="Visor">Visor</option>
+                        <option value="Cajero">Cajero</option>
+                      </select>
                   </div>
+
+                  {userFormData.role === 'Docente' && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                      <div className="md:col-span-3">
+                        <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Asignación de Grupo (Solo Docente)</p>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nivel</label>
+                        <select
+                          value={userFormData.assignedLevel || ''}
+                          onChange={(e) => setUserFormData({...userFormData, assignedLevel: e.target.value})}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        >
+                          <option value="">Seleccionar Nivel</option>
+                          <option value="Preescolar">Preescolar</option>
+                          <option value="Primaria">Primaria</option>
+                          <option value="Secundaria">Secundaria</option>
+                          <option value="Bachillerato">Bachillerato</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grado</label>
+                        <input
+                          placeholder="Ej. 1ro"
+                          value={userFormData.assignedGrade || ''}
+                          onChange={(e) => setUserFormData({...userFormData, assignedGrade: e.target.value})}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grupo</label>
+                        <input
+                          placeholder="Ej. A"
+                          value={userFormData.assignedGroup || ''}
+                          onChange={(e) => setUserFormData({...userFormData, assignedGroup: e.target.value.toUpperCase()})}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -709,28 +776,28 @@ export default function Settings() {
                         <p className="text-[10px] font-bold text-slate-500 uppercase">Dashboard y Alumnos</p>
                         <PermissionToggle 
                           label="Ver Dashboard" 
-                          checked={userFormData.permissions?.dashboard.view} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, dashboard: {view: v}}})}
+                          checked={userFormData.permissions?.dashboard?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, dashboard: {...userFormData.permissions?.dashboard, view: v}}})}
                         />
                         <PermissionToggle 
                           label="Ver Alumnos" 
-                          checked={userFormData.permissions?.students.view} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, view: v}}})}
+                          checked={userFormData.permissions?.students?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions?.students, view: v}}})}
                         />
                         <PermissionToggle 
                           label="Crear Alumnos" 
-                          checked={userFormData.permissions?.students.create} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, create: v}}})}
+                          checked={userFormData.permissions?.students?.create} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions?.students, create: v}}})}
                         />
                         <PermissionToggle 
                           label="Editar Alumnos" 
-                          checked={userFormData.permissions?.students.edit} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, edit: v}}})}
+                          checked={userFormData.permissions?.students?.edit} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions?.students, edit: v}}})}
                         />
                         <PermissionToggle 
                           label="Eliminar Alumnos" 
-                          checked={userFormData.permissions?.students.delete} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions!.students, delete: v}}})}
+                          checked={userFormData.permissions?.students?.delete} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, students: {...userFormData.permissions?.students, delete: v}}})}
                         />
                       </div>
 
@@ -739,38 +806,69 @@ export default function Settings() {
                         <p className="text-[10px] font-bold text-slate-500 uppercase">Gastos y Ajustes</p>
                         <PermissionToggle 
                           label="Ver Gastos" 
-                          checked={userFormData.permissions?.expenses.view} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, expenses: {...userFormData.permissions!.expenses, view: v}}})}
+                          checked={userFormData.permissions?.expenses?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, expenses: {...userFormData.permissions?.expenses, view: v}}})}
                         />
                         <PermissionToggle 
                           label="Registrar Gastos" 
-                          checked={userFormData.permissions?.expenses.create} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, expenses: {...userFormData.permissions!.expenses, create: v}}})}
+                          checked={userFormData.permissions?.expenses?.create} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, expenses: {...userFormData.permissions?.expenses, create: v}}})}
                         />
                         <PermissionToggle 
                           label="Ver Pagos" 
-                          checked={userFormData.permissions?.payments.view} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions!.payments, view: v}}})}
+                          checked={userFormData.permissions?.payments?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions?.payments, view: v}}})}
                         />
                         <PermissionToggle 
                           label="Registrar Pagos" 
-                          checked={userFormData.permissions?.payments.create} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions!.payments, create: v}}})}
+                          checked={userFormData.permissions?.payments?.create} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions?.payments, create: v}}})}
                         />
                         <PermissionToggle 
                           label="Facturar" 
-                          checked={userFormData.permissions?.payments.invoice} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions!.payments, invoice: v}}})}
+                          checked={userFormData.permissions?.payments?.invoice} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions?.payments, invoice: v}}})}
                         />
                         <PermissionToggle 
                           label="Gestionar Usuarios" 
-                          checked={userFormData.permissions?.settings.manageUsers} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions!.settings, manageUsers: v}}})}
+                          checked={userFormData.permissions?.settings?.manageUsers} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions?.settings, manageUsers: v}}})}
                         />
                         <PermissionToggle 
                           label="Editar Ciclos/Reglas" 
-                          checked={userFormData.permissions?.settings.editCycles} 
-                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions!.settings, editCycles: v, editRules: v}}})}
+                          checked={userFormData.permissions?.settings?.editCycles} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions?.settings, editCycles: v, editRules: v}}})}
+                        />
+                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Anuncios y Control Escolar</p>
+                        <PermissionToggle 
+                          label="Ver Anuncios" 
+                          checked={userFormData.permissions?.announcements?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, announcements: {...userFormData.permissions?.announcements, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Anuncios" 
+                          checked={userFormData.permissions?.announcements?.manage} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, announcements: {...userFormData.permissions?.announcements, manage: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Ver Control Escolar" 
+                          checked={userFormData.permissions?.controlEscolar?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, controlEscolar: {...userFormData.permissions?.controlEscolar, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Inscripciones" 
+                          checked={userFormData.permissions?.controlEscolar?.manage} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, controlEscolar: {...userFormData.permissions?.controlEscolar, manage: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Ver Calificaciones" 
+                          checked={userFormData.permissions?.grading?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, grading: {...userFormData.permissions?.grading, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Calificaciones" 
+                          checked={userFormData.permissions?.grading?.manage} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, grading: {...userFormData.permissions?.grading, manage: v}}})}
                         />
                       </div>
                     </div>

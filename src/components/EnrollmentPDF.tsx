@@ -1,22 +1,13 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
 import { Enrollment, AppSettings } from '../types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-// Registro de fuentes para soportar negritas y estilos mejorados
-Font.register({
-  family: 'Inter',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiA.woff2', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiA.woff2', fontWeight: 700 },
-  ],
-});
-
 const styles = StyleSheet.create({
   page: {
     padding: 40,
-    fontFamily: 'Inter',
+    fontFamily: 'Helvetica',
     fontSize: 9,
     color: '#334155',
   },
@@ -171,12 +162,12 @@ const EnrollmentPDF: React.FC<Props> = ({ enrollment, settings }) => {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoSection}>
-            {settings.logoUrl && (
-              <Image src={settings.logoUrl} style={styles.logo} />
+            {settings?.logoUrl && (
+              <Image src={{ uri: settings.logoUrl, method: 'GET', headers: { Referer: '' }, body: '' }} style={styles.logo} />
             )}
             <View>
-              <Text style={styles.schoolName}>{settings.schoolName || 'Institución Educativa'}</Text>
-              <Text style={{ fontSize: 8, color: '#64748B' }}>{settings.legalName || ''}</Text>
+              <Text style={styles.schoolName}>{settings?.schoolName || 'Institución Educativa'}</Text>
+              <Text style={{ fontSize: 8, color: '#64748B' }}>{settings?.legalName || ''}</Text>
             </View>
           </View>
           <View style={styles.folioSection}>
@@ -296,27 +287,27 @@ const EnrollmentPDF: React.FC<Props> = ({ enrollment, settings }) => {
           </Text>
           
           <View style={styles.checkboxRow}>
-            <View style={styles.checkbox}>{enrollment.commitments.participate && <Text style={styles.checkboxMark}>✓</Text>}</View>
+            <View style={styles.checkbox}>{enrollment.commitments?.participate && <Text style={styles.checkboxMark}>✓</Text>}</View>
             <Text style={styles.commitmentText}>Participar y cooperar con la Institución en el proceso Enseñanza - Aprendizaje.</Text>
           </View>
           <View style={styles.checkboxRow}>
-            <View style={styles.checkbox}>{enrollment.commitments.discipline && <Text style={styles.checkboxMark}>✓</Text>}</View>
+            <View style={styles.checkbox}>{enrollment.commitments?.discipline && <Text style={styles.checkboxMark}>✓</Text>}</View>
             <Text style={styles.commitmentText}>Apoyar a la Institución en la disciplina.</Text>
           </View>
           <View style={styles.checkboxRow}>
-            <View style={styles.checkbox}>{enrollment.commitments.conferences && <Text style={styles.checkboxMark}>✓</Text>}</View>
+            <View style={styles.checkbox}>{enrollment.commitments?.conferences && <Text style={styles.checkboxMark}>✓</Text>}</View>
             <Text style={styles.commitmentText}>Asistir puntualmente a las conferencias formativas y entrega de calificaciones.</Text>
           </View>
           <View style={styles.checkboxRow}>
-            <View style={styles.checkbox}>{enrollment.commitments.payments && <Text style={styles.checkboxMark}>✓</Text>}</View>
+            <View style={styles.checkbox}>{enrollment.commitments?.payments && <Text style={styles.checkboxMark}>✓</Text>}</View>
             <Text style={styles.commitmentText}>Realizar sus pagos en los primeros diez días de cada mes.</Text>
           </View>
           <View style={styles.checkboxRow}>
-            <View style={styles.checkbox}>{enrollment.commitments.timelyPayments && <Text style={styles.checkboxMark}>✓</Text>}</View>
+            <View style={styles.checkbox}>{enrollment.commitments?.timelyPayments && <Text style={styles.checkboxMark}>✓</Text>}</View>
             <Text style={styles.commitmentText}>Hacer sus pagos oportunamente. El incumplimiento libera a la Institución de seguir prestando servicios.</Text>
           </View>
           <View style={styles.checkboxRow}>
-            <View style={styles.checkbox}>{enrollment.commitments.workTogether && <Text style={styles.checkboxMark}>✓</Text>}</View>
+            <View style={styles.checkbox}>{enrollment.commitments?.workTogether && <Text style={styles.checkboxMark}>✓</Text>}</View>
             <Text style={styles.commitmentText}>Estar dispuesto a trabajar en conjunto con la Institución para ayudar al alumno.</Text>
           </View>
         </View>

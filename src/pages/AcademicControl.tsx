@@ -13,19 +13,32 @@ import EnrollmentPDF from '../components/EnrollmentPDF';
 
 export default function AcademicControl() {
   const { hasPermission } = usePermissions();
+  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  
+  // Student List Filters
+  const [filterLevel, setFilterLevel] = useState('');
+  const [filterGrade, setFilterGrade] = useState('');
+  const [filterGroup, setFilterGroup] = useState('');
+
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'enrollments'), orderBy('createdAt', 'desc'));
-    const unsubEnrollments = onSnapshot(q, (snap) => {
+    const qEnrollments = query(collection(db, 'enrollments'), orderBy('createdAt', 'desc'));
+    const unsubEnrollments = onSnapshot(qEnrollments, (snap) => {
       setEnrollments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Enrollment)));
       setLoading(false);
+    });
+
+    const qStudents = query(collection(db, 'students'), orderBy('lastName', 'asc'));
+    const unsubStudents = onSnapshot(qStudents, (snap) => {
+      setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
     });
 
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
@@ -34,6 +47,7 @@ export default function AcademicControl() {
 
     return () => {
       unsubEnrollments();
+      unsubStudents();
       unsubSettings();
     };
   }, []);
@@ -94,56 +108,95 @@ export default function AcademicControl() {
     return matchesSearch && matchesStatus;
   });
 
+  const filteredStudents = students.filter(s => {
+    const fullName = `${s.name} ${s.lastName}`.toLowerCase();
+    const matchesSearch = fullName.includes(searchTerm.toLowerCase()) || 
+                         (s.curp && s.curp.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesLevel = !filterLevel || s.level === filterLevel;
+    const matchesGrade = !filterGrade || s.grade === filterGrade;
+    const matchesGroup = !filterGroup || s.group === filterGroup;
+    return matchesSearch && matchesLevel && matchesGrade && matchesGroup;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Control Escolar</h1>
-          <p className="text-slate-500">Gestión de inscripciones y solicitudes de nuevo ingreso.</p>
+          <p className="text-slate-500">Gestión de inscripciones y listas oficiales de alumnos.</p>
         </div>
-        <button
-          onClick={handleCopyLink}
-          className="bg-white hover:bg-slate-50 text-slate-900 border border-slate-200 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-sm transition-all active:scale-95"
-        >
-          {copySuccess ? <Check size={18} className="text-emerald-600" /> : <Copy size={18} />}
-          {copySuccess ? 'Link Copiado' : 'Copiar Link de Inscripción'}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="bg-white p-1 rounded-2xl border border-slate-100 shadow-sm flex items-center">
+            <button
+              onClick={() => setActiveTab('enrollments')}
+              className={cn(
+                "px-6 py-2 rounded-xl text-xs font-bold transition-all",
+                activeTab === 'enrollments' 
+                  ? "bg-slate-900 text-white shadow-lg shadow-slate-100" 
+                  : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              Inscripciones
+            </button>
+            <button
+              onClick={() => setActiveTab('studentList')}
+              className={cn(
+                "px-6 py-2 rounded-xl text-xs font-bold transition-all",
+                activeTab === 'studentList' 
+                  ? "bg-slate-900 text-white shadow-lg shadow-slate-100" 
+                  : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              Listas de Alumnos
+            </button>
+          </div>
+          {activeTab === 'enrollments' && (
+            <button
+              onClick={handleCopyLink}
+              className="bg-white hover:bg-slate-50 text-slate-900 border border-slate-200 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-sm transition-all active:scale-95"
+            >
+              {copySuccess ? <Check size={18} className="text-emerald-600" /> : <Copy size={18} />}
+              {copySuccess ? 'Link Copiado' : 'Copiar Link de Inscripción'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            placeholder="Buscar por alumno o folio..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-medium"
-          />
-        </div>
-        <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-          <Filter size={16} className="text-slate-400" />
-          <select 
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-transparent text-sm font-bold outline-none"
-          >
-            <option value="">Todos los estados</option>
-            <option value="Pendiente">Pendientes</option>
-            <option value="Aprobado">Aprobados</option>
-            <option value="Rechazado">Rechazados</option>
-          </select>
-        </div>
-      </div>
+      {activeTab === 'enrollments' ? (
+        <>
+          {/* Filters for Enrollments */}
+          <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                placeholder="Buscar por alumno o folio..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-medium"
+              />
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+              <Filter size={16} className="text-slate-400" />
+              <select 
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="bg-transparent text-sm font-bold outline-none"
+              >
+                <option value="">Todos los estados</option>
+                <option value="Pendiente">Pendientes</option>
+                <option value="Aprobado">Aprobados</option>
+                <option value="Rechazado">Rechazados</option>
+              </select>
+            </div>
+          </div>
 
-      {/* List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredEnrollments.map(enrol => (
-          <div 
-            key={enrol.id}
-            className="group bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all overflow-hidden"
-          >
-            <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredEnrollments.map(enrol => (
+              <div 
+                key={enrol.id}
+                className="group bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all overflow-hidden"
+              >
+                <div className="p-5 space-y-4">
               <div className="flex items-start justify-between">
                 <div className="flex gap-3">
                   <div className={cn(
@@ -213,6 +266,154 @@ export default function AcademicControl() {
           <p className="text-sm text-slate-500 max-w-xs mx-auto">
             Asegúrate de compartir el link de inscripción con los padres de familia.
           </p>
+        </div>
+      )}
+        </>
+      ) : (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Filters for Student List */}
+          <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                placeholder="Buscar por nombre o CURP..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-medium"
+              />
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={filterLevel}
+                onChange={(e) => setFilterLevel(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos los Niveles</option>
+                <option value="Preescolar">Preescolar</option>
+                <option value="Primaria">Primaria</option>
+                <option value="Secundaria">Secundaria</option>
+                <option value="Bachillerato">Bachillerato</option>
+              </select>
+
+              <select
+                value={filterGrade}
+                onChange={(e) => setFilterGrade(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos los Grados</option>
+                {Array.from(new Set(students.map(s => s.grade))).filter(Boolean).sort().map(grade => (
+                  <option key={grade} value={grade}>{grade}</option>
+                ))}
+              </select>
+
+              <select
+                value={filterGroup}
+                onChange={(e) => setFilterGroup(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos los Grupos</option>
+                {Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort().map(group => (
+                  <option key={group} value={group}>{group}</option>
+                ))}
+              </select>
+
+              {(filterLevel || filterGrade || filterGroup || searchTerm) && (
+                <button
+                  onClick={() => {
+                    setFilterLevel('');
+                    setFilterGrade('');
+                    setFilterGroup('');
+                    setSearchTerm('');
+                  }}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                  title="Limpiar filtros"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Student List Grid */}
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
+                    <th className="px-6 py-4">Alumno</th>
+                    <th className="px-6 py-4">Nivel / Grado</th>
+                    <th className="px-6 py-4 text-center">Grupo</th>
+                    <th className="px-6 py-4">CURP</th>
+                    <th className="px-6 py-4">Contacto</th>
+                    <th className="px-6 py-4 text-right">Estatus</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredStudents.length > 0 ? (
+                    filteredStudents.map((student) => (
+                      <tr key={student.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs uppercase">
+                              {student.name.charAt(0)}{student.lastName.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900 leading-none mb-1">{student.lastName}</p>
+                              <p className="text-xs text-slate-500">{student.name}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{student.level}</span>
+                            <span className="text-xs font-bold text-slate-700">{student.grade}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className={cn(
+                            "inline-block px-2 py-1 rounded-md text-[10px] font-black",
+                            student.group ? "bg-slate-100 text-slate-700" : "bg-slate-50 text-slate-300"
+                          )}>
+                            {student.group || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-[11px] font-mono font-bold text-slate-500 uppercase">
+                          {student.curp || '-'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="space-y-1">
+                            {student.phone && (
+                              <p className="text-[10px] text-slate-500 flex items-center gap-1 font-bold">
+                                <Phone size={10} className="text-slate-300" /> {student.phone}
+                              </p>
+                            )}
+                            {student.email && (
+                              <p className="text-[10px] text-slate-500 flex items-center gap-1 font-bold">
+                                <Mail size={10} className="text-slate-300" /> {student.email}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[9px] font-black uppercase">
+                            <CheckCircle2 size={12} />
+                            Activo
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-slate-400 text-sm">
+                        No se encontraron alumnos con los filtros seleccionados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -327,6 +528,7 @@ export default function AcademicControl() {
               <div className="flex gap-3">
                 {settings && (
                   <PDFDownloadLink
+                    key={selectedEnrollment.id}
                     document={<EnrollmentPDF enrollment={selectedEnrollment} settings={settings} />}
                     fileName={`Solicitud_Inscripcion_${selectedEnrollment.studentName.replace(/\s+/g, '_')}.pdf`}
                     className="px-6 py-2.5 text-sm font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-all flex items-center gap-2"

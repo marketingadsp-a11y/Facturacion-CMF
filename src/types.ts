@@ -54,7 +54,7 @@ export interface Expense {
   createdAt: Timestamp;
 }
 
-export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre';
+export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre' | 'Control Escolar' | 'Docente';
 
 export interface AppPermissions {
   dashboard: {
@@ -92,6 +92,10 @@ export interface AppPermissions {
     manage: boolean;
   };
   controlEscolar: {
+    view: boolean;
+    manage: boolean;
+  };
+  grading: {
     view: boolean;
     manage: boolean;
   };
@@ -169,6 +173,9 @@ export interface AppUser {
   name: string;
   role: UserRole;
   permissions: AppPermissions;
+  assignedLevel?: string;
+  assignedGrade?: string;
+  assignedGroup?: string;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -241,4 +248,22 @@ export interface AppSettings {
   lateFeeType: 'fixed' | 'percentage';
   rolePermissions?: Record<UserRole, AppPermissions>;
   enrollmentSlug?: string;
+}
+
+export type Bimestre = 1 | 2 | 3 | 4 | 5;
+
+export interface StudentGrade {
+  id?: string;
+  studentId: string;
+  cycleId: string;
+  bimestre: Bimestre;
+  subjects: Record<string, number>;
+  conduct: number;
+  uniform: number;
+  attendance: number;
+  tasksNotDone: number;
+  tardies: number;
+  cleanliness: number;
+  updatedAt: Timestamp;
+  createdBy: string;
 }
