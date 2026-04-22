@@ -5,7 +5,8 @@ import { Employee, TimeLog } from '../types';
 import * as faceapi from '@vladmandic/face-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { Camera, RefreshCw, CheckCircle2, ShieldAlert, Clock, ScanFace, Check } from 'lucide-react';
-import { startOfDay } from 'date-fns';
+import { startOfDay, format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { toast } from 'react-toastify';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
