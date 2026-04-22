@@ -55,8 +55,12 @@ import AcademicControl from './pages/AcademicControl';
 import EnrollmentForm from './pages/EnrollmentForm';
 import TeacherPortal from './pages/TeacherPortal';
 import Reception from './pages/Reception';
+import ChecadorAdmin from './pages/ChecadorAdmin';
+import ChecadorKiosk from './pages/ChecadorKiosk';
 import PrintBoleta from './pages/PrintBoleta';
 import PublicVisitRegistration from './pages/PublicVisitRegistration';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
@@ -128,6 +132,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Padres', path: '/padres', icon: Heart, section: 'parents', action: 'view' },
     { name: 'Pagos', path: '/pagos', icon: Banknote, section: 'payments', action: 'view' },
     { name: 'Recepción', path: '/recepcion', icon: BellRing, section: 'reception', action: 'view' },
+    { name: 'Checador', path: '/checador-admin', icon: UserRound, section: 'dashboard', action: 'view' },
     { name: 'Control Escolar', path: '/control-escolar', icon: FileBadge, section: 'controlEscolar', action: 'view' },
     { name: 'Docente', path: '/docentes', icon: Presentation, section: 'grading', action: 'view' },
     { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
@@ -491,6 +496,7 @@ const AppContent = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/visita" element={<PublicVisitRegistration />} />
+      <Route path="/checador" element={<ChecadorKiosk />} />
       <Route path={`/${enrollmentSlug}`} element={<EnrollmentForm />} />
       {/* Compatibility routes */}
       {enrollmentSlug !== 'inscripcion' && <Route path="/inscripcion" element={<EnrollmentForm />} />}
@@ -501,6 +507,14 @@ const AppContent = () => {
           <ProtectedRoute>
             {userProfile?.role === 'Padre' ? <ParentDashboard /> : 
              userProfile?.role === 'Docente' ? <TeacherPortal /> : <Dashboard />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/checador-admin" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Navigate to="/" /> : <ChecadorAdmin />}
           </ProtectedRoute>
         } 
       />
@@ -593,6 +607,7 @@ export default function App() {
     <PermissionsProvider>
       <Router>
         <AppContent />
+        <ToastContainer position="top-right" autoClose={3000} />
       </Router>
     </PermissionsProvider>
   );

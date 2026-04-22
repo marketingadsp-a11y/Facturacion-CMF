@@ -324,3 +324,20 @@ export interface ReceptionVisit {
   status: 'Pendiente' | 'Atendido';
   attendedAt?: Timestamp;
 }
+
+export interface Employee {
+  id: string;
+  name: string;
+  position: string;
+  faceDescriptor: number[];
+  createdAt: Timestamp;
+}
+
+export interface TimeLog {
+  id?: string;
+  employeeId: string;
+  employeeName: string;
+  employeePosition: string;
+  type: 'Entrada' | 'Salida';
+  timestamp: Timestamp;
+}

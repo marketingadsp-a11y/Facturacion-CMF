@@ -23,7 +23,8 @@ import {
   BarChart3,
   Timer,
   ClipboardList,
-  X
+  X,
+  FileDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format, differenceInDays, startOfDay, endOfDay, isAfter, setDate, addDays } from 'date-fns';
@@ -31,10 +32,15 @@ import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import { calculateStudentDebts } from '../lib/paymentUtils';
 import VisitorRegistrationForm from '../components/VisitorRegistrationForm';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import { ReceptionLogPDF } from '../components/ReceptionLogPDF';
 
 export default function Reception() {
   const { hasPermission } = usePermissions();
+  const [activeTab, setActiveTab] = useState<'visitas' | 'bitacora'>('visitas');
   const [visits, setVisits] = useState<ReceptionVisit[]>([]);
+  const [logVisits, setLogVisits] = useState<ReceptionVisit[]>([]);
+  const [logDate, setLogDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -92,6 +98,31 @@ export default function Reception() {
 
     return () => unsubPayments();
   }, [settings?.currentCycleId]);
+
+  useEffect(() => {
+    if (activeTab !== 'bitacora') return;
+
+    // Parse YYYY-MM-DD
+    const parts = logDate.split('-');
+    if (parts.length !== 3) return;
+    
+    const targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const startObj = startOfDay(targetDate);
+    const endObj = endOfDay(targetDate);
+
+    const qLogs = query(
+      collection(db, 'reception_visits'),
+      where('checkInTime', '>=', Timestamp.fromDate(startObj)),
+      where('checkInTime', '<=', Timestamp.fromDate(endObj)),
+      orderBy('checkInTime', 'desc')
+    );
+
+    const unsubLogs = onSnapshot(qLogs, (snap) => {
+      setLogVisits(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceptionVisit)));
+    });
+
+    return () => unsubLogs();
+  }, [activeTab, logDate]);
 
   const handleMarkAsAttended = async (id: string) => {
     try {
@@ -182,7 +213,7 @@ export default function Reception() {
                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">Terminal de Acceso</span>
             </div>
             <h1 className="text-2xl font-black text-slate-950 tracking-tighter flex items-center gap-3 italic">
-              Atención y Recepción
+              Recepción
               <span className="not-italic text-[9px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded uppercase tracking-tighter leading-none inline-flex items-center h-4">
                 ACTIVO
               </span>
@@ -205,11 +236,39 @@ export default function Reception() {
             </button>
           </div>
         </div>
+
+        {/* Custom Tabs */}
+        <div className="max-w-[1600px] mx-auto mt-6 flex gap-4 border-b border-slate-200">
+          <button
+            onClick={() => setActiveTab('visitas')}
+            className={cn(
+              "px-4 py-2 font-black text-[11px] uppercase tracking-widest transition-all border-b-2",
+              activeTab === 'visitas' 
+                ? "border-indigo-600 text-indigo-600" 
+                : "border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300"
+            )}
+          >
+            Panel Principal
+          </button>
+          <button
+            onClick={() => setActiveTab('bitacora')}
+            className={cn(
+              "px-4 py-2 font-black text-[11px] uppercase tracking-widest transition-all border-b-2 flex items-center gap-2",
+              activeTab === 'bitacora' 
+                ? "border-indigo-600 text-indigo-600" 
+                : "border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300"
+            )}
+          >
+            Bitácora de Acceso
+          </button>
+        </div>
       </div>
 
       <main className="max-w-[1600px] mx-auto px-6 space-y-6">
-        {/* Estadísticas en Tarjetas Elegantes y Compactas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {activeTab === 'visitas' && (
+          <>
+            {/* Estadísticas en Tarjetas Elegantes y Compactas */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <StatCard 
             label="Tráfico Total"
             value={visits.length}
@@ -386,6 +445,95 @@ export default function Reception() {
             </div>
           </div>
         </div>
+        </>
+        )}
+
+        {activeTab === 'bitacora' && (
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[600px]">
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50">
+              <div className="flex items-center gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Fecha de Consulta</label>
+                  <input
+                    type="date"
+                    value={logDate}
+                    onChange={(e) => setLogDate(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-md px-3 py-1.5 text-sm font-black text-slate-700 outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <PDFDownloadLink
+                document={<ReceptionLogPDF visits={logVisits} date={new Date(parseInt(logDate.split('-')[0]), parseInt(logDate.split('-')[1]) - 1, parseInt(logDate.split('-')[2]))} schoolName={settings?.schoolName || ''} />}
+                fileName={`bitacora-recepcion-${logDate}.pdf`}
+                className="bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white px-4 py-2 rounded-md font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-emerald-200 hover:border-emerald-600 shadow-sm"
+              >
+                {/* @ts-ignore */}
+                {({ loading }) => (
+                  <>
+                    {loading ? <Timer size={14} className="animate-spin" /> : <FileDown size={14} />}
+                    {loading ? 'Generando PDF...' : 'Exportar Bitácora'}
+                  </>
+                )}
+              </PDFDownloadLink>
+            </div>
+
+            <div className="flex-1 overflow-auto">
+              {logVisits.length > 0 ? (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50 sticky top-0 z-10">
+                    <tr className="border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      <th className="px-6 py-3">Visitante</th>
+                      <th className="px-6 py-3">Área y Motivo</th>
+                      <th className="px-6 py-3">Entrada</th>
+                      <th className="px-6 py-3">Salida</th>
+                      <th className="px-6 py-3">Estatus</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {logVisits.map(visit => (
+                      <tr key={visit.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-black text-slate-800">{visit.name}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="text-xs font-bold text-slate-700">{visit.area}</p>
+                          <p className="text-[10px] font-medium text-slate-500 line-clamp-1">{visit.reason}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="font-mono text-xs text-slate-600">
+                            {format(visit.checkInTime.toDate(), 'HH:mm:ss')}
+                          </p>
+                        </td>
+                        <td className="px-6 py-4">
+                          {visit.attendedAt ? (
+                            <p className="font-mono text-xs text-slate-400">
+                              {format(visit.attendedAt.toDate(), 'HH:mm:ss')}
+                            </p>
+                          ) : (
+                            <span className="text-[10px] text-slate-300 italic">Pendiente</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {visit.status === 'Pendiente' ? (
+                            <span className="bg-rose-50 text-rose-600 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest">Pendiente</span>
+                          ) : (
+                            <span className="bg-emerald-50 text-emerald-600 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest">Atendido</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-slate-300">
+                  <History size={48} className="mb-4 opacity-20" />
+                  <p className="text-xs font-black uppercase tracking-[0.3em]">No hay registros para este día</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Modal de Registro - Technical Aesthetic */}
