@@ -13,7 +13,9 @@ import {
   AlertCircle,
   Copy,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  FileDown,
+  Timer
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format, startOfDay, endOfDay } from 'date-fns';
@@ -21,6 +23,8 @@ import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import * as faceapi from '@vladmandic/face-api';
 import { toast } from 'react-toastify';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import { ChecadorLogPDF } from '../components/ChecadorLogPDF';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 
@@ -33,9 +37,14 @@ export default function ChecadorAdmin() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  const [schoolName, setSchoolName] = useState('Centro de Asistencia');
 
   useEffect(() => {
-    // Load models
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists() && snap.data().schoolName) {
+        setSchoolName(snap.data().schoolName);
+      }
+    });
     const loadModels = async () => {
       try {
         await Promise.all([
@@ -55,7 +64,10 @@ export default function ChecadorAdmin() {
       setEmployees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
     });
 
-    return () => unsubEmployees();
+    return () => {
+      unsubEmployees();
+      unsubSettings();
+    };
   }, []);
 
   useEffect(() => {
@@ -217,16 +229,31 @@ export default function ChecadorAdmin() {
 
         {activeTab === 'bitacora' && (
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[600px]">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-4">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Fecha de Consulta</label>
-                <input
-                  type="date"
-                  value={logDate}
-                  onChange={(e) => setLogDate(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-md px-3 py-1.5 text-sm font-black text-slate-700 outline-none focus:border-indigo-500"
-                />
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50">
+              <div className="flex items-center gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Fecha de Consulta</label>
+                  <input
+                    type="date"
+                    value={logDate}
+                    onChange={(e) => setLogDate(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-md px-3 py-1.5 text-sm font-black text-slate-700 outline-none focus:border-indigo-500"
+                  />
+                </div>
               </div>
+              
+              <PDFDownloadLink
+                document={<ChecadorLogPDF logs={logs} date={new Date(parseInt(logDate.split('-')[0]), parseInt(logDate.split('-')[1]) - 1, parseInt(logDate.split('-')[2]))} schoolName={schoolName} />}
+                fileName={`bitacora-checador-${logDate}.pdf`}
+                className="bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white px-4 py-2 rounded-md font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-emerald-200 hover:border-emerald-600 shadow-sm"
+              >
+                {({ loading }) => (
+                  <>
+                    {loading ? <Timer size={14} className="animate-spin" /> : <FileDown size={14} />}
+                    {loading ? 'Generando Reporte...' : 'Exportar PDF Resumen'}
+                  </>
+                )}
+              </PDFDownloadLink>
             </div>
 
             <div className="flex-1 overflow-auto">

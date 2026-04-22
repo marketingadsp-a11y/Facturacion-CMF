@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { collection, onSnapshot, addDoc, serverTimestamp, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where, getDocs, Timestamp, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Employee, TimeLog } from '../types';
 import * as faceapi from '@vladmandic/face-api';
@@ -25,6 +25,7 @@ export default function ChecadorKiosk() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [schoolLogo, setSchoolLogo] = useState<string | null>(null);
 
   // States for matching feedback
   const [matchedEmployee, setMatchedEmployee] = useState<Employee | null>(null);
@@ -72,7 +73,17 @@ export default function ChecadorKiosk() {
       }
     });
 
-    return () => unsub();
+    // 3. Load settings
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists() && snap.data().schoolLogo) {
+        setSchoolLogo(snap.data().schoolLogo);
+      }
+    });
+
+    return () => {
+      unsub();
+      unsubSettings();
+    };
   }, []);
 
   useEffect(() => {
@@ -204,20 +215,19 @@ export default function ChecadorKiosk() {
       {/* Main Kiosk Content */}
       <div className="relative z-10 w-full max-w-4xl px-8 flex flex-col items-center justify-center h-full">
         
-        <div className="mb-12 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-indigo-500/20 text-indigo-400 mb-6 drop-shadow-[0_0_15px_rgba(99,102,241,0.5)] border border-indigo-500/30">
-            <ScanFace size={32} />
-          </div>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-white drop-shadow-md">
-            Terminal de Asistencia
-          </h1>
-          <p className="text-lg md:text-xl font-bold text-slate-400 max-w-lg mx-auto leading-relaxed">
-            Acérquese a la cámara para el reconocimiento automático de entrada o salida.
-          </p>
+        {/* LOGO */}
+        <div className="mb-8">
+          {schoolLogo ? (
+            <img src={schoolLogo} alt="Logo" className="h-20 w-auto object-contain opacity-90 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-indigo-500/20 text-indigo-400 drop-shadow-[0_0_15px_rgba(99,102,241,0.5)] border border-indigo-500/30">
+              <ScanFace size={32} />
+            </div>
+          )}
         </div>
 
-        {/* Video Container */}
-        <div className="relative bg-slate-900 border-4 border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden w-full max-w-[480px] aspect-[3/4] flex items-center justify-center drop-shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+        {/* Video Container (Checador) */}
+        <div className="relative bg-slate-900 border-4 border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden w-full max-w-[480px] aspect-[3/4] flex items-center justify-center drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-10">
           {!modelsLoaded ? (
             <div className="flex flex-col items-center text-slate-500">
               <RefreshCw className="animate-spin mb-4 text-indigo-500" size={32} />
@@ -301,6 +311,16 @@ export default function ChecadorKiosk() {
               </AnimatePresence>
             </>
           )}
+        </div>
+
+        {/* Text Headers below video */}
+        <div className="text-center">
+          <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-3 text-white drop-shadow-md">
+            RELOJ CHECADOR
+          </h1>
+          <p className="text-base md:text-lg font-bold text-slate-400 max-w-sm mx-auto leading-relaxed">
+            Acérquese a la cámara para el reconocimiento automático de entrada o salida.
+          </p>
         </div>
         
         {/* Realtime Clock Footer */}
