@@ -416,6 +416,17 @@ export default function AcademicControl() {
                 ))}
               </select>
 
+              <select
+                value={filterGroup}
+                onChange={(e) => setFilterGroup(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:border-slate-900"
+              >
+                <option value="">TODOS GRUPOS</option>
+                {(settings?.academicGroups || ['A', 'B', 'C', 'D']).map(group => (
+                  <option key={group} value={group}>{group}</option>
+                ))}
+              </select>
+
               {(filterLevel || filterGrade || filterGroup || searchTerm) && (
                 <button
                   onClick={() => {
@@ -438,14 +449,14 @@ export default function AcademicControl() {
               <table className="w-full text-left border-collapse table-auto">
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-slate-950 text-slate-400 text-[8px] font-black uppercase tracking-[0.2em] border-b border-slate-800">
-                    <th className="px-4 py-3 border-r border-slate-800 italic">Expediente Alumno</th>
+                    <th className="px-4 py-3 border-r border-slate-800 italic w-px whitespace-nowrap">Expediente Alumno</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center italic">ID / CURP</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center">Nivel</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center bg-slate-900">Gado/Gpo</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center italic">Cód. Reg</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center">Promedio</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center">Estatus</th>
-                    <th className="px-4 py-3 text-right italic">Panel</th>
+                    <th className="px-4 py-3 text-right italic w-full">Panel</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-[10px]">
@@ -473,25 +484,24 @@ export default function AcademicControl() {
                           key={student.id} 
                           className="group hover:bg-slate-950 hover:text-white transition-all cursor-default"
                         >
-                          <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800">
+                          <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 w-px whitespace-nowrap">
                             <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded bg-slate-100 group-hover:bg-slate-800 flex items-center justify-center font-black text-slate-500 text-[8px] group-hover:text-slate-400 border border-slate-200 group-hover:border-slate-700">
+                              <div className="w-6 h-6 rounded bg-slate-100 group-hover:bg-slate-800 flex items-center justify-center font-black text-slate-500 text-[8px] group-hover:text-slate-400 border border-slate-200 group-hover:border-slate-700 shrink-0">
                                 {student.name.charAt(0)}{student.lastName.charAt(0)}
                               </div>
-                              <div className="flex flex-col">
-                                 <span className="font-bold uppercase tracking-tight leading-none mb-0.5">{student.lastName}</span>
-                                 <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">{student.name}</span>
+                              <div>
+                                 <span className="font-bold uppercase tracking-tight leading-none whitespace-nowrap">{student.lastName} {student.name}</span>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center font-mono group-hover:text-amber-400">
-                            {student.curp?.slice(0, 10)}...
+                          <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center font-mono group-hover:text-amber-400 whitespace-nowrap">
+                            {student.curp || 'N/A'}
                           </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center">
                             <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">{student.level}</span>
                           </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center bg-slate-50 group-hover:bg-slate-900">
-                             <span className="text-[11px] font-black tracking-tighter italic">{student.grade}{student.group}</span>
+                             <span className="text-[11px] font-black tracking-tighter italic">{student.grade} - {student.group}</span>
                           </td>
                           
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center">
@@ -524,21 +534,21 @@ export default function AcademicControl() {
                             )}
                           </td>
                           
-                          <td className="px-4 py-2.5 text-right">
-                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <td className="px-4 py-2.5 text-right w-px whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-2">
                               <button
                                 onClick={() => handlePrintBoleta(student)}
-                                className="p-1 text-slate-400 hover:text-emerald-400 transition-all"
+                                className="p-1.5 bg-slate-100 text-slate-600 hover:!bg-emerald-500 hover:!text-white group-hover:bg-slate-800 group-hover:text-slate-400 rounded transition-all"
                                 title="Boleta"
                               >
-                                <Printer size={12} />
+                                <Printer size={13} />
                               </button>
                               <button
                                 onClick={() => handleEditStudent(student)}
-                                className="p-1 text-slate-400 hover:text-blue-400 transition-all"
+                                className="p-1.5 bg-slate-100 text-slate-600 hover:!bg-blue-600 hover:!text-white group-hover:bg-slate-800 group-hover:text-slate-400 rounded transition-all"
                                 title="Editar"
                               >
-                                <Edit2 size={12} />
+                                <Edit2 size={13} />
                               </button>
                             </div>
                           </td>

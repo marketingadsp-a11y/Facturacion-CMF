@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, StudentGrade, AppSettings, SchoolCycle } from '../types';
-import ReportCardPrint from '../components/ReportCardPrint';
+import ReportCardPDF from '../components/ReportCardPDF';
+import { PDFViewer } from '@react-pdf/renderer';
 
 export default function PrintBoleta() {
   const { studentId } = useParams();
@@ -55,20 +56,10 @@ export default function PrintBoleta() {
     fetchData();
   }, [studentId]);
 
-  useEffect(() => {
-    if (!loading && student && cycle) {
-      // Delay printing slightly to ensure styles are applied
-      const timer = setTimeout(() => {
-        window.print();
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [loading, student, cycle]);
-
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-white">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
@@ -82,13 +73,15 @@ export default function PrintBoleta() {
   }
 
   return (
-    <div className="bg-white min-h-screen">
-      <ReportCardPrint 
-        student={student}
-        grades={grades}
-        settings={settings}
-        cycle={cycle}
-      />
+    <div className="bg-slate-900 h-screen w-screen m-0 p-0 overflow-hidden flex flex-col">
+      <PDFViewer width="100%" height="100%" className="flex-1 border-none">
+        <ReportCardPDF 
+          student={student}
+          grades={grades}
+          settings={settings}
+          cycle={cycle}
+        />
+      </PDFViewer>
     </div>
   );
 }
