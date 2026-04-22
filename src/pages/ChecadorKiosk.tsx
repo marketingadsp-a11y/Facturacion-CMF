@@ -8,6 +8,7 @@ import { Camera, RefreshCw, CheckCircle2, ShieldAlert, Clock, ScanFace, Check } 
 import { startOfDay, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import { cn } from '../lib/utils';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 
