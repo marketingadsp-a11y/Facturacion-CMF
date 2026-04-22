@@ -43,34 +43,34 @@ export default function PublicVisitRegistration() {
         <Maximize size={24} />
       </button>
 
-      <main className="relative z-10 flex-1 flex items-center justify-center p-6 sm:p-12">
+      <main className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-8">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="w-full max-w-4xl max-h-full flex flex-col bg-white rounded-[40px] shadow-[0_32px_80px_-16px_rgba(0,0,0,0.08)] border border-slate-100 overflow-hidden"
+          className="w-full max-w-3xl max-h-full flex flex-col bg-white rounded-[32px] shadow-[0_32px_80px_-16px_rgba(0,0,0,0.08)] border border-slate-100 overflow-hidden"
         >
           {/* Main content area (scrollable if needed, but optimized to fit) */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-8 sm:p-14">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 sm:p-10">
             
-            <div className="flex flex-col items-center text-center mb-10">
-              <div className="w-24 h-24 sm:w-28 sm:h-28 bg-white rounded-[2rem] flex items-center justify-center overflow-hidden border border-slate-100 shadow-md mb-6 shrink-0">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white rounded-[1.5rem] flex items-center justify-center overflow-hidden border border-slate-100 shadow-md mb-4 shrink-0">
                 {settings?.logoUrl ? (
                   <img src={settings.logoUrl} alt="Logo" className="w-[85%] h-[85%] object-contain" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="bg-indigo-600 w-full h-full flex items-center justify-center text-white">
-                    <GraduationCap size={48} />
+                    <GraduationCap size={44} />
                   </div>
                 )}
               </div>
-              <h2 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tighter">Bienvenido</h2>
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter">Bienvenido</h2>
             </div>
 
             <VisitorRegistrationForm isPublic />
           </div>
 
           {/* Footer inside the card */}
-          <div className="bg-slate-50/80 px-8 py-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+          <div className="bg-slate-50/80 px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                {settings?.schoolName || 'Colegio México Franciscano'} © {new Date().getFullYear()}
              </p>

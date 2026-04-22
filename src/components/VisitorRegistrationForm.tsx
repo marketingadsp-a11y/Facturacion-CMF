@@ -136,17 +136,14 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
             initial="initial" 
             animate="animate" 
             exit="exit"
-            className="space-y-12 py-8"
+            className="space-y-8 py-4"
           >
-            <div className="text-center space-y-4">
-              <div className="w-20 h-20 bg-indigo-50 rounded-[2rem] flex items-center justify-center text-indigo-600 mx-auto shadow-sm border border-indigo-100/50">
-                <User size={36} strokeWidth={2.5} />
-              </div>
-              <h3 className="text-4xl font-black text-slate-900 tracking-tighter">Bienvenido, ¿cuál es su nombre?</h3>
-              <p className="text-slate-400 font-medium text-lg italic lowercase">— por favor, ingrese su nombre completo —</p>
+            <div className="text-center space-y-2">
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">¿Cuál es su nombre?</h3>
+              <p className="text-slate-400 font-medium text-base italic lowercase">— ingrese su nombre completo —</p>
             </div>
             
-            <div className="space-y-8">
+            <div className="space-y-6">
               <input
                 required
                 autoFocus
@@ -154,16 +151,16 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
                 onKeyDown={(e) => { if(e.key === 'Enter' && formData.name) nextStep(); }}
                 placeholder="Escribe aquí..."
-                className="w-full bg-white border-b-4 border-slate-100 pb-6 text-5xl font-black text-center focus:border-indigo-600 outline-none transition-all placeholder:text-slate-100"
+                className="w-full bg-white border-b-4 border-slate-100 pb-4 text-4xl font-black text-center focus:border-indigo-600 outline-none transition-all placeholder:text-slate-100"
               />
               
-              <div className="flex justify-center pt-8">
+              <div className="flex justify-center pt-4">
                 <button
                   type="button"
                   onClick={nextStep}
                   disabled={!formData.name}
                   className={cn(
-                    "px-16 py-6 rounded-[2rem] font-black text-lg uppercase tracking-widest transition-all flex items-center gap-4 shadow-2xl",
+                    "px-12 py-5 rounded-[2rem] font-black text-base uppercase tracking-widest transition-all flex items-center gap-4 shadow-2xl",
                     formData.name 
                       ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200 scale-105" 
                       : "bg-slate-100 text-slate-300 cursor-not-allowed opacity-50"
@@ -184,32 +181,32 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
             initial="initial" 
             animate="animate" 
             exit="exit"
-            className="space-y-12 py-8"
+            className="space-y-6 py-4"
           >
-            <div className="text-center space-y-4">
-              <div className="w-20 h-20 bg-emerald-50 rounded-[2rem] flex items-center justify-center text-emerald-600 mx-auto shadow-sm border border-emerald-100/50">
-                <MapPin size={36} strokeWidth={2.5} />
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-emerald-50 rounded-[1.5rem] flex items-center justify-center text-emerald-600 mx-auto shadow-sm border border-emerald-100/50">
+                <MapPin size={32} strokeWidth={2.5} />
               </div>
-              <h3 className="text-4xl font-black text-slate-900 tracking-tighter">¿A qué área se dirige?</h3>
-              <p className="text-slate-400 font-medium text-lg italic lowercase">— seleccione el departamento de su interés —</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">¿A qué área se dirige?</h3>
+              <p className="text-slate-400 font-medium text-base italic lowercase">— seleccione el departamento de su interés —</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto">
               {areas.map(area => (
                 <button
                   key={area}
                   type="button"
                   onClick={() => setFormData({...formData, area})}
                   className={cn(
-                    "px-8 py-6 text-left rounded-3xl border-4 transition-all duration-300 relative group overflow-hidden",
+                    "px-6 py-4 text-left rounded-[1.5rem] border-4 transition-all duration-300 relative group overflow-hidden",
                     formData.area === area 
-                      ? "border-emerald-600 bg-emerald-50 text-emerald-700 shadow-xl shadow-emerald-50 scale-105" 
+                      ? "border-emerald-600 bg-emerald-50 text-emerald-700 shadow-lg shadow-emerald-50 scale-105" 
                       : "border-slate-50 bg-slate-50/50 text-slate-400 hover:border-slate-100 hover:bg-white"
                   )}
                 >
-                  <span className="text-xl font-black uppercase tracking-tight relative z-10">{area}</span>
+                  <span className="text-lg font-black uppercase tracking-tight relative z-10">{area}</span>
                   {formData.area === area && (
-                    <motion.div layoutId="area-active" className="absolute right-6 top-1/2 -translate-y-1/2 text-emerald-600">
+                    <motion.div layoutId="area-active" className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-600">
                        <CheckCircle2 size={24} strokeWidth={3} />
                     </motion.div>
                   )}
@@ -217,20 +214,20 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
               ))}
             </div>
 
-            <div className="flex justify-center items-center gap-6 pt-12">
+            <div className="flex justify-center items-center gap-6 pt-6">
               <button
                 type="button"
                 onClick={prevStep}
-                className="p-6 text-slate-300 hover:text-slate-600 transition-colors rounded-full"
+                className="p-5 text-slate-300 hover:text-slate-600 transition-colors rounded-full"
               >
-                <ArrowLeft size={32} />
+                <ArrowLeft size={28} />
               </button>
               <button
                 type="button"
                 onClick={nextStep}
                 disabled={!formData.area}
                 className={cn(
-                  "px-16 py-6 rounded-[2rem] font-black text-lg uppercase tracking-widest transition-all flex items-center gap-4 shadow-2xl",
+                  "px-12 py-5 rounded-[2rem] font-black text-base uppercase tracking-widest transition-all flex items-center gap-4 shadow-2xl",
                   formData.area 
                     ? "bg-slate-900 text-white hover:bg-black shadow-slate-200 scale-105" 
                     : "bg-slate-100 text-slate-300 cursor-not-allowed opacity-50"
@@ -250,17 +247,17 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
             initial="initial" 
             animate="animate" 
             exit="exit"
-            className="space-y-10 py-8"
+            className="space-y-6 py-4"
           >
-            <div className="text-center space-y-4">
-              <div className="w-20 h-20 bg-amber-50 rounded-[2rem] flex items-center justify-center text-amber-600 mx-auto shadow-sm border border-amber-100/50">
-                <MessageSquare size={36} strokeWidth={2.5} />
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-amber-50 rounded-[1.5rem] flex items-center justify-center text-amber-600 mx-auto shadow-sm border border-amber-100/50">
+                <MessageSquare size={32} strokeWidth={2.5} />
               </div>
-              <h3 className="text-4xl font-black text-slate-900 tracking-tighter">¿Cuál es el motivo de su visita?</h3>
-              <p className="text-slate-400 font-medium text-lg italic lowercase">— cuéntenos brevemente la razón de su llegada —</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">¿Cuál es el motivo de su visita?</h3>
+              <p className="text-slate-400 font-medium text-base italic lowercase">— cuéntenos brevemente la razón de su llegada —</p>
             </div>
 
-            <div className="max-w-3xl mx-auto space-y-8">
+            <div className="max-w-3xl mx-auto space-y-6">
               <div className="flex flex-wrap justify-center gap-3">
                 {reasons.map(reason => (
                   <button
@@ -268,9 +265,9 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
                     type="button"
                     onClick={() => setFormData({...formData, reason})}
                     className={cn(
-                      "px-8 py-5 text-sm font-black uppercase rounded-2xl border-4 transition-all",
+                      "px-6 py-4 text-sm font-black uppercase rounded-2xl border-4 transition-all",
                       formData.reason === reason 
-                        ? "bg-slate-900 text-white border-slate-900 shadow-2xl scale-110" 
+                        ? "bg-slate-900 text-white border-slate-900 shadow-xl scale-110" 
                         : "bg-white text-slate-400 border-slate-100 hover:border-slate-200 hover:text-slate-600"
                     )}
                   >
@@ -285,7 +282,7 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
-                    className="space-y-4"
+                    className="space-y-2"
                   >
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center italic">Escriba el motivo específico</label>
                      <input
@@ -293,26 +290,26 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
                         value={formData.otherReason}
                         onChange={(e) => setFormData({...formData, otherReason: e.target.value})}
                         placeholder="Escriba aquí..."
-                        className="w-full bg-slate-50 border-4 border-slate-100 rounded-[2rem] px-8 py-6 text-2xl font-black focus:border-amber-500 focus:bg-white outline-none transition-all placeholder:text-slate-200 text-center"
+                        className="w-full bg-slate-50 border-4 border-slate-100 rounded-[2rem] px-6 py-4 text-xl font-black focus:border-amber-500 focus:bg-white outline-none transition-all placeholder:text-slate-200 text-center"
                      />
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              <div className="flex justify-center items-center gap-8 pt-6">
+              <div className="flex justify-center items-center gap-6 pt-4">
                 <button
                   type="button"
                   onClick={prevStep}
-                  className="p-6 text-slate-300 hover:text-slate-600 transition-colors rounded-full"
+                  className="p-5 text-slate-300 hover:text-slate-600 transition-colors rounded-full"
                 >
-                  <ArrowLeft size={32} />
+                  <ArrowLeft size={28} />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSubmit()}
                   disabled={isSubmitting || !formData.reason || (formData.reason === 'Otro' && !formData.otherReason)}
                   className={cn(
-                    "px-20 py-7 rounded-[2.5rem] font-black text-xl uppercase tracking-[0.2em] transition-all flex items-center gap-4 shadow-2xl active:scale-95",
+                    "px-14 py-6 rounded-[2.5rem] font-black text-lg uppercase tracking-[0.2em] transition-all flex items-center gap-4 shadow-2xl active:scale-95",
                     (formData.reason && (formData.reason !== 'Otro' || formData.otherReason))
                       ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200 scale-105" 
                       : "bg-slate-100 text-slate-300 cursor-not-allowed opacity-50 shadow-none"
