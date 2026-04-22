@@ -64,16 +64,23 @@ export default function ChecadorAdmin() {
     const parts = logDate.split('-');
     if (parts.length !== 3) return;
     const targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const startObj = startOfDay(targetDate);
+    const endObj = endOfDay(targetDate);
     
+    // Only query by timestamp to avoid composite index error (or fetch all and filter)
     const qLogs = query(
       collection(db, 'attendance_logs'),
-      where('timestamp', '>=', Timestamp.fromDate(startOfDay(targetDate))),
-      where('timestamp', '<=', Timestamp.fromDate(endOfDay(targetDate))),
       orderBy('timestamp', 'desc')
     );
 
     const unsubLogs = onSnapshot(qLogs, (snap) => {
-      setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimeLog)));
+      const allLogs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimeLog));
+      const filtered = allLogs.filter(log => 
+        log.timestamp && 
+        log.timestamp.toMillis() >= startObj.getTime() && 
+        log.timestamp.toMillis() <= endObj.getTime()
+      );
+      setLogs(filtered);
     });
 
     return () => unsubLogs();

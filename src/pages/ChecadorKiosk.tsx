@@ -136,25 +136,27 @@ export default function ChecadorKiosk() {
 
     try {
       // Logic for Entrada/Salida
-      // Check if they had an 'Entrada' today
       const today = startOfDay(new Date());
+      // Query without composite filter to avoid missing index error
       const qCheck = query(
         collection(db, 'attendance_logs'),
-        where('employeeId', '==', emp.id),
-        where('timestamp', '>=', Timestamp.fromDate(today))
+        where('employeeId', '==', emp.id)
       );
       
       const snap = await getDocs(qCheck);
-      const logsToday = snap.docs.map(d => d.data() as TimeLog);
+      // Filter today's logs in memory
+      const logsToday = snap.docs.map(d => d.data() as TimeLog).filter(d => 
+        d.timestamp && d.timestamp.toMillis() >= today.getTime()
+      );
       
       let type: 'Entrada' | 'Salida' = 'Entrada';
       
       if (logsToday.length > 0) {
-        // Sort by timestamp
+        // Sort by timestamp descending
         logsToday.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
         const lastLog = logsToday[0];
         
-        // If last log was Entrada, this is Salida. If Salida, this is Entrada (allowing multiple shifts).
+        // If last log was Entrada, this is Salida. If Salida, this is Entrada.
         if (lastLog.type === 'Entrada') {
           type = 'Salida';
         }
