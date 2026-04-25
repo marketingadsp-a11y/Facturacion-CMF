@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface VisitorRegistrationFormProps {
   onSuccess?: () => void;
@@ -63,6 +64,7 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
         status: 'Pendiente'
       });
       setIsSuccess(true);
+      const timeoutSeconds = settings?.visitorSuccessTimeout || 5;
       setTimeout(() => {
         if (onSuccess) onSuccess();
         // Reset if public
@@ -71,7 +73,7 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
           setStep(1);
           setFormData({ name: '', area: '', reason: '', otherReason: '' });
         }
-      }, 3000);
+      }, timeoutSeconds * 1000);
     } catch (error) {
       console.error("Error al registrar visita:", error);
     } finally {
@@ -90,26 +92,52 @@ export default function VisitorRegistrationForm({ onSuccess, onCancel, isPublic 
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="flex flex-col items-center justify-center p-12 text-center space-y-6"
+        className="flex flex-col items-center justify-center p-6 sm:p-12 text-center"
       >
-        <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-xl shadow-emerald-50">
-          <CheckCircle2 size={48} strokeWidth={2.5} />
+        <div className="flex flex-col md:flex-row items-center justify-center gap-10 w-full">
+          <div className="flex flex-col items-center flex-1 space-y-6">
+            <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-xl shadow-emerald-50">
+              <CheckCircle2 size={48} strokeWidth={2.5} />
+            </div>
+            <div>
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                {settings?.receptionSuccessTitle || '¡Registro Exitoso!'}
+              </h2>
+              <p className="text-slate-500 font-medium mt-4 max-w-sm mx-auto text-lg leading-relaxed">
+                {settings?.receptionSuccessMessage || 'Hemos recibido tu registro. Por favor, toma asiento, en un momento te atenderemos.'}
+              </p>
+            </div>
+          </div>
+
+          {settings?.visitorQrCodeContent && (
+            <div className="bg-white p-6 rounded-3xl border-4 border-slate-50 shadow-xl flex flex-col items-center gap-4 animate-in fade-in zoom-in slide-in-from-right-4 duration-700">
+              <div className="p-4 bg-white rounded-2xl shadow-sm border border-slate-100">
+                <QRCodeSVG 
+                  value={settings.visitorQrCodeContent} 
+                  size={180}
+                  level="H"
+                  includeMargin={true}
+                />
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
+                  {settings.visitorQrCodeLabel || 'Escanea para'}
+                </p>
+                <p className="text-xs font-black text-slate-900 uppercase tracking-widest truncate max-w-[200px]">
+                  {settings.visitorQrCodeDescription || 'Contenido exclusivo'}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-        <div>
-          <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-            {settings?.receptionSuccessTitle || '¡Registro Exitoso!'}
-          </h2>
-          <p className="text-slate-500 font-medium mt-4 max-w-sm mx-auto text-lg leading-relaxed">
-            {settings?.receptionSuccessMessage || 'Hemos recibido tu registro. Por favor, toma asiento, en un momento te atenderemos.'}
-          </p>
-        </div>
+
         {isPublic && (
-          <div className="pt-8 w-full max-w-xs">
-            <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+          <div className="pt-12 w-full max-w-xs">
+            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
               <motion.div 
                 initial={{ width: "100%" }}
                 animate={{ width: "0%" }}
-                transition={{ duration: 3, ease: "linear" }}
+                transition={{ duration: settings?.visitorSuccessTimeout || 5, ease: "linear" }}
                 className="bg-emerald-500 h-full"
               />
             </div>

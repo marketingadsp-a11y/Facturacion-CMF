@@ -274,6 +274,10 @@ export interface AppSettings {
   kioskBackgroundUrl?: string;
   notFoundBackgroundUrl?: string;
   notFoundText?: string;
+  visitorQrCodeContent?: string;
+  visitorQrCodeLabel?: string;
+  visitorQrCodeDescription?: string;
+  visitorSuccessTimeout?: number; // Seconds to show success screen
 }
 
 export interface Subject {

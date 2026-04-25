@@ -202,7 +202,7 @@ export default function ChecadorKiosk() {
 
       if (isBirthday) {
         // Multiple bursts for extra impact
-        const duration = 5 * 1000;
+        const duration = 10 * 1000;
         const animationEnd = Date.now() + duration;
         const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
 
