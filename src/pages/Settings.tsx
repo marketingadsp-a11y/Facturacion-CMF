@@ -374,6 +374,18 @@ export default function Settings() {
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">URL de Fondo del Checador (Kiosk)</label>
+                  <input
+                    placeholder="https://ejemplo.com/background.jpg"
+                    value={settings.kioskBackgroundUrl || ''}
+                    onChange={(e) => setSettings({...settings, kioskBackgroundUrl: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-2 italic">
+                    * Si dejas este campo vacío, se usará el fondo oscuro predeterminado por el sistema.
+                  </p>
+                </div>
               </div>
 
               {/* Enrollment Settings */}

@@ -271,6 +271,7 @@ export interface AppSettings {
   developerAttribution?: string;
   registrationInstructions?: string;
   pdfFooter?: string;
+  kioskBackgroundUrl?: string;
 }
 
 export type Bimestre = 1 | 2 | 3 | 4 | 5;

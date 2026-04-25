@@ -26,6 +26,7 @@ export default function ChecadorKiosk() {
   const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [schoolLogo, setSchoolLogo] = useState<string | null>(null);
+  const [kioskBackground, setKioskBackground] = useState<string | null>(null);
 
   // States for matching feedback
   const [matchedEmployee, setMatchedEmployee] = useState<Employee | null>(null);
@@ -79,6 +80,9 @@ export default function ChecadorKiosk() {
         const data = snap.data();
         if (data.logoUrl) {
           setSchoolLogo(data.logoUrl);
+        }
+        if (data.kioskBackgroundUrl) {
+          setKioskBackground(data.kioskBackgroundUrl);
         }
       }
     });
@@ -210,10 +214,20 @@ export default function ChecadorKiosk() {
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center overflow-hidden font-sans text-white">
+    <div 
+      className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center overflow-hidden font-sans text-white transition-all duration-1000"
+      style={kioskBackground ? { 
+        backgroundImage: `url(${kioskBackground})`, 
+        backgroundSize: 'cover', 
+        backgroundPosition: 'center' 
+      } : {}}
+    >
       
       {/* Background Graphic Overlay */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.2)_0,rgba(0,0,0,1)_100%)]" />
+      <div className={cn(
+        "absolute inset-0 opacity-20 pointer-events-none",
+        kioskBackground ? "bg-black/60" : "bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.2)_0,rgba(0,0,0,1)_100%)]"
+      )} />
 
       {/* Main Kiosk Content */}
       <div className="relative z-10 w-full max-w-4xl px-8 flex flex-col items-center justify-center h-full">
@@ -230,7 +244,7 @@ export default function ChecadorKiosk() {
         </div>
 
         {/* Video Container (Checador) */}
-        <div className="relative bg-slate-900 border-4 border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden w-full max-w-[480px] aspect-[3/4] flex items-center justify-center drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-10">
+        <div className="relative bg-slate-900 border-4 border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden w-full max-w-[480px] aspect-[3/4] flex items-center justify-center drop-shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-10 group">
           {!modelsLoaded ? (
             <div className="flex flex-col items-center text-slate-500">
               <RefreshCw className="animate-spin mb-4 text-indigo-500" size={32} />
@@ -312,24 +326,27 @@ export default function ChecadorKiosk() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {/* Realtime Clock Overlay inside Video */}
+              <div className="absolute bottom-6 left-0 w-full flex justify-center z-10 px-4">
+                <RealTimeClock />
+              </div>
             </>
           )}
         </div>
 
         {/* Text Headers below video */}
-        <div className="text-center">
-          <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-3 text-white drop-shadow-md">
-            RELOJ CHECADOR
-          </h1>
-          <p className="text-base md:text-lg font-bold text-slate-400 max-w-sm mx-auto leading-relaxed">
-            Acérquese a la cámara para el reconocimiento automático de entrada o salida.
-          </p>
+        <div className="text-center space-y-4">
+          <div className="inline-block bg-black/40 backdrop-blur-md px-8 py-4 rounded-[2rem] border border-white/10 shadow-2xl">
+            <h1 className="text-3xl md:text-5xl font-black tracking-tighter text-white drop-shadow-lg mb-1 leading-none">
+              RELOJ CHECADOR
+            </h1>
+            <p className="text-sm md:text-lg font-bold text-slate-200 tracking-wide opacity-90 leading-relaxed max-w-sm mx-auto">
+              Acérquese a la cámara para el reconocimiento automático de entrada o salida.
+            </p>
+          </div>
         </div>
         
-        {/* Realtime Clock Footer */}
-        <div className="absolute bottom-8 left-0 w-full flex justify-center">
-           <RealTimeClock />
-        </div>
+        {/* Bottom Section (Space reserved if needed) */}
       </div>
     </div>
   );
@@ -343,15 +360,20 @@ function RealTimeClock() {
   }, []);
   
   return (
-    <div className="flex items-center gap-4 bg-slate-900/50 backdrop-blur-md px-6 py-3 rounded-2xl border border-slate-800/50">
-      <Clock size={20} className="text-slate-500" />
-      <span className="font-mono text-xl font-bold text-slate-300 tracking-wider">
-        {format(time, 'HH:mm:ss')}
-      </span>
-      <span className="w-px h-6 bg-slate-800 mx-2"></span>
-      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-        {format(time, 'EEEE d MMM', { locale: es })}
-      </span>
+    <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl px-6 py-2.5 rounded-[1.5rem] border border-white/10 shadow-2xl">
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none mb-1">Hora Local</span>
+        <span className="font-mono text-xl font-black text-white tracking-widest leading-none">
+          {format(time, 'HH:mm:ss')}
+        </span>
+      </div>
+      <div className="w-px h-8 bg-white/10 mx-1"></div>
+      <div className="flex flex-col">
+        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none mb-1 text-center">Fecha</span>
+        <span className="text-[10px] font-black uppercase tracking-tight text-indigo-300 leading-none">
+          {format(time, 'EEEE d MMM, yyyy', { locale: es })}
+        </span>
+      </div>
     </div>
   );
 }
