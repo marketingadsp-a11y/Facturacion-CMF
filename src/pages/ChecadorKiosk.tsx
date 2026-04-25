@@ -75,8 +75,11 @@ export default function ChecadorKiosk() {
 
     // 3. Load settings
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
-      if (snap.exists() && snap.data().schoolLogo) {
-        setSchoolLogo(snap.data().schoolLogo);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.logoUrl) {
+          setSchoolLogo(data.logoUrl);
+        }
       }
     });
 
@@ -216,12 +219,12 @@ export default function ChecadorKiosk() {
       <div className="relative z-10 w-full max-w-4xl px-8 flex flex-col items-center justify-center h-full">
         
         {/* LOGO */}
-        <div className="mb-8">
+        <div className="mb-10">
           {schoolLogo ? (
-            <img src={schoolLogo} alt="Logo" className="h-20 w-auto object-contain opacity-90 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" referrerPolicy="no-referrer" />
+            <img src={schoolLogo} alt="Logo" className="h-32 md:h-40 w-auto object-contain opacity-95 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]" referrerPolicy="no-referrer" />
           ) : (
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-indigo-500/20 text-indigo-400 drop-shadow-[0_0_15px_rgba(99,102,241,0.5)] border border-indigo-500/30">
-              <ScanFace size={32} />
+            <div className="inline-flex items-center justify-center w-24 h-24 rounded-[2rem] bg-indigo-500/20 text-indigo-400 drop-shadow-[0_0_20px_rgba(99,102,241,0.5)] border border-indigo-500/30">
+              <ScanFace size={48} />
             </div>
           )}
         </div>

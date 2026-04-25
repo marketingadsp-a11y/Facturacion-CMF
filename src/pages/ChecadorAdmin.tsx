@@ -38,11 +38,14 @@ export default function ChecadorAdmin() {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [schoolName, setSchoolName] = useState('Centro de Asistencia');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
-      if (snap.exists() && snap.data().schoolName) {
-        setSchoolName(snap.data().schoolName);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.schoolName) setSchoolName(data.schoolName);
+        if (data.logoUrl) setLogoUrl(data.logoUrl);
       }
     });
     const loadModels = async () => {
@@ -117,7 +120,10 @@ export default function ChecadorAdmin() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-12">
       <div className="bg-white border-b border-slate-200 px-6 py-4 mb-6 sticky top-0 z-30 shadow-sm">
         <div className="max-w-[1200px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
+          <div className="flex items-center gap-4">
+            {logoUrl && (
+              <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain" referrerPolicy="no-referrer" />
+            )}
             <h1 className="text-2xl font-black text-slate-950 tracking-tighter flex items-center gap-3 italic">
               Reloj Checador Biométrico
               <span className="not-italic text-[9px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded uppercase">Reconocimiento Facial</span>
