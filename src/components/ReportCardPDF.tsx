@@ -185,11 +185,15 @@ interface ReportCardPDFProps {
 
 export default function ReportCardPDF({ student, grades, subjects, settings, cycle }: ReportCardPDFProps) {
   const academicSubjects = subjects
-    .filter(s => s.category !== 'Extracurricular')
+    .filter(s => s.category !== 'Extracurricular' && s.category !== 'Aspectos Formativos')
     .map(s => s.name);
 
   const curricularSubjects = subjects
     .filter(s => s.category === 'Extracurricular')
+    .map(s => s.name);
+
+  const formativeSubjects = subjects
+    .filter(s => s.category === 'Aspectos Formativos')
     .map(s => s.name);
 
   const behaviorAspects = [
@@ -198,7 +202,25 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
 
   const getGrade = (subject: string, bimestre: number) => {
     const bg = grades.find(g => g.bimestre === bimestre);
-    if (!bg || !bg.subjects) return '-';
+    if (!bg) return '-';
+
+    // Map behavior aspect labels to their dedicated fields in StudentGrade object
+    const behaviorMap: Record<string, keyof StudentGrade> = {
+      'Conducta': 'conduct',
+      'Uniforme': 'uniform',
+      'Inasistencia': 'attendance',
+      'Tareas no realizadas': 'tasksNotDone',
+      'Retardo': 'tardies',
+      'Aseo': 'cleanliness'
+    };
+
+    if (behaviorMap[subject]) {
+      const field = behaviorMap[subject];
+      const val = bg[field];
+      return typeof val === 'number' ? val : '-';
+    }
+
+    if (!bg.subjects) return '-';
     return bg.subjects[subject] !== undefined ? bg.subjects[subject] : '-';
   };
 
@@ -405,6 +427,16 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
                   <Text style={styles.tableCellHeaderGrade}>4º</Text>
                   <Text style={styles.tableCellHeaderGrade}>5º</Text>
                 </View>
+                {formativeSubjects.map((aspect, idx) => (
+                  <View key={`formative-${idx}`} style={styles.tableRow}>
+                    <Text style={[styles.tableCellSubject, { color: '#475569' }]}>{aspect}</Text>
+                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 1)}</Text>
+                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 2)}</Text>
+                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 3)}</Text>
+                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 4)}</Text>
+                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 5)}</Text>
+                  </View>
+                ))}
                 {behaviorAspects.map((aspect, idx) => (
                   <View key={idx} style={styles.tableRow}>
                     <Text style={[styles.tableCellSubject, { color: '#475569' }]}>{aspect}</Text>

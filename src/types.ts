@@ -278,6 +278,8 @@ export interface AppSettings {
   kioskBackgroundUrl?: string;
   notFoundBackgroundUrl?: string;
   notFoundText?: string;
+  loginTitle?: string;
+  loginSubtitle?: string;
   visitorQrCodeContent?: string;
   visitorQrCodeLabel?: string;
   visitorQrCodeDescription?: string;
@@ -288,7 +290,7 @@ export interface Subject {
   id: string;
   name: string;
   level: string; // Preescolar, Primaria, etc.
-  category?: 'Académica' | 'Extracurricular';
+  category?: 'Académica' | 'Extracurricular' | 'Aspectos Formativos';
   createdAt: Timestamp;
 }
 

@@ -51,7 +51,7 @@ export default function ParentDashboard() {
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [activeTab, setActiveTab] = useState<'hijos' | 'facturas' | 'billing'>((searchParams.get('tab') as any) || 'hijos');
+  const [activeTab, setActiveTab] = useState<'hijos' | 'facturas' | 'billing' | 'avisos'>((searchParams.get('tab') as any) || 'hijos');
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [billingData, setBillingData] = useState({
     rfc: '',
@@ -63,7 +63,7 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'hijos' || tab === 'facturas' || tab === 'billing') {
+    if (tab === 'hijos' || tab === 'facturas' || tab === 'billing' || tab === 'avisos') {
       if (tab !== activeTab) setActiveTab(tab as any);
     } else if (!tab && activeTab !== 'hijos') {
       setActiveTab('hijos');
@@ -170,8 +170,8 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'facturas' || tab === 'hijos') {
-      setActiveTab(tab as 'hijos' | 'facturas');
+    if (tab === 'facturas' || tab === 'hijos' || tab === 'billing' || tab === 'avisos') {
+      setActiveTab(tab as any);
     }
   }, [searchParams]);
 
@@ -435,168 +435,179 @@ export default function ParentDashboard() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8 pb-24 pt-4">
       <AnimatePresence>
         {paymentStatus && (
           <motion.div 
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ opacity: 0, y: -10 }}
             className={cn(
-              "p-4 rounded-2xl flex items-center justify-between gap-4",
-              paymentStatus === 'success' ? "bg-emerald-50 text-emerald-800 border border-emerald-100" : "bg-red-50 text-red-800 border border-red-100"
+              "p-4 rounded-xl flex items-center justify-between gap-4 shadow-lg",
+              paymentStatus === 'success' 
+                ? "bg-emerald-600 text-white" 
+                : "bg-rose-600 text-white"
             )}
           >
             <div className="flex items-center gap-3">
-              {paymentStatus === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-              <p className="text-sm font-bold">
-                {paymentStatus === 'success' 
-                  ? "¡Pago procesado con éxito! En breve se verá reflejado en tu historial." 
-                  : "Hubo un problema al procesar tu pago. Por favor, intenta de nuevo."}
-              </p>
+              {paymentStatus === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">
+                  {paymentStatus === 'success' ? "Éxito" : "Atención"}
+                </p>
+                <p className="text-xs opacity-90 font-medium">
+                  {paymentStatus === 'success' ? "Pago confirmado." : "Error al procesar."}
+                </p>
+              </div>
             </div>
             <button onClick={() => {
               setPaymentStatus(null);
               setSearchParams({});
-            }} className="p-1 hover:bg-black/5 rounded-full">
-              <X size={16} />
+            }} className="p-1.5 hover:bg-white/10 rounded-lg">
+              <X size={18} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {unreadAnnouncements.length > 0 ? (
-        <div className="space-y-6">
-          {unreadAnnouncements.map((ann, idx) => {
-            return (
-            <motion.div 
-              key={ann.id}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              className={cn(
-                "p-6 rounded-3xl border shadow-sm relative overflow-hidden group flex flex-col",
-                ann.type === 'important' ? "bg-rose-50 border-rose-200 text-rose-900" :
-                ann.type === 'warning' ? "bg-amber-50 border-amber-200 text-amber-900" :
-                "bg-slate-50 border-slate-200 text-slate-900"
-              )}
-            >
-              <div className="flex items-start gap-5 relative z-10 w-full">
-                <div className={cn(
-                  "p-4 rounded-2xl shrink-0 shadow-sm",
-                  ann.type === 'important' ? "bg-rose-100 text-rose-600" :
-                  ann.type === 'warning' ? "bg-amber-100 text-amber-600" :
-                  "bg-white text-slate-600"
-                )}>
-                  {ann.type === 'important' ? <AlertTriangle size={28} /> : 
-                   ann.type === 'warning' ? <AlertCircle size={28} /> : 
-                   <Bell size={28} />}
-                </div>
-                <div className="flex-1 w-full">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xl font-black tracking-tight">{ann.title}</h3>
-                    <p className="text-[10px] font-bold opacity-50 flex items-center gap-1.5 uppercase tracking-widest">
-                      <Clock size={12} />
-                      {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd MMM', { locale: es }) : 'Reciente'}
+      {activeTab === 'hijos' && (
+        <>
+          {unreadAnnouncements.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {unreadAnnouncements.map((ann, idx) => (
+                <motion.div 
+                  key={ann.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.1 }}
+                  className={cn(
+                    "p-5 rounded-2xl border relative overflow-hidden group flex flex-col shadow-sm transition-all hover:shadow-md",
+                    ann.type === 'important' ? "bg-rose-50 border-rose-100" :
+                    ann.type === 'warning' ? "bg-amber-50 border-amber-200" :
+                    "bg-slate-900 border-slate-800 text-white"
+                  )}
+                >
+                  <div className="relative z-10 flex-1">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className={cn(
+                        "p-2 rounded-lg",
+                        ann.type === 'important' ? "bg-rose-600 text-white" :
+                        ann.type === 'warning' ? "bg-amber-500 text-white" :
+                        "bg-white/10 text-white backdrop-blur-md"
+                      )}>
+                        {ann.type === 'important' ? <AlertTriangle size={18} /> : 
+                         ann.type === 'warning' ? <AlertCircle size={18} /> : 
+                         <Bell size={18} />}
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-widest opacity-50">
+                        {format(ann.createdAt?.toDate ? ann.createdAt.toDate() : new Date(), 'dd MMM', { locale: es })}
+                      </span>
+                    </div>
+                    
+                    <h3 className="text-base font-black tracking-tight mb-1">{ann.title}</h3>
+                    <p className="text-xs opacity-80 leading-relaxed mb-6 line-clamp-2">{ann.content}</p>
+                    
+                    <div className="mt-auto pt-4 border-t border-black/5 flex justify-end">
+                      <button
+                        onClick={() => handleAcknowledgeAnnouncement(ann.id)}
+                        className={cn(
+                          "px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95",
+                          ann.type === 'important' ? "bg-rose-600 text-white" :
+                          ann.type === 'warning' ? "bg-amber-600 text-white" :
+                          "bg-white text-slate-900"
+                        )}
+                      >
+                        Entendido
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <motion.div 
+                initial={{ opacity: 0, x: -15 }}
+                animate={{ opacity: 1, x: 0 }}
+              >
+                <p className="text-[9px] font-black text-blue-600 tracking-[0.2em] uppercase mb-1">Bienvenido</p>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+                  Hola, {userProfile?.name.split(' ')[0] || 'Padre'}
+                </h1>
+              </motion.div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={cn(
+                    "p-6 rounded-2xl border shadow-sm flex flex-col justify-between transition-all group",
+                    students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
+                      ? "bg-rose-600 border-rose-500 text-white shadow-rose-100"
+                      : "bg-white border-slate-100 shadow-slate-200/40 hover:border-emerald-100"
+                  )}
+                >
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center mb-6",
+                    students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
+                      ? "bg-white/20 text-white border border-white/30 backdrop-blur-md"
+                      : "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                  )}>
+                    {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) 
+                      ? <AlertTriangle size={20} strokeWidth={2.5} /> 
+                      : <CheckCircle2 size={20} strokeWidth={2.5} />}
+                  </div>
+                  <div>
+                    <p className={cn(
+                      "text-[10px] uppercase font-black tracking-widest mb-1",
+                      students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
+                        ? "text-rose-100"
+                        : "text-slate-400"
+                    )}>Estado de Cuenta</p>
+                    <p className="text-xl font-black tabular-nums leading-tight tracking-tighter">
+                      {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) 
+                        ? "Adeudo Pendiente" 
+                        : "Al Corriente"}
                     </p>
                   </div>
-                  <p className="text-sm opacity-80 leading-relaxed font-medium mb-6">{ann.content}</p>
-                  
-                  <div className="flex justify-end mt-2 pt-4 border-t border-black/5">
-                    <button
-                      onClick={() => handleAcknowledgeAnnouncement(ann.id)}
-                      className={cn(
-                        "px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-2",
-                        ann.type === 'important' ? "bg-rose-600 hover:bg-rose-700 text-white" :
-                        ann.type === 'warning' ? "bg-amber-600 hover:bg-amber-700 text-white" :
-                        "bg-slate-900 hover:bg-slate-800 text-white"
-                      )}
-                    >
-                      <CheckCircle2 size={16} /> Entendido
-                    </button>
+                </motion.div>
+    
+                {/* Quick Actions Card */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  onClick={() => setActiveTab('facturas')}
+                  className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden group cursor-pointer hover:bg-black transition-colors"
+                >
+                  <div className="relative z-10 h-full flex flex-col justify-between">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="text-lg font-black tracking-tight mb-0.5">Pagos Rápidos</h3>
+                        <p className="text-slate-400 text-[10px] font-medium">Realiza tus aportaciones hoy.</p>
+                      </div>
+                      <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 group-hover:bg-white group-hover:text-slate-900 transition-all">
+                        <CreditCard size={18} strokeWidth={2.5} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 mt-6">
+                      <div className="flex -space-x-2">
+                        {students.slice(0, 3).map((s, i) => (
+                          <div key={i} className="w-8 h-8 rounded-full border-2 border-slate-900 bg-blue-600 flex items-center justify-center font-black text-[10px]">
+                            {s.name[0]}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagar Colegiaturas →</p>
+                    </div>
                   </div>
-                </div>
+                  <div className="absolute -right-5 -top-5 w-40 h-40 bg-blue-600/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-1000" />
+                </motion.div>
               </div>
-              <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700" />
-            </motion.div>
-          )})}
-        </div>
-      ) : (
-        <div className="space-y-6 mb-8">
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200"
-          >
-            <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-                Hola, {userProfile?.name.split(' ')[0] || 'Padre'}
-              </h1>
-              <p className="text-slate-500 font-medium text-sm mt-1">Bienvenido a tu portal escolar.</p>
             </div>
-          </motion.div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between"
-            >
-              <div className="flex items-start justify-between mb-8">
-                <div className="w-12 h-12 bg-slate-100 text-slate-900 rounded-full flex items-center justify-center">
-                  <User size={20} />
-                </div>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Hijos Vinculados</p>
-                <p className="text-4xl font-light text-slate-900 tabular-nums leading-none">{students.length}</p>
-              </div>
-            </motion.div>
-            
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className={cn(
-                "p-6 rounded-3xl border shadow-sm flex flex-col justify-between transition-all",
-                students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
-                  ? "bg-rose-50 border-rose-200"
-                  : "bg-emerald-50 border-emerald-200"
-              )}
-            >
-              <div className="flex items-start justify-between mb-8">
-                <div className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center",
-                  students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
-                    ? "bg-rose-200 text-rose-700 animate-pulse"
-                    : "bg-emerald-200 text-emerald-700"
-                )}>
-                  {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) 
-                    ? <AlertTriangle size={20} /> 
-                    : <CheckCircle2 size={20} />}
-                </div>
-              </div>
-              <div>
-                <p className={cn(
-                  "text-[10px] uppercase font-bold tracking-widest mb-1",
-                  students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
-                    ? "text-rose-500"
-                    : "text-emerald-600"
-                )}>Estado de Cuenta</p>
-                <p className={cn(
-                  "text-4xl font-light tabular-nums leading-none",
-                  students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
-                    ? "text-rose-900"
-                    : "text-emerald-900"
-                )}>
-                  {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) 
-                    ? "Adeudo" 
-                    : "Al Corriente"}
-                </p>
-              </div>
-            </motion.div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
       {students.length === 0 ? (
@@ -640,56 +651,58 @@ export default function ParentDashboard() {
                           transition={{ delay: idx * 0.1 }}
                           key={student.id} 
                           className={cn(
-                            "bg-white p-6 rounded-3xl border transition-all relative overflow-hidden group flex flex-col justify-between",
-                            hasOverdue ? "border-rose-200 shadow-sm shadow-rose-50" : "border-slate-200 shadow-sm hover:shadow-md hover:scale-[1.02]"
+                            "bg-white p-6 rounded-2xl border transition-all relative overflow-hidden group flex flex-col justify-between",
+                            hasOverdue ? "border-rose-200 shadow-lg shadow-rose-50" : "border-slate-100 shadow-sm hover:shadow-md hover:border-blue-200"
                           )}
                         >
                           <div className="flex items-center gap-4 mb-6 relative z-10">
                             <div className={cn(
-                              "w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shrink-0",
-                              hasOverdue ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-900"
+                              "w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg shrink-0 shadow-sm",
+                              hasOverdue ? "bg-rose-600 text-white" : "bg-slate-950 text-white"
                             )}>
                               {student.name[0]}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-slate-900 truncate text-sm">{student.name} {student.lastName}</h3>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-widest truncate mt-0.5">{student.grade} {student.group} <span className="opacity-50">/</span> {student.level} {student.curp ? <span className="opacity-50">/</span> : ''} {student.curp}</p>
+                              <h3 className="font-black text-slate-900 truncate text-base tracking-tight leading-tight">{student.name} {student.lastName}</h3>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate mt-0.5">
+                                {student.grade} {student.group} <span className="text-blue-500 mx-1">•</span> {student.level}
+                              </p>
                             </div>
                             <button 
                               onClick={() => handleOpenHistory(student)}
-                              className="p-3 bg-slate-50 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-all"
+                              className="p-2.5 bg-slate-50 text-slate-400 hover:text-slate-950 hover:bg-slate-100 rounded-xl transition-all border border-slate-100"
                               title="Ver Historial"
                             >
-                              <History size={16} />
+                              <History size={16} strokeWidth={2.5} />
                             </button>
                           </div>
 
                           <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
-                            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest mb-1">Estatus</p>
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-white transition-colors">
+                              <p className="text-[9px] text-slate-400 uppercase font-black tracking-[0.2em] mb-1.5">Situación</p>
                               <div className="flex items-center gap-1.5">
                                 {hasOverdue ? (
-                                  <span className="text-[10px] font-bold text-rose-600 flex items-center gap-1.5 px-2 bg-rose-50 rounded-md">
-                                    <AlertCircle size={12} /> ADEUDO
+                                  <span className="text-[9px] font-black text-rose-600 flex items-center gap-1 px-2 py-0.5 bg-white border border-rose-100 rounded-md">
+                                    <AlertCircle size={10} strokeWidth={3} /> ADEUDO
                                   </span>
                                 ) : debtStatus.hasDebt ? (
-                                  <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1.5 px-2 bg-amber-50 rounded-md">
-                                    <Clock size={12} /> PENDIENTE
+                                  <span className="text-[9px] font-black text-amber-600 flex items-center gap-1 px-2 py-0.5 bg-white border border-amber-100 rounded-md">
+                                    <Clock size={10} strokeWidth={3} /> TIEMPO
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1.5 px-2 bg-emerald-50 rounded-md">
-                                    <CheckCircle2 size={12} /> AL DÍA
+                                  <span className="text-[9px] font-black text-emerald-600 flex items-center gap-1 px-2 py-0.5 bg-white border border-emerald-100 rounded-md">
+                                    <CheckCircle2 size={10} strokeWidth={3} /> AL DÍA
                                   </span>
                                 )}
                               </div>
                             </div>
-                            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest mb-1">Facturación</p>
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-white transition-colors">
+                              <p className="text-[9px] text-slate-400 uppercase font-black tracking-[0.2em] mb-1.5">Fiscal</p>
                               <span className={cn(
-                                "text-[10px] font-bold px-2 rounded-md",
-                                student.rfc ? "text-emerald-600 bg-emerald-50" : "text-amber-500 bg-amber-50"
+                                "text-[9px] font-black px-2 py-0.5 rounded-md border inline-block",
+                                student.rfc ? "text-emerald-700 bg-white border-emerald-100" : "text-amber-600 bg-white border-amber-100"
                               )}>
-                                {student.rfc ? 'CONFIGURADO' : 'PENDIENTE'}
+                                {student.rfc ? 'OK' : 'PEND.'}
                               </span>
                             </div>
                           </div>
@@ -701,20 +714,20 @@ export default function ParentDashboard() {
                                 onClick={() => handlePayDebt(student, debt)}
                                 disabled={payingId === `debt-${student.id}-${debt.concept}`}
                                 className={cn(
-                                  "w-full py-3 px-4 rounded-full text-xs font-bold transition-all flex items-center justify-between group/btn disabled:opacity-50",
+                                  "w-full py-2.5 px-4 rounded-xl text-[10px] font-bold transition-all flex items-center justify-between group/btn disabled:opacity-50",
                                   debt.isOverdue 
                                     ? "bg-rose-600 text-white hover:bg-rose-700 shadow-sm" 
                                     : "bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
                                 )}
                               >
                                 <span className="flex items-center gap-2">
-                                  <Wallet size={16} className="group-hover/btn:scale-110 transition-transform" />
-                                  {debt.isOverdue ? `Pagar ${debt.concept}` : 'Pagar Colegiatura'}
+                                  <Wallet size={14} />
+                                  {debt.concept}
                                 </span>
                                 <div className="flex items-center gap-2">
-                                  <span className="opacity-90">{formatCurrency(debt.amount)}</span>
+                                  <span>{formatCurrency(debt.amount)}</span>
                                   {payingId === `debt-${student.id}-${debt.concept}` && (
-                                    <Loader2 size={14} className="animate-spin" />
+                                    <Loader2 size={12} className="animate-spin" />
                                   )}
                                 </div>
                               </button>
@@ -722,26 +735,25 @@ export default function ParentDashboard() {
                           </div>
 
                           {!debtStatus.hasDebt && debtStatus.nextTuition && (
-                              <div className="mt-4 pt-4 border-t border-slate-100">
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-center mb-3">¡Felicidades, al corriente!</p>
+                              <div className="mt-4 pt-4 border-t border-slate-50">
+                                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest text-center mb-2.5">Al corriente</p>
                                 <button
                                   onClick={() => handlePayDebt(student, debtStatus.nextTuition!)}
                                   disabled={payingId === `debt-${student.id}-${debtStatus.nextTuition.concept}`}
-
-                                className="w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-between group/btn disabled:opacity-50 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-sm"
-                              >
-                                <span className="flex items-center gap-2">
-                                  <Calendar size={14} className="group-hover/btn:scale-110 transition-transform" />
-                                  Adelantar próx. Colegiatura
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className="opacity-90 font-black">{formatCurrency(debtStatus.nextTuition.amount)}</span>
-                                  {payingId === `debt-${student.id}-${debtStatus.nextTuition.concept}` && (
-                                    <Loader2 size={14} className="animate-spin" />
-                                  )}
-                                </div>
-                              </button>
-                            </div>
+                                  className="w-full py-2 px-4 rounded-xl text-[10px] font-bold transition-all flex items-center justify-between group/btn disabled:opacity-50 bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100"
+                                >
+                                  <span className="flex items-center gap-2 text-[9px]">
+                                    <Calendar size={12} />
+                                    Adelantar próx. mes
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold">{formatCurrency(debtStatus.nextTuition.amount)}</span>
+                                    {payingId === `debt-${student.id}-${debtStatus.nextTuition.concept}` && (
+                                      <Loader2 size={10} className="animate-spin" />
+                                    )}
+                                  </div>
+                                </button>
+                              </div>
                           )}
                         </motion.div>
                       );
@@ -754,60 +766,139 @@ export default function ParentDashboard() {
                 {/* Billing info card removed from here */}
               </div>
             </div>
-          ) : activeTab === 'facturas' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-8">
-                <section>
-                  <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                    <FileText size={20} className="text-blue-600" />
-                    Mis Facturas y Pagos
+          ) : activeTab === 'avisos' ? (
+            <div className="space-y-8">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-slate-200">
+                  <Bell size={24} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
+                    Avisos Escolares
                   </h2>
-                  <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                  <p className="text-slate-500 font-medium text-sm">Mantente informado sobre las últimas noticias del colegio.</p>
+                </div>
+              </div>
+              
+              {announcements.length === 0 ? (
+                <div className="bg-white p-12 rounded-3xl border border-slate-100 shadow-sm text-center">
+                  <p className="text-slate-500 italic font-medium">No hay avisos publicados en este momento.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {announcements.map((ann, idx) => (
+                    <motion.div 
+                      key={ann.id}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: idx * 0.05 }}
+                      className={cn(
+                        "bg-white p-8 rounded-[2.5rem] border shadow-xl shadow-slate-200/40 relative overflow-hidden group flex flex-col h-full",
+                        ann.type === 'important' ? "border-rose-100 hover:border-rose-200" :
+                        ann.type === 'warning' ? "border-amber-100 hover:border-amber-200" :
+                        "border-slate-100 hover:border-blue-100"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-6">
+                        <div className={cn(
+                          "p-3 rounded-2xl",
+                          ann.type === 'important' ? "bg-rose-50 text-rose-600" :
+                          ann.type === 'warning' ? "bg-amber-50 text-amber-600" :
+                          "bg-slate-50 text-blue-600"
+                        )}>
+                          {ann.type === 'important' ? <AlertTriangle size={24} /> : 
+                           ann.type === 'warning' ? <AlertCircle size={24} /> : 
+                           <Bell size={24} />}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'PPP', { locale: es }) : 'Reciente'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex-1">
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight mb-3">{ann.title}</h3>
+                        <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{ann.content}</p>
+                      </div>
+                      
+                      {!ann.acknowledgedBy?.includes(auth.currentUser?.uid) && (
+                        <div className="mt-8 pt-6 border-t border-slate-50 flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-rose-600 text-[10px] font-black uppercase tracking-widest">
+                            <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                            No leído
+                          </span>
+                          <button
+                            onClick={() => handleAcknowledgeAnnouncement(ann.id)}
+                            className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95"
+                          >
+                            Marcar como leído
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'facturas' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+              <div className="lg:col-span-2 space-y-10">
+                <section>
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                        <FileText size={20} strokeWidth={2.5} />
+                      </div>
+                      Historial de Comprobantes
+                    </h2>
+                  </div>
+                  <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
                     {/* Desktop Table View */}
                     <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                            <th className="px-6 py-4">Fecha</th>
-                            <th className="px-6 py-4">Alumno</th>
-                            <th className="px-6 py-4">Concepto</th>
-                            <th className="px-6 py-4">Monto</th>
-                            <th className="px-6 py-4">Estatus</th>
-                            <th className="px-6 py-4 text-right">Factura</th>
+                          <tr className="bg-slate-50/50 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-100">
+                            <th className="px-8 py-5">Fecha</th>
+                            <th className="px-8 py-5">Nombre</th>
+                            <th className="px-8 py-5">Concepto</th>
+                            <th className="px-8 py-5">Importe</th>
+                            <th className="px-8 py-5">Estatus</th>
+                            <th className="px-8 py-5 text-right">Acción</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {payments.map((payment) => (
-                            <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-6 py-4 text-xs text-slate-500">
+                          {payments.map((payment) => {
+                            const student = students.find(s => s.id === payment.studentId);
+                            return (
+                            <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors group">
+                              <td className="px-8 py-6 text-xs font-bold text-slate-500">
                                 {payment.date?.toDate ? format(payment.date.toDate(), 'dd/MM/yyyy') : '-'}
                               </td>
-                              <td className="px-6 py-4">
-                                <p className="text-xs font-bold text-slate-900">
-                                  {students.find(s => s.id === payment.studentId)?.name || 'Desconocido'}
+                              <td className="px-8 py-6">
+                                <p className="text-xs font-black text-slate-900 group-hover:text-blue-600 transition-colors">
+                                  {student?.name || 'Alumno'}
                                 </p>
                               </td>
-                              <td className="px-6 py-4 text-xs text-slate-600">{payment.concept}</td>
-                              <td className="px-6 py-4">
-                                <p className="text-xs font-bold text-slate-900">{formatCurrency(payment.amount)}</p>
+                              <td className="px-8 py-6 text-xs font-medium text-slate-500">{payment.concept}</td>
+                              <td className="px-8 py-6">
+                                <p className="text-xs font-black text-slate-900 tabular-nums">{formatCurrency(payment.amount)}</p>
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-8 py-6">
                                 <span className={cn(
-                                  "px-2 py-0.5 rounded-full font-bold text-[10px]",
-                                  payment.status === 'Pagado' ? "bg-emerald-100 text-emerald-700" :
-                                  payment.status === 'Cancelado' ? "bg-red-100 text-red-700" :
-                                  "bg-orange-100 text-orange-700"
+                                  "px-3 py-1 rounded-lg font-black text-[9px] uppercase tracking-widest border",
+                                  payment.status === 'Pagado' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                                  payment.status === 'Cancelado' ? "bg-rose-50 text-rose-700 border-rose-100" :
+                                  "bg-amber-50 text-amber-700 border-amber-100"
                                 )}>
-                                  {payment.status.toUpperCase()}
+                                  {payment.status}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-right">
+                              <td className="px-8 py-6 text-right">
                                 <div className="flex items-center justify-end gap-2">
                                   {payment.status === 'Pendiente' && !payment.conektaOrderId && (
                                     <button
                                       onClick={() => handlePayment(payment)}
                                       disabled={payingId === payment.id}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                                      className="flex items-center gap-2 px-4 py-2 bg-slate-950 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95 disabled:opacity-50"
                                     >
                                       {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
                                       Pagar
@@ -817,36 +908,36 @@ export default function ParentDashboard() {
                                     <button
                                       onClick={() => handleVerifyPayment(payment)}
                                       disabled={payingId === payment.id}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
                                     >
                                       {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                      Verificar Pago
+                                      Verificar
                                     </button>
                                   )}
                                   {payment.invoiceId ? (
                                     <button 
                                       onClick={() => handleDownloadInvoice(payment.invoiceId!)}
-                                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-all"
+                                      className="flex items-center gap-2 px-4 py-2 bg-white text-slate-900 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
                                       title="Descargar Factura PDF"
                                     >
                                       <Download size={14} />
-                                      Descargar PDF
+                                      PDF
                                     </button>
                                   ) : payment.status === 'Pagado' ? (
                                     <button 
                                       onClick={() => handleGenerateInvoice(payment)}
                                       disabled={payingId === payment.id}
-                                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all disabled:opacity-50"
+                                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
                                       title="Generar Factura"
                                     >
-                                      {payingId === payment.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                                      Generar Factura
+                                      {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                      Facturar
                                     </button>
                                   ) : null}
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                          )})}
                         </tbody>
                       </table>
                     </div>
@@ -946,104 +1037,98 @@ export default function ParentDashboard() {
             </div>
           ) : (
             <section>
-              <h2 className="text-xl font-bold text-slate-900 mb-8 flex items-center gap-2">
-                <CreditCard size={24} className="text-slate-400" />
-                Datos de Facturación
-              </h2>
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-12">
-                <form onSubmit={handleSaveBillingData} className="p-8 space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">RFC</label>
+              <div className="flex items-center gap-3 mb-10">
+                <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-slate-200">
+                  <CreditCard size={24} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
+                    Datos de Facturación
+                  </h2>
+                  <p className="text-slate-500 font-medium text-sm">Configura tu perfil fiscal para recibir facturas.</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden mb-12">
+                <form onSubmit={handleSaveBillingData} className="p-10 space-y-10">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">RFC del Contribuyente</label>
                       <input 
                         required
                         type="text"
                         placeholder="XAXX010101000"
-                        className="w-full px-5 py-4 bg-slate-50 border border-transparent rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:bg-white transition-all uppercase hover:bg-white hover:border-slate-200 font-mono tracking-wider shadow-sm"
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-base font-black text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all uppercase font-mono tracking-widest shadow-inner shadow-slate-100"
                         value={billingData.rfc}
                         onChange={e => setBillingData({...billingData, rfc: e.target.value.toUpperCase()})}
                       />
                     </div>
-                    <div className="space-y-3">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Código Postal</label>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Código Postal Fiscal</label>
                       <input 
                         required
                         type="text"
                         maxLength={5}
                         placeholder="00000"
-                        className="w-full px-5 py-4 bg-slate-50 border border-transparent rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:bg-white transition-all hover:bg-white hover:border-slate-200 font-mono tracking-wider shadow-sm"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-mono tracking-widest shadow-sm"
                         value={billingData.zipCode}
                         onChange={e => setBillingData({...billingData, zipCode: e.target.value.replace(/\D/g, '')})}
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Nombre o Razón Social</label>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Nombre o Razón Social (Mayúsculas)</label>
                     <input 
                       required
                       type="text"
-                      placeholder="Nombre completo como aparece en el SAT"
-                      className="w-full px-5 py-4 bg-slate-50 border border-transparent rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:bg-white transition-all uppercase hover:bg-white hover:border-slate-200 shadow-sm"
+                      placeholder="COMO APARECE EN CONSTANCIA"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all uppercase shadow-sm"
                       value={billingData.billingName}
                       onChange={e => setBillingData({...billingData, billingName: e.target.value.toUpperCase()})}
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Régimen Fiscal</label>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Régimen Fiscal</label>
                     <div className="relative">
                       <select 
                         required
-                        className="w-full px-5 py-4 bg-slate-50 border border-transparent rounded-2xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:bg-white transition-all appearance-none shadow-sm hover:bg-white hover:border-slate-200"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all appearance-none shadow-sm"
                         value={billingData.taxSystem}
                         onChange={e => setBillingData({...billingData, taxSystem: e.target.value})}
                       >
-                        <option value="">Selecciona un régimen...</option>
+                        <option value="" className="text-slate-400">Seleccionar régimen...</option>
                         {TAX_SYSTEMS.map(sys => (
                           <option key={sys.id} value={sys.id}>{sys.id} - {sys.name}</option>
                         ))}
                       </select>
-                      <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                        <Calendar size={18} />
-                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Dirección Fiscal (Opcional)</label>
-                    <input 
-                      type="text"
-                      placeholder="Calle, Número, Colonia"
-                      className="w-full px-5 py-4 bg-slate-50 border border-transparent rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:bg-white transition-all hover:bg-white hover:border-slate-200 shadow-sm"
-                      value={billingData.billingAddress}
-                      onChange={e => setBillingData({...billingData, billingAddress: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 flex gap-4">
-                    <AlertCircle className="text-slate-400 shrink-0 mt-0.5" size={20} />
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold text-slate-900">Información Importante</p>
-                      <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                        Al guardar, estos datos se aplicarán a todos sus hijos vinculados ({students.length}). 
-                        Asegúrese de que los datos coincidan exactamente con su Constancia de Situación Fiscal para evitar rechazos en sus facturas.
+                  <div className="p-5 bg-blue-50 rounded-xl border border-blue-100 flex gap-4">
+                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                      <AlertCircle className="text-blue-600" size={20} />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-black text-blue-900 uppercase tracking-widest">Verificación Necesaria</p>
+                      <p className="text-[10px] text-blue-800/70 leading-relaxed font-medium">
+                        Debe ser idéntico a su Constancia de Situación Fiscal para evitar rechazos.
                       </p>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100 flex justify-end">
+                  <div className="pt-4 flex justify-end">
                     <button 
                       type="submit"
                       disabled={savingBilling}
-                      className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 tracking-wide text-sm"
+                      className="w-full sm:w-auto px-8 py-3 bg-slate-950 text-white rounded-xl font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 text-[10px]"
                     >
                       {savingBilling ? (
-                        <Loader2 className="animate-spin" size={20} />
+                        <Loader2 className="animate-spin" size={16} />
                       ) : (
                         <>
-                          <Save size={18} />
-                          Guardar Datos Fiscales
+                          <Save size={16} strokeWidth={2.5} />
+                          Guardar Perfil Fiscal
                         </>
                       )}
                     </button>
@@ -1067,55 +1152,55 @@ export default function ParentDashboard() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="relative bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
-              <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-slate-200 text-slate-800 rounded-2xl flex items-center justify-center">
-                    <History size={24} />
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center">
+                    <History size={18} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900 tracking-tight">Historial de Pagos</h2>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{selectedStudent.name} {selectedStudent.lastName}</p>
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight">Historial de Pagos</h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{selectedStudent.name} {selectedStudent.lastName}</p>
                   </div>
                 </div>
-                <button onClick={() => setIsHistoryModalOpen(false)} className="p-3 bg-white text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-all border border-slate-200 shadow-sm">
+                <button onClick={() => setIsHistoryModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all">
                   <X size={20} />
                 </button>
               </div>
               
-              <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+              <div className="p-4 overflow-y-auto flex-1 custom-scrollbar">
                 {payments.filter(p => p.studentId === selectedStudent.id).length > 0 ? (
-                  <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                          <th className="px-6 py-4">Fecha</th>
-                          <th className="px-6 py-4">Concepto</th>
-                          <th className="px-6 py-4 text-right">Monto</th>
-                          <th className="px-6 py-4 text-center">Estatus</th>
+                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 text-[9px] font-black uppercase tracking-widest">
+                          <th className="px-4 py-3">Fecha</th>
+                          <th className="px-4 py-3">Concepto</th>
+                          <th className="px-4 py-3 text-right">Monto</th>
+                          <th className="px-4 py-3 text-center">Estatus</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-50">
                         {payments
                           .filter(p => p.studentId === selectedStudent.id)
                           .sort((a, b) => (b.date?.toMillis?.() || 0) - (a.date?.toMillis?.() || 0))
                           .map((payment) => (
-                            <tr key={payment.id} className="hover:bg-slate-50 transition-colors group">
-                              <td className="px-6 py-4 text-xs font-bold text-slate-500">
+                            <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-4 py-3 text-[10px] font-bold text-slate-400">
                                 {payment.date?.toDate ? format(payment.date.toDate(), 'dd MMM yyyy', {locale: es}) : '-'}
                               </td>
-                              <td className="px-6 py-4 text-sm font-bold text-slate-900">{payment.concept}</td>
-                              <td className="px-6 py-4 text-sm font-black text-slate-900 text-right tabular-nums">{formatCurrency(payment.amount)}</td>
-                              <td className="px-6 py-4 text-center">
+                              <td className="px-4 py-3 text-xs font-bold text-slate-950">{payment.concept}</td>
+                              <td className="px-4 py-3 text-xs font-black text-slate-950 text-right tabular-nums">{formatCurrency(payment.amount)}</td>
+                              <td className="px-4 py-3 text-center">
                                 <span className={cn(
-                                  "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest inline-block text-center",
-                                  payment.status === 'Pagado' ? "bg-emerald-50 text-emerald-700" :
-                                  payment.status === 'Cancelado' ? "bg-rose-50 text-rose-700" :
-                                  "bg-amber-50 text-amber-700"
+                                  "px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest inline-block",
+                                  payment.status === 'Pagado' ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
+                                  payment.status === 'Cancelado' ? "bg-rose-50 text-rose-600 border border-rose-100" :
+                                  "bg-amber-50 text-amber-600 border border-amber-100"
                                 )}>
                                   {payment.status}
                                 </span>
@@ -1162,35 +1247,35 @@ export default function ParentDashboard() {
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl overflow-hidden text-center"
             >
-              <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-6">
-                <FileText className="text-blue-600" size={32} />
+              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-4 mx-auto border border-blue-100">
+                <FileText className="text-blue-600" size={24} />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">¿Requiere Factura?</h3>
-              <p className="text-slate-500 mb-8 leading-relaxed">
-                Hemos detectado que algunos de sus hijos no tienen configurados los datos de facturación. 
-                ¿Desea configurarlos ahora para que sus próximos pagos se facturen automáticamente?
+              <h3 className="text-lg font-black text-slate-900 mb-2">¿Requiere Factura?</h3>
+              <p className="text-xs text-slate-500 mb-6 leading-relaxed font-medium">
+                Detectamos que falta información fiscal. 
+                ¿Desea configurarla ahora para facturación automática?
               </p>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 <button 
                   onClick={() => {
                     setIsPromptModalOpen(false);
                     setActiveTab('billing');
                     setSearchParams({ tab: 'billing' });
                   }}
-                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                  className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition-all"
                 >
-                  Sí, configurar ahora
+                  Configurar ahora
                 </button>
                 <button 
                   onClick={dismissPrompt}
-                  className="w-full py-4 bg-slate-50 text-slate-600 rounded-2xl font-bold hover:bg-slate-100 transition-all"
+                  className="w-full py-2.5 bg-slate-50 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
                 >
-                  No por ahora
+                  Más tarde
                 </button>
               </div>
             </motion.div>

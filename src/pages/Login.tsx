@@ -19,6 +19,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
+  const [loginTitle, setLoginTitle] = useState('Sistema de Control');
+  const [loginSubtitle, setLoginSubtitle] = useState('Colegio México Franciscano');
   const [developerAttribution, setDeveloperAttribution] = useState('');
   const navigate = useNavigate();
 
@@ -29,6 +31,8 @@ export default function Login() {
         if (settingsDoc.exists()) {
           const data = settingsDoc.data();
           setLogoUrl(data.logoUrl || '');
+          setLoginTitle(data.loginTitle || '');
+          setLoginSubtitle(data.loginSubtitle || '');
           if (data.schoolName) {
             setSchoolName(data.schoolName);
             document.title = data.schoolName;
@@ -143,31 +147,27 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 font-sans tracking-tight">
       <div className="w-full max-w-sm">
-        <div className="bg-white rounded-lg shadow-xl shadow-slate-200/50 border border-slate-200 overflow-hidden">
-          <div className="bg-slate-950 p-6 text-center relative overflow-hidden">
-            {/* Mesh Background */}
-            <div className="absolute inset-0 opacity-20">
-               <div className="absolute top-0 -left-1/4 w-full h-full bg-blue-500 rounded-full blur-[100px]" />
-               <div className="absolute bottom-0 -right-1/4 w-full h-full bg-emerald-500 rounded-full blur-[100px]" />
-            </div>
-            
-            <div className="relative z-10 flex flex-col items-center">
-              <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-lg flex items-center justify-center mb-4 border border-white/20 shadow-2xl">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-2" referrerPolicy="no-referrer" />
-                ) : (
-                  <GraduationCap size={32} className="text-white" strokeWidth={2.5} />
-                )}
-              </div>
-              <h1 className="text-white text-sm font-black uppercase tracking-[0.2em] mb-1">Sistema de Control</h1>
-              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{schoolName}</p>
-            </div>
+        <div className="mb-12 text-center flex flex-col items-center">
+          <div className="w-64 h-64 flex items-center justify-center mb-6">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-2xl" referrerPolicy="no-referrer" />
+            ) : (
+              <GraduationCap size={128} className="text-slate-900" strokeWidth={1} />
+            )}
           </div>
-          
-          <div className="p-6 space-y-5">
+          {loginTitle && (
+            <h1 className="text-slate-900 text-base font-black uppercase tracking-[0.3em] mb-1">{loginTitle}</h1>
+          )}
+          {loginSubtitle && (
+            <p className="text-slate-400 text-[11px] font-black uppercase tracking-widest">{loginSubtitle}</p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+          <div className="p-8 space-y-6">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xs font-black uppercase tracking-[0.15em] text-slate-800">
-                {isRegistering ? 'Vincular Familia' : 'Acceso Autorizado'}
+                {isRegistering ? 'Vincular Familia' : ''}
               </h2>
               {isRegistering && (
                 <button 
@@ -236,7 +236,7 @@ export default function Login() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
-                      placeholder="correo@ejemplo.com"
+                      placeholder="usuario@cmfranciscano.mx"
                     />
                   </div>
                 </div>
@@ -300,7 +300,7 @@ export default function Login() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-950 focus:border-slate-950 transition-all outline-none text-xs"
-                      placeholder="admin@colegiomexico.edu.mx"
+                      placeholder="usuario@cmfranciscano.mx"
                     />
                   </div>
                 </div>
@@ -334,10 +334,10 @@ export default function Login() {
               disabled={loading}
               className={cn(
                 "w-full text-white font-black uppercase tracking-[0.15em] text-[10px] py-3.5 rounded-md shadow-2xl transition-all active:scale-[0.98] disabled:opacity-70",
-                isRegistering ? "bg-slate-950 hover:bg-slate-900" : "bg-slate-950 hover:bg-slate-900"
+                "bg-slate-950 hover:bg-black font-black"
               )}
             >
-              {loading ? 'Procesando...' : isRegistering ? (registrationStep === 'code' ? 'Validar Código' : 'Crear mi Cuenta') : 'Acceder al Sistema'}
+              {loading ? 'Procesando...' : isRegistering ? (registrationStep === 'code' ? 'Validar Código' : 'Crear mi Cuenta') : 'Ingresar'}
             </button>
 
             {!isRegistering && (

@@ -1099,6 +1099,7 @@ function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; setti
             >
               <option value="Académica">Académica (Base)</option>
               <option value="Extracurricular">Extracurricular / Taller</option>
+              <option value="Aspectos Formativos">Aspectos Formativos / Conducta</option>
             </select>
           </div>
           <button
@@ -1144,6 +1145,7 @@ function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; setti
                           >
                             <option value="Académica">Aca.</option>
                             <option value="Extracurricular">Ext.</option>
+                            <option value="Aspectos Formativos">Asp.</option>
                           </select>
                           <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
                           <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>

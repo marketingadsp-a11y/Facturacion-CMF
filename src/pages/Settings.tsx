@@ -18,6 +18,7 @@ import {
   Plus, 
   Clock, 
   DollarSign,
+  ShieldAlert,
   Users,
   Lock,
   Unlock,
@@ -499,6 +500,37 @@ export default function Settings() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Login Customization */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                  <ShieldAlert size={20} className="text-blue-600" />
+                  Personalización de Inicio de Sesión
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Título de Bienvenida</label>
+                    <input
+                      value={settings.loginTitle || ''}
+                      onChange={(e) => setSettings({...settings, loginTitle: e.target.value})}
+                      placeholder="Ej: Sistema de Control"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Subtítulo de Bienvenida</label>
+                    <input
+                      value={settings.loginSubtitle || ''}
+                      onChange={(e) => setSettings({...settings, loginSubtitle: e.target.value})}
+                      placeholder="Ej: Colegio México Franciscano"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 italic">
+                  * Si se dejan vacíos, no se mostrará ningún texto en la pantalla de acceso.
+                </p>
               </div>
             </div>
           )}
@@ -1357,6 +1389,36 @@ export default function Settings() {
                         />
                       </div>
                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      Personalización Pantalla de Login
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Título Login</label>
+                        <input
+                          placeholder="Sistema de Control"
+                          value={settings.loginTitle || ''}
+                          onChange={(e) => setSettings({...settings, loginTitle: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Subtítulo Login</label>
+                        <input
+                          placeholder="Colegio México Franciscano"
+                          value={settings.loginSubtitle || ''}
+                          onChange={(e) => setSettings({...settings, loginSubtitle: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2 italic">
+                      * Si dejas estos campos vacíos, no se mostrarán textos en la pantalla de acceso.
+                    </p>
                   </div>
                 </div>
 

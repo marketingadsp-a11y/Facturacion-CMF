@@ -125,9 +125,10 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const isParent = userProfile?.role === 'Padre';
 
   const navItems = isParent ? [
-    { name: 'Mis Hijos', path: '/', icon: GraduationCap, section: 'dashboard', action: 'view' },
-    { name: 'Facturas', path: '/?tab=facturas', icon: ScrollText, section: 'dashboard', action: 'view' },
-    { name: 'Datos Fiscales', path: '/?tab=billing', icon: ShieldAlert, section: 'dashboard', action: 'view' },
+    { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
+    { name: 'Avisos', path: '/?tab=avisos', icon: BellRing, section: 'dashboard', action: 'view' },
+    { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
+    { name: 'Datos Fiscales', path: '/?tab=billing', icon: CreditCard, section: 'dashboard', action: 'view' },
   ] : [
     { name: 'Panel', path: '/', icon: Activity, section: 'dashboard', action: 'view' },
     { name: 'Alumnos', path: '/alumnos', icon: UserRound, section: 'students', action: 'view' },
@@ -172,65 +173,72 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden">
-      {/* Parent Bottom Navigation Bar */}
+      {/* Parent Header */}
       {isParent && (
-        <header className="bg-white/90 backdrop-blur-md border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 px-4 py-2 min-h-[64px] shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 left-0 right-0 z-40 px-4 md:px-6 py-2 shadow-sm">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm">
+              <div className="w-10 h-10 flex items-center justify-center">
                 {logoUrl ? (
-                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
+                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                 ) : (
-                  <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white">
-                    <GraduationCap size={24} />
+                  <div className="bg-slate-900 w-full h-full rounded-xl flex items-center justify-center text-white">
+                    <GraduationCap size={20} />
                   </div>
                 )}
               </div>
-              <span className="font-black text-slate-900 text-xl tracking-tight hidden sm:block">
-                {schoolName}
-              </span>
+              <div className="hidden sm:block">
+                <h1 className="font-black text-slate-900 text-sm tracking-tight uppercase">
+                  {schoolName}
+                </h1>
+              </div>
             </div>
 
-            <nav className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-lg">
-              {navItems.map((item) => (
-                <Link
-                  key={item.path}
-                   to={item.path}
-                  className={cn(
-                    "flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-md text-xs font-black transition-all duration-300",
-                    (location.pathname === item.path && !location.search) || (item.path.includes('tab=') && location.search.includes(item.path.split('=')[1]))
-                      ? "bg-white text-blue-600 shadow-sm scale-105"
-                      : "text-slate-500 hover:text-slate-800 hover:bg-white/80"
-                  )}
-                >
-                  <item.icon size={20} strokeWidth={2.5} />
-                  <span className="text-[10px] sm:text-xs">{item.name}</span>
-                </Link>
-              ))}
-            </nav>
-
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-[10px]">
                   {userProfile?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-black text-slate-900 leading-none truncate max-w-[100px]">
+                <div className="flex flex-col hidden sm:flex">
+                  <span className="text-[10px] font-black text-slate-900 leading-none">
                     {userProfile?.name?.split(' ')[0] || user?.email?.split('@')[0]}
                   </span>
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Padre</span>
                 </div>
               </div>
               <button
                 onClick={handleLogout}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
                 title="Cerrar Sesión"
               >
-                <LogOut size={20} />
+                <LogOut size={18} />
               </button>
             </div>
           </div>
         </header>
+      )}
+
+      {/* Parent Bottom Navigation Bar */}
+      {isParent && (
+        <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md px-2 py-2 rounded-2xl shadow-2xl flex items-center gap-1 z-50 border border-white/10">
+          {navItems.map((item) => {
+            const isActive = (location.pathname === item.path && !location.search) || (item.path.includes('tab=') && location.search.includes(item.path.split('=')[1]));
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300",
+                  isActive
+                    ? "bg-white text-slate-900 shadow-lg"
+                    : "text-slate-400 hover:text-white"
+                )}
+              >
+                <item.icon size={18} strokeWidth={isActive ? 3 : 2} />
+                <span className={cn("hidden", isActive && "inline")}>{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
       )}
 
       <div className="flex flex-1 overflow-hidden relative">
