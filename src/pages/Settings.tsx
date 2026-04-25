@@ -87,7 +87,8 @@ export default function Settings() {
       announcements: { view: true, manage: true },
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
-      grading: { view: true, manage: true }
+      grading: { view: true, manage: true },
+      timeClock: { view: true, manage: true }
     },
     Administrador: {
       dashboard: { view: true },
@@ -99,7 +100,8 @@ export default function Settings() {
       announcements: { view: true, manage: true },
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
-      grading: { view: true, manage: true }
+      grading: { view: true, manage: true },
+      timeClock: { view: true, manage: true }
     },
     Visor: {
       dashboard: { view: true },
@@ -111,7 +113,8 @@ export default function Settings() {
       announcements: { view: true, manage: false },
       parents: { view: true, manage: false },
       controlEscolar: { view: true, manage: false },
-      grading: { view: true, manage: false }
+      grading: { view: true, manage: false },
+      timeClock: { view: true, manage: false }
     },
     Cajero: {
       dashboard: { view: true },
@@ -123,7 +126,8 @@ export default function Settings() {
       announcements: { view: true, manage: false },
       parents: { view: true, manage: false },
       controlEscolar: { view: true, manage: false },
-      grading: { view: false, manage: false }
+      grading: { view: false, manage: false },
+      timeClock: { view: false, manage: false }
     },
     Padre: {
       dashboard: { view: true },
@@ -135,7 +139,8 @@ export default function Settings() {
       announcements: { view: true, manage: false },
       parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
-      grading: { view: false, manage: false }
+      grading: { view: false, manage: false },
+      timeClock: { view: false, manage: false }
     },
     'Control Escolar': {
       dashboard: { view: true },
@@ -147,7 +152,8 @@ export default function Settings() {
       announcements: { view: true, manage: true },
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
-      grading: { view: false, manage: false }
+      grading: { view: false, manage: false },
+      timeClock: { view: false, manage: false }
     },
     Docente: {
       dashboard: { view: true },
@@ -159,7 +165,8 @@ export default function Settings() {
       announcements: { view: true, manage: false },
       parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
-      grading: { view: true, manage: true }
+      grading: { view: true, manage: true },
+      timeClock: { view: false, manage: false }
     },
     'Recepción': {
       dashboard: { view: true },
@@ -171,7 +178,8 @@ export default function Settings() {
       announcements: { view: true, manage: false },
       parents: { view: true, manage: false },
       controlEscolar: { view: false, manage: false },
-      grading: { view: false, manage: false }
+      grading: { view: false, manage: false },
+      timeClock: { view: true, manage: true }
     }
   };
 
@@ -1335,6 +1343,17 @@ export default function Settings() {
                           label="Gestionar Calificaciones" 
                           checked={userFormData.permissions?.grading?.manage} 
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, grading: {...userFormData.permissions?.grading, manage: v}}})}
+                        />
+                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Checador</p>
+                        <PermissionToggle 
+                          label="Ver Checador" 
+                          checked={userFormData.permissions?.timeClock?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, timeClock: {...userFormData.permissions?.timeClock, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Checador" 
+                          checked={userFormData.permissions?.timeClock?.manage} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, timeClock: {...userFormData.permissions?.timeClock, manage: v}}})}
                         />
                       </div>
                     </div>

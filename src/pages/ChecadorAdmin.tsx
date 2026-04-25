@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, orderBy, where, Timestamp, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Employee, TimeLog } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 import { 
   Users, 
   Plus, 
@@ -41,6 +42,8 @@ export default function ChecadorAdmin() {
   const [isCopying, setIsCopying] = useState(false);
   const [schoolName, setSchoolName] = useState('Centro de Asistencia');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission('timeClock', 'manage');
 
   const openEditModal = (employee: Employee) => {
     setEditingEmployee(employee);
@@ -150,13 +153,15 @@ export default function ChecadorAdmin() {
               {isCopying ? <CheckCircle2 size={16} className="text-emerald-500" /> : <Copy size={16} />}
               Copiar Enlace Panel
             </button>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-slate-950 hover:bg-black text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-200 transition-all active:scale-95"
-            >
-              <Plus size={16} />
-              Registrar Personal
-            </button>
+            {canManage && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="bg-slate-950 hover:bg-black text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-200 transition-all active:scale-95"
+              >
+                <Plus size={16} />
+                Registrar Personal
+              </button>
+            )}
           </div>
         </div>
 
@@ -234,20 +239,22 @@ export default function ChecadorAdmin() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => openEditModal(employee)}
-                          className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => deleteEmployee(employee.id)} 
-                          className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      {canManage && (
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => openEditModal(employee)}
+                            className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => deleteEmployee(employee.id)} 
+                            className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

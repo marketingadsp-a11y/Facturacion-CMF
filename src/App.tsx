@@ -106,7 +106,8 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                 settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
                 announcements: { view: true, manage: true },
                 controlEscolar: { view: true, manage: true },
-                grading: { view: true, manage: true }
+                grading: { view: true, manage: true },
+                timeClock: { view: true, manage: true }
               },
               createdAt: serverTimestamp()
             });
@@ -133,7 +134,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Padres', path: '/padres', icon: Heart, section: 'parents', action: 'view' },
     { name: 'Pagos', path: '/pagos', icon: Banknote, section: 'payments', action: 'view' },
     { name: 'Recepción', path: '/recepcion', icon: BellRing, section: 'reception', action: 'view' },
-    { name: 'Checador', path: '/checador-admin', icon: UserRound, section: 'dashboard', action: 'view' },
+    { name: 'Checador', path: '/checador-admin', icon: UserRound, section: 'timeClock', action: 'view' },
     { name: 'Control Escolar', path: '/control-escolar', icon: FileBadge, section: 'controlEscolar', action: 'view' },
     { name: 'Docente', path: '/docentes', icon: Presentation, section: 'grading', action: 'view' },
     { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
@@ -477,7 +478,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AppContent = () => {
-  const { userProfile } = usePermissions();
+  const { userProfile, hasPermission } = usePermissions();
   const isParent = userProfile?.role === 'Padre';
   const [enrollmentSlug, setEnrollmentSlug] = useState('enroll');
 
@@ -515,7 +516,7 @@ const AppContent = () => {
         path="/checador-admin" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <ChecadorAdmin />}
+            {isParent || !hasPermission('timeClock', 'view') ? <Navigate to="/" /> : <ChecadorAdmin />}
           </ProtectedRoute>
         } 
       />

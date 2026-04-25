@@ -50,11 +50,17 @@ export default function PrintBoleta() {
           }
         }
 
-        // Fetch Grades for this student
-        const gradesQuery = query(collection(db, 'grades'), where('studentId', '==', studentId));
-        const gradesSnap = await getDocs(gradesQuery);
-        const stGrades = gradesSnap.docs.map(d => ({ id: d.id, ...d.data() } as StudentGrade));
-        setGrades(stGrades);
+        // Fetch Grades for this student and current cycle
+        if (appSettings?.currentCycleId) {
+          const gradesQuery = query(
+            collection(db, 'grades'), 
+            where('studentId', '==', studentId),
+            where('cycleId', '==', appSettings.currentCycleId)
+          );
+          const gradesSnap = await getDocs(gradesQuery);
+          const stGrades = gradesSnap.docs.map(d => ({ id: d.id, ...d.data() } as StudentGrade));
+          setGrades(stGrades);
+        }
       } catch (error) {
         console.error("Error fetching data for print:", error);
       } finally {

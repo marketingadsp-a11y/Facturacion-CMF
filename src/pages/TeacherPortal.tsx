@@ -100,10 +100,14 @@ export default function TeacherPortal() {
 
   // Fetch grades for the selected bimestre
   useEffect(() => {
-    if (students.length === 0) return;
+    if (students.length === 0 || !currentCycleId) return;
 
     const unsubGrades = onSnapshot(
-      query(collection(db, 'grades'), where('bimestre', '==', selectedBimestre)),
+      query(
+        collection(db, 'grades'), 
+        where('bimestre', '==', selectedBimestre),
+        where('cycleId', '==', currentCycleId)
+      ),
       (snap) => {
         const gradesMap: Record<string, StudentGrade> = {};
         snap.docs.forEach(doc => {
@@ -115,7 +119,7 @@ export default function TeacherPortal() {
     );
 
     return () => unsubGrades();
-  }, [students, selectedBimestre]);
+  }, [students, selectedBimestre, currentCycleId]);
 
   // Fetch lock status
   useEffect(() => {

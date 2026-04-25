@@ -107,6 +107,10 @@ export interface AppPermissions {
     view: boolean;
     manage: boolean;
   };
+  timeClock: {
+    view: boolean;
+    manage: boolean;
+  };
 }
 
 export interface Enrollment {
