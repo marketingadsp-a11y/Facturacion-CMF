@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Student, StudentGrade, AppSettings, SchoolCycle } from '../types';
+import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
 import ReportCardPDF from '../components/ReportCardPDF';
 import { PDFViewer } from '@react-pdf/renderer';
 
@@ -10,6 +10,7 @@ export default function PrintBoleta() {
   const { studentId } = useParams();
   const [student, setStudent] = useState<Student | null>(null);
   const [grades, setGrades] = useState<StudentGrade[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [cycle, setCycle] = useState<SchoolCycle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +31,15 @@ export default function PrintBoleta() {
         // Fetch Student
         const studentSnap = await getDoc(doc(db, 'students', studentId));
         if (studentSnap.exists()) {
-          setStudent({ id: studentSnap.id, ...studentSnap.data() } as Student);
+          const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student;
+          setStudent(studentData);
+
+          // Fetch Subjects for student's level (case-insensitive filter)
+          const subjectsSnap = await getDocs(collection(db, 'subjects'));
+          const filteredSubjects = subjectsSnap.docs
+            .map(d => ({ id: d.id, ...d.data() } as Subject))
+            .filter(s => s.level?.toLowerCase().trim() === studentData.level?.toLowerCase().trim());
+          setSubjects(filteredSubjects);
         }
 
         // Fetch Cycle
@@ -78,6 +87,7 @@ export default function PrintBoleta() {
         <ReportCardPDF 
           student={student}
           grades={grades}
+          subjects={subjects}
           settings={settings}
           cycle={cycle}
         />

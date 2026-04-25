@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade } from '../types';
+import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -13,16 +13,16 @@ import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import { calculateStudentDebts } from '../lib/paymentUtils';
 import { createRoot } from 'react-dom/client';
-import ReportCardPrint from '../components/ReportCardPrint';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
-  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList'>('enrollments');
+  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [grades, setGrades] = useState<StudentGrade[]>([]);
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   
@@ -68,6 +68,10 @@ export default function AcademicControl() {
       setCycles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolCycle)));
     });
 
+    const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snap) => {
+      setSubjects(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject)));
+    });
+
     return () => {
       unsubEnrollments();
       unsubStudents();
@@ -75,6 +79,7 @@ export default function AcademicControl() {
       unsubPayments();
       unsubGrades();
       unsubCycles();
+      unsubSubjects();
     };
   }, []);
 
@@ -264,6 +269,17 @@ export default function AcademicControl() {
               )}
             >
               Listas Oficiales
+            </button>
+            <button
+              onClick={() => setActiveTab('subjects')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all",
+                activeTab === 'subjects' 
+                  ? "bg-slate-900 text-white shadow-sm" 
+                  : "text-slate-400 hover:text-slate-900"
+              )}
+            >
+              Materias
             </button>
           </div>
           {activeTab === 'enrollments' && (
@@ -567,6 +583,10 @@ export default function AcademicControl() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'subjects' && (
+        <SubjectsManagement subjects={subjects} settings={settings} />
       )}
 
       {/* Code Modal */}
@@ -967,6 +987,197 @@ function DetailItem({ label, value, span = 1 }: { label: string; value?: string 
     )}>
       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</p>
       <p className="text-xs font-bold text-slate-900 break-words">{value || '-'}</p>
+    </div>
+  );
+}
+
+function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; settings: AppSettings | null }) {
+  const [newSubject, setNewSubject] = useState({ name: '', level: '', category: 'Académica' as const });
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const levels = settings?.academicLevels || [];
+
+  const handleCreateSubject = async () => {
+    if (!newSubject.name || !newSubject.level) {
+      alert("Por favor completa el nombre y selecciona un nivel.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await addDoc(collection(db, 'subjects'), {
+        name: newSubject.name,
+        level: newSubject.level,
+        category: newSubject.category,
+        createdAt: serverTimestamp()
+      });
+      setNewSubject({ name: '', level: '', category: 'Académica' });
+    } catch (error) {
+      console.error("Error creating subject:", error);
+      alert("Error al crear materia");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUpdateSubject = async () => {
+    if (!editingSubject || !editingSubject.name || !editingSubject.level) return;
+    setIsSaving(true);
+    try {
+      await updateDoc(doc(db, 'subjects', editingSubject.id), {
+        name: editingSubject.name,
+        level: editingSubject.level,
+        category: editingSubject.category || 'Académica',
+        updatedAt: serverTimestamp()
+      });
+      setEditingSubject(null);
+    } catch (error) {
+      console.error("Error updating subject:", error);
+      alert("Error al actualizar materia");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSubject = async (id: string) => {
+    if (!window.confirm("¿Estás seguro de eliminar esta materia? Esto podría afectar la visualización de calificaciones anteriores.")) return;
+    try {
+      // In a real app we'd use deleteDoc, but let's be careful with foreign keys. 
+      // For now just delete.
+      const { deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'subjects', id));
+    } catch (error) {
+      console.error("Error deleting subject:", error);
+      alert("Error al eliminar materia");
+    }
+  };
+
+  const subjectsByLevel = levels.reduce((acc, level) => {
+    acc[level] = subjects.filter(s => s.level === level);
+    return acc;
+  }, {} as Record<string, Subject[]>);
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Create Subject Section */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2rem] mb-6 flex items-center gap-2 italic">
+          <Plus size={16} className="text-blue-500" /> Registrar Nueva Materia
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <FormInput 
+            label="Nombre de la Materia" 
+            placeholder="Ej. Matemáticas I, Inglés..."
+            value={newSubject.name}
+            onChange={(e) => setNewSubject({ ...newSubject, name: e.target.value })}
+          />
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Nivel Académico</label>
+            <select
+              value={newSubject.level}
+              onChange={(e) => setNewSubject({ ...newSubject, level: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
+            >
+              <option value="">Seleccionar Nivel</option>
+              {levels.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Tipo / Categoría</label>
+            <select
+              value={newSubject.category}
+              onChange={(e) => setNewSubject({ ...newSubject, category: e.target.value as any })}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
+            >
+              <option value="Académica">Académica (Base)</option>
+              <option value="Extracurricular">Extracurricular / Taller</option>
+            </select>
+          </div>
+          <button
+            onClick={handleCreateSubject}
+            disabled={isSaving}
+            className="h-[46px] bg-slate-950 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isSaving ? <Clock className="animate-spin" size={14} /> : <Plus size={14} />}
+            Agregar Materia
+          </button>
+        </div>
+</div>
+
+      {/* List by Level */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {levels.map(level => (
+          <div key={level} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                <BookOpen size={14} className="text-blue-500" /> {level}
+              </h3>
+              <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200 uppercase">
+                {subjectsByLevel[level]?.length || 0} Materias
+              </span>
+            </div>
+            <div className="p-2 flex-1 md:min-h-[200px]">
+              <div className="divide-y divide-slate-50">
+                {subjectsByLevel[level]?.length > 0 ? (
+                  subjectsByLevel[level].map(subj => (
+                    <div key={subj.id} className="p-3 flex items-center justify-between group hover:bg-slate-50 rounded-lg transition-all">
+                      {editingSubject?.id === subj.id ? (
+                        <div className="flex-1 flex gap-2">
+                          <input 
+                            autoFocus
+                            value={editingSubject.name}
+                            onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
+                            className="flex-1 bg-white border border-blue-200 rounded px-2 py-1 text-sm font-bold outline-none"
+                          />
+                          <select
+                            value={editingSubject.category}
+                            onChange={(e) => setEditingSubject({ ...editingSubject, category: e.target.value as any })}
+                            className="bg-white border border-blue-200 rounded px-1 py-1 text-[8px] font-black uppercase"
+                          >
+                            <option value="Académica">Aca.</option>
+                            <option value="Extracurricular">Ext.</option>
+                          </select>
+                          <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
+                          <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic">{subj.name}</span>
+                            <span className={cn(
+                              "text-[7px] font-black uppercase tracking-widest px-1 py-0.5 rounded w-fit mt-0.5",
+                              subj.category === 'Extracurricular' ? "bg-indigo-50 text-indigo-500" : "bg-blue-50 text-blue-500"
+                            )} shadow-sm>
+                              {subj.category || 'Académica'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => setEditingSubject(subj)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteSubject(subj.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center">
+                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Sin materias asignadas</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

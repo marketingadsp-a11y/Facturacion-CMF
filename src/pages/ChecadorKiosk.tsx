@@ -5,10 +5,11 @@ import { Employee, TimeLog } from '../types';
 import * as faceapi from '@vladmandic/face-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { Camera, RefreshCw, CheckCircle2, ShieldAlert, Clock, ScanFace, Check } from 'lucide-react';
-import { startOfDay, format } from 'date-fns';
+import { startOfDay, format, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'react-toastify';
 import { cn } from '../lib/utils';
+import confetti from 'canvas-confetti';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 
@@ -193,6 +194,21 @@ export default function ChecadorKiosk() {
       setMatchedEmployee(emp);
       setActionType(type);
 
+      const birthDateStr = emp.birthDate;
+      const isBirthday = birthDateStr && isSameDay(
+        new Date(birthDateStr + 'T12:00:00'),
+        new Date()
+      );
+
+      if (isBirthday) {
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#FFD700', '#FF69B4', '#00CED1', '#ADFF2F', '#FF4500']
+        });
+      }
+
       // Play success sound (optional, assuming no strict browser policy if interacted)
       const audio = new Audio('/success.mp3');
       audio.play().catch(() => {}); // ignore catch if autoplay is blocked
@@ -298,19 +314,51 @@ export default function ChecadorKiosk() {
                       animate={{ scale: 1, rotate: 0 }}
                       transition={{ type: "spring", stiffness: 200, damping: 15 }}
                       className={cn(
-                        "w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-2xl",
-                        actionType === 'Entrada' ? "bg-emerald-500 text-white" : "bg-blue-500 text-white"
+                        "w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-2xl relative",
+                        (() => {
+                          const birthDateStr = matchedEmployee.birthDate;
+                          const isBirthday = birthDateStr && isSameDay(new Date(birthDateStr + 'T12:00:00'), new Date());
+                          return isBirthday ? "bg-gradient-to-tr from-yellow-400 to-orange-500 text-white" : (actionType === 'Entrada' ? "bg-emerald-500 text-white" : "bg-blue-500 text-white");
+                        })()
                       )}
                     >
-                      {actionType === 'Entrada' ? <Check size={48} strokeWidth={3} /> : <LogOutIcon size={40} strokeWidth={3} />}
+                      {(() => {
+                        const birthDateStr = matchedEmployee.birthDate;
+                        const isBirthday = birthDateStr && isSameDay(new Date(birthDateStr + 'T12:00:00'), new Date());
+                        if (isBirthday) return <span className="text-5xl animate-bounce">🎂</span>;
+                        return actionType === 'Entrada' ? <Check size={48} strokeWidth={3} /> : <LogOutIcon size={40} strokeWidth={3} />;
+                      })()}
                     </motion.div>
                     
-                    <h2 className="text-3xl font-black text-white text-center tracking-tight mb-2">
-                      {matchedEmployee.name}
-                    </h2>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60 mb-8">
-                      {matchedEmployee.position}
-                    </p>
+                    {(() => {
+                      const birthDateStr = matchedEmployee.birthDate;
+                      const isBirthday = birthDateStr && isSameDay(new Date(birthDateStr + 'T12:00:00'), new Date());
+                      if (isBirthday) {
+                        const parts = matchedEmployee.name.split(' ');
+                        const firstName = parts[0] || '';
+                        const firstLastName = parts[1] || '';
+                        return (
+                          <div className="text-center mb-4">
+                            <h2 className="text-4xl font-black text-white tracking-tighter uppercase italic drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse">
+                              ¡FELIZ CUMPLEAÑOS!
+                            </h2>
+                            <h3 className="text-2xl font-black text-yellow-300 tracking-tight">
+                              {firstName} {firstLastName}
+                            </h3>
+                          </div>
+                        );
+                      }
+                      return (
+                        <>
+                          <h2 className="text-3xl font-black text-white text-center tracking-tight mb-2">
+                            {matchedEmployee.name}
+                          </h2>
+                          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60 mb-8">
+                            {matchedEmployee.position}
+                          </p>
+                        </>
+                      );
+                    })()}
 
                     <div className={cn(
                       "px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest border shadow-xl flex items-center gap-3",

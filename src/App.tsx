@@ -59,6 +59,7 @@ import ChecadorAdmin from './pages/ChecadorAdmin';
 import ChecadorKiosk from './pages/ChecadorKiosk';
 import PrintBoleta from './pages/PrintBoleta';
 import PublicVisitRegistration from './pages/PublicVisitRegistration';
+import NotFound from './pages/NotFound';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -598,6 +599,7 @@ const AppContent = () => {
           </ProtectedRoute>
         } 
       />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };

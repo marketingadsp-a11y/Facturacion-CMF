@@ -15,7 +15,8 @@ import {
   Trash2,
   RefreshCw,
   FileDown,
-  Timer
+  Timer,
+  Edit2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format, startOfDay, endOfDay } from 'date-fns';
@@ -35,10 +36,21 @@ export default function ChecadorAdmin() {
   const [logDate, setLogDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [schoolName, setSchoolName] = useState('Centro de Asistencia');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  const openEditModal = (employee: Employee) => {
+    setEditingEmployee(employee);
+    setIsModalOpen(true);
+  };
+
+  const closeRegistrationModal = () => {
+    setIsModalOpen(false);
+    setEditingEmployee(null);
+  };
 
   useEffect(() => {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
@@ -183,6 +195,7 @@ export default function ChecadorAdmin() {
                   <th className="px-6 py-3">Empleado</th>
                   <th className="px-6 py-3">Puesto</th>
                   <th className="px-6 py-3">Biometría</th>
+                  <th className="px-6 py-3">Nacimiento</th>
                   <th className="px-6 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -211,10 +224,30 @@ export default function ChecadorAdmin() {
                         </span>
                       )}
                     </td>
+                    <td className="px-6 py-4">
+                      {employee.birthDate ? (
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                          {format(new Date(employee.birthDate + 'T00:00:00'), 'dd MMM yyyy', { locale: es })}
+                        </p>
+                      ) : (
+                        <span className="text-slate-300 italic text-[10px]">No reg.</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={() => deleteEmployee(employee.id)} className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors">
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => openEditModal(employee)}
+                          className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button 
+                          onClick={() => deleteEmployee(employee.id)} 
+                          className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -313,7 +346,8 @@ export default function ChecadorAdmin() {
       <AnimatePresence>
         {isModalOpen && (
           <RegistrationModal 
-            onClose={() => setIsModalOpen(false)} 
+            onClose={closeRegistrationModal} 
+            editingEmployee={editingEmployee}
             modelsLoaded={modelsLoaded} 
           />
         )}
@@ -322,14 +356,15 @@ export default function ChecadorAdmin() {
   );
 }
 
-function RegistrationModal({ onClose, modelsLoaded }: { onClose: () => void, modelsLoaded: boolean }) {
-  const [name, setName] = useState('');
-  const [position, setPosition] = useState('');
+function RegistrationModal({ onClose, editingEmployee, modelsLoaded }: { onClose: () => void, editingEmployee: Employee | null, modelsLoaded: boolean }) {
+  const [name, setName] = useState(editingEmployee?.name || '');
+  const [position, setPosition] = useState(editingEmployee?.position || '');
+  const [birthDate, setBirthDate] = useState(editingEmployee?.birthDate || '');
   const [step, setStep] = useState<1 | 2>(1); // 1: Info, 2: Capture
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [descriptor, setDescriptor] = useState<Float32Array | null>(null);
+  const [descriptor, setDescriptor] = useState<Float32Array | null>(editingEmployee?.faceDescriptor ? new Float32Array(editingEmployee.faceDescriptor) : null);
   const [isScanning, setIsScanning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -351,7 +386,7 @@ function RegistrationModal({ onClose, modelsLoaded }: { onClose: () => void, mod
     return () => {
       if (stream) stream.getTracks().forEach(t => t.stop());
     };
-  }, [step]);
+  }, [step, stream]);
 
   const captureFace = async () => {
     if (!videoRef.current || !modelsLoaded) return;
@@ -377,21 +412,38 @@ function RegistrationModal({ onClose, modelsLoaded }: { onClose: () => void, mod
   };
 
   const saveEmployee = async () => {
-    if (!name || !position || !descriptor) return;
+    if (!name || !position) return;
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'employees'), {
-        name,
-        position,
-        faceDescriptor: Array.from(descriptor),
-        createdAt: serverTimestamp()
-      } as Partial<Employee>);
-      
-      toast.success("Personal registrado exitosamente");
+      if (editingEmployee) {
+        const { updateDoc, doc } = await import('firebase/firestore');
+        await updateDoc(doc(db, 'employees', editingEmployee.id), {
+          name,
+          position,
+          birthDate,
+          faceDescriptor: descriptor ? Array.from(descriptor) : editingEmployee.faceDescriptor,
+          updatedAt: serverTimestamp()
+        });
+        toast.success("Personal actualizado");
+      } else {
+        if (!descriptor) {
+          toast.error("Debe capturar el rostro para registros nuevos");
+          setIsSaving(false);
+          return;
+        }
+        await addDoc(collection(db, 'employees'), {
+          name,
+          position,
+          birthDate,
+          faceDescriptor: Array.from(descriptor),
+          createdAt: serverTimestamp()
+        } as Partial<Employee>);
+        toast.success("Personal registrado");
+      }
       onClose();
     } catch (err) {
       console.error("Error saving employee", err);
-      toast.error("Error al guardar el empleado");
+      toast.error("Error al guardar cambios");
     } finally {
       setIsSaving(false);
     }
@@ -407,7 +459,9 @@ function RegistrationModal({ onClose, modelsLoaded }: { onClose: () => void, mod
       >
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-black text-slate-900 tracking-tighter">Nuevo Empleado</h2>
+            <h2 className="text-xl font-black text-slate-900 tracking-tighter">
+              {editingEmployee ? 'Editar Empleado' : 'Nuevo Empleado'}
+            </h2>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
               Registro biométrico
             </p>
@@ -430,24 +484,48 @@ function RegistrationModal({ onClose, modelsLoaded }: { onClose: () => void, mod
                   placeholder="Ej. Juan Pérez"
                 />
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Puesto / Cargo</label>
-                <input
-                  type="text"
-                  value={position}
-                  onChange={(e) => setPosition(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
-                  placeholder="Ej. Docente Principal"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Puesto / Cargo</label>
+                  <input
+                    type="text"
+                    value={position}
+                    onChange={(e) => setPosition(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                    placeholder="Ej. Docente Principal"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Fecha Nacimiento</label>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
               </div>
               
-              <button
-                disabled={!name || !position}
-                onClick={() => setStep(2)}
-                className="w-full mt-4 bg-slate-950 text-white rounded-xl py-3 font-black text-xs uppercase tracking-widest disabled:opacity-50 hover:bg-slate-800 transition-colors"
-              >
-                Continuar a Biometría
-              </button>
+              <div className="pt-4 space-y-3">
+                <button
+                  disabled={!name || !position}
+                  onClick={() => setStep(2)}
+                  className="w-full bg-slate-100 text-slate-700 rounded-xl py-3 font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Camera size={14} />
+                  {descriptor ? 'Actualizar Rostro' : 'Capturar Rostro'}
+                </button>
+                
+                {editingEmployee && (
+                  <button
+                    disabled={!name || !position || isSaving}
+                    onClick={saveEmployee}
+                    className="w-full bg-slate-950 text-white rounded-xl py-3 font-black text-[10px] uppercase tracking-widest hover:bg-black transition-colors"
+                  >
+                    Guardar Cambios
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-6 flex flex-col items-center">

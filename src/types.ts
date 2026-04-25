@@ -272,6 +272,16 @@ export interface AppSettings {
   registrationInstructions?: string;
   pdfFooter?: string;
   kioskBackgroundUrl?: string;
+  notFoundBackgroundUrl?: string;
+  notFoundText?: string;
+}
+
+export interface Subject {
+  id: string;
+  name: string;
+  level: string; // Preescolar, Primaria, etc.
+  category?: 'Académica' | 'Extracurricular';
+  createdAt: Timestamp;
 }
 
 export type Bimestre = 1 | 2 | 3 | 4 | 5;
@@ -330,6 +340,7 @@ export interface Employee {
   id: string;
   name: string;
   position: string;
+  birthDate?: string; // YYYY-MM-DD
   faceDescriptor: number[];
   createdAt: Timestamp;
 }

@@ -386,6 +386,33 @@ export default function Settings() {
                     * Si dejas este campo vacío, se usará el fondo oscuro predeterminado por el sistema.
                   </p>
                 </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                  <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    Personalización Página 404 (No Encontrado)
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">URL de Fondo 404</label>
+                      <input
+                        placeholder="https://ejemplo.com/404-bg.jpg"
+                        value={settings.notFoundBackgroundUrl || ''}
+                        onChange={(e) => setSettings({...settings, notFoundBackgroundUrl: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Texto del Error</label>
+                      <input
+                        placeholder="Lo sentimos, no pudimos encontrar la página que buscas."
+                        value={settings.notFoundText || ''}
+                        onChange={(e) => setSettings({...settings, notFoundText: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Enrollment Settings */}

@@ -133,9 +133,25 @@
         "fatherEmail": { "type": "string", "format": "email" },
         "createdAt": { "type": "string", "format": "date-time" }
       }
+    },
+    "subject": {
+      "title": "Materia",
+      "description": "Materia o asignatura académica gestionable por nivel.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": "string", "description": "Nivel académico al que pertenece (Preescolar, Primaria, etc.)" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "level"]
     }
   },
   "firestore": {
+    "/subjects/{subjectId}": {
+      "schema": "subject",
+      "description": "Colección de materias académicas."
+    },
     "/students/{studentId}": {
       "schema": "student",
       "description": "Colección de alumnos."

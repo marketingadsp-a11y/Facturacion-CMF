@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
-import { Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock } from '../types';
+import { Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle } from '../types';
 import { 
   Users, 
   BookOpen, 
@@ -25,19 +25,11 @@ import {
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
-const SUBJECTS = [
-  'Español',
-  'Matemáticas',
-  'Ciencias Naturales',
-  'La Entidad Donde Vivo',
-  'Formación Cívica y Ética',
-  'Taller Lúdico'
-];
-
 export default function TeacherPortal() {
   const { userProfile, hasPermission } = usePermissions();
   const [students, setStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Record<string, StudentGrade>>({});
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'attendance' | 'grading'>('attendance');
@@ -48,6 +40,10 @@ export default function TeacherPortal() {
   const [isLocking, setIsLocking] = useState(false);
   const [savedStatus, setSavedStatus] = useState<string | null>(null);
   const [isBimestreLocked, setIsBimestreLocked] = useState(false);
+  const [adminSelectedLevel, setAdminSelectedLevel] = useState<string>('');
+  const [adminSelectedGrade, setAdminSelectedGrade] = useState<string>('');
+  const [adminSelectedGroup, setAdminSelectedGroup] = useState<string>('');
+  const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const [currentCycleId, setCurrentCycleId] = useState('');
 
@@ -55,8 +51,18 @@ export default function TeacherPortal() {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists()) {
-        setCurrentCycleId(snap.data().currentCycleId || '');
+        const data = snap.data() as AppSettings;
+        setSettings(data);
+        setCurrentCycleId(data.currentCycleId || '');
       }
+    });
+    return unsub;
+  }, []);
+
+  // Fetch subjects
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'subjects'), (snap) => {
+      setSubjects(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject)));
     });
     return unsub;
   }, []);
@@ -66,20 +72,22 @@ export default function TeacherPortal() {
     if (!userProfile) return;
 
     // Teachers can only see their group
-    // Admins can see everything based on search/filter (but for this portal we focus on the specific group if provided)
+    // Admins can see everything based on search/filter
     let q = query(collection(db, 'students'), orderBy('lastName', 'asc'));
 
-    if (userProfile.role === 'Docente') {
-      if (userProfile.assignedLevel && userProfile.assignedGrade) {
-        const filters = [
-          where('level', '==', userProfile.assignedLevel),
-          where('grade', '==', userProfile.assignedGrade)
-        ];
-        if (userProfile.assignedGroup) {
-          filters.push(where('group', '==', userProfile.assignedGroup));
-        }
-        q = query(collection(db, 'students'), ...filters, orderBy('lastName', 'asc'));
+    const activeLevel = userProfile.role === 'Docente' ? userProfile.assignedLevel : adminSelectedLevel;
+    const activeGrade = userProfile.role === 'Docente' ? userProfile.assignedGrade : adminSelectedGrade;
+    const activeGroup = userProfile.role === 'Docente' ? userProfile.assignedGroup : adminSelectedGroup;
+
+    if (activeLevel && activeGrade) {
+      const filters = [
+        where('level', '==', activeLevel),
+        where('grade', '==', activeGrade)
+      ];
+      if (activeGroup) {
+        filters.push(where('group', '==', activeGroup));
       }
+      q = query(collection(db, 'students'), ...filters, orderBy('lastName', 'asc'));
     }
 
     const unsubStudents = onSnapshot(q, (snap) => {
@@ -281,6 +289,16 @@ export default function TeacherPortal() {
   const presentCount = Object.values(attendance).filter(a => a.status === 'Asistió' || a.status === 'Retardo').length;
   const attendancePercentage = students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0;
 
+  const activeLevel = userProfile?.role === 'Docente' ? userProfile?.assignedLevel : adminSelectedLevel;
+  const activeGrade = userProfile?.role === 'Docente' ? userProfile?.assignedGrade : adminSelectedGrade;
+  const activeGroup = userProfile?.role === 'Docente' ? userProfile?.assignedGroup : adminSelectedGroup;
+
+  // Filter subjects for the group level (case-insensitive and trimmed)
+  const levelSubjects = subjects.filter(s => 
+    s.level && activeLevel && 
+    s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
+  );
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header - Technical Utility */}
@@ -293,10 +311,41 @@ export default function TeacherPortal() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase italic">Portal Docente</h1>
           <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1 opacity-60">
             {userProfile?.role === 'Docente' 
-              ? `ASIGNACIÓN: ${userProfile.assignedLevel} - ${userProfile.assignedGrade}${userProfile.assignedGroup || ''}`
+              ? `ASIGNACIÓN: ${activeLevel} - ${activeGrade}${activeGroup || ''}`
               : 'Gestión de Calificaciones y Asistencia'}
           </p>
         </div>
+
+        {/* Admin level selection if no teacher assignment */}
+        {userProfile?.role !== 'Docente' && (
+          <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Seleccionar Grupo:</span>
+            <select
+              value={adminSelectedLevel}
+              onChange={(e) => setAdminSelectedLevel(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+            >
+              <option value="">Nivel</option>
+              {settings?.academicLevels?.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+            <select
+              value={adminSelectedGrade}
+              onChange={(e) => setAdminSelectedGrade(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+            >
+              <option value="">Grado</option>
+              {settings?.academicGrades?.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+            <select
+              value={adminSelectedGroup}
+              onChange={(e) => setAdminSelectedGroup(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+            >
+              <option value="">Grupo (Opcional)</option>
+              {['A', 'B', 'C', 'D'].map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+        )}
         
         {activeTab === 'grading' && hasPermission('grading', 'manage') && (
           <div className="flex flex-wrap gap-2">
@@ -468,9 +517,11 @@ export default function TeacherPortal() {
                 <thead>
                   <tr className="bg-slate-50/80 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
                     <th className="px-4 py-3 sticky left-0 bg-slate-50/95 z-10 w-56 border-r border-slate-200 backdrop-blur-sm">Identidad Alumno</th>
-                    {SUBJECTS.map(subj => (
-                      <th key={subj} className="px-1 py-3 text-center border-r border-slate-200 min-w-[75px] max-w-[75px]">{subj.substring(0, 10)}...</th>
-                    ))}
+                    {levelSubjects.length > 0 ? levelSubjects.map(subj => (
+                      <th key={subj.id} className="px-1 py-3 text-center border-r border-slate-200 min-w-[75px] max-w-[75px]">{subj.name.substring(0, 10)}...</th>
+                    )) : (
+                      <th className="px-4 py-3 border-r border-slate-200 text-amber-500 italic">Sin materias config. en Control Escolar</th>
+                    )}
                     <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Cond.</th>
                     <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Unif.</th>
                     <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Falt.</th>
@@ -504,8 +555,8 @@ export default function TeacherPortal() {
                             </div>
                           </div>
                         </td>
-                        {SUBJECTS.map(subj => (
-                          <td key={subj} className="px-1 py-1.5 border-r border-slate-50">
+                        {levelSubjects.map(subj => (
+                          <td key={subj.id} className="px-1 py-1.5 border-r border-slate-50">
                             <input
                               type="number"
                               inputMode="decimal"
@@ -513,8 +564,8 @@ export default function TeacherPortal() {
                               max="10"
                               step="0.1"
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                              value={studentGrade.subjects?.[subj] ?? ''}
-                              onChange={(e) => handleGradeChange(student.id, subj, e.target.value, true)}
+                              value={studentGrade.subjects?.[subj.name] ?? ''}
+                              onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                               className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                               placeholder="-"
                             />

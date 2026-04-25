@@ -1,6 +1,6 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
-import { Student, StudentGrade, AppSettings, SchoolCycle } from '../types';
+import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
 
 const styles = StyleSheet.create({
   page: {
@@ -178,21 +178,19 @@ const styles = StyleSheet.create({
 interface ReportCardPDFProps {
   student: Student;
   grades: StudentGrade[];
+  subjects: Subject[];
   settings: AppSettings | null;
   cycle: SchoolCycle;
 }
 
-export default function ReportCardPDF({ student, grades, settings, cycle }: ReportCardPDFProps) {
-  const academicSubjects = [
-    'Español', 'Matemáticas', 'Inglés', 'Ciencias Naturales', 'Geografía', 
-    'Historia', 'Educación Artística', 'Formación Cívica y Ética', 
-    'Arte Terapia', 'Educación Física', 'Vida Saludable'
-  ];
+export default function ReportCardPDF({ student, grades, subjects, settings, cycle }: ReportCardPDFProps) {
+  const academicSubjects = subjects
+    .filter(s => s.category !== 'Extracurricular')
+    .map(s => s.name);
 
-  const curricularSubjects = [
-    'Taller Lúdico', 'Escuela de Humanidad', 'Taller de Danza', 
-    'Taller Deportivo', 'Taller Socioemocional'
-  ];
+  const curricularSubjects = subjects
+    .filter(s => s.category === 'Extracurricular')
+    .map(s => s.name);
 
   const behaviorAspects = [
     'Conducta', 'Uniforme', 'Inasistencia', 'Tareas no realizadas', 'Retardo', 'Aseo'
@@ -269,7 +267,7 @@ export default function ReportCardPDF({ student, grades, settings, cycle }: Repo
                 <View style={styles.coverSchoolDetails}>
                   <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0F172A', marginBottom: 2 }}>{settings?.schoolName || 'COLEGIO MÉXICO'}</Text>
                   <Text style={{ fontSize: 7, color: '#475569', marginBottom: 2, textTransform: 'uppercase' }}>CLAVE CENTRO DE TRABAJO</Text>
-                  <Text style={{ fontSize: 9, color: '#0F172A', fontWeight: 'bold' }}>NIVEL DE PRIMARIA</Text>
+                  <Text style={{ fontSize: 9, color: '#0F172A', fontWeight: 'bold' }}>NIVEL DE {student.level?.toUpperCase() || 'ESTUDIOS'}</Text>
                 </View>
               </View>
 
@@ -313,7 +311,7 @@ export default function ReportCardPDF({ student, grades, settings, cycle }: Repo
                 </View>
                 <View style={styles.signatureCol}>
                   <View style={styles.signatureLine} />
-                  <Text style={styles.signatureText}>DIRECTOR(A) DE PRIMARIA</Text>
+                  <Text style={styles.signatureText}>DIRECTOR(A) DE {student.level?.toUpperCase() || 'NIVEL'}</Text>
                 </View>
               </View>
             </View>
