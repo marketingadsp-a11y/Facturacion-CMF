@@ -524,12 +524,13 @@ export default function ParentDashboard() {
                           <button
                             onClick={() => handleAcknowledgeAnnouncement(ann.id)}
                             className={cn(
-                              "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95",
+                              "px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 flex items-center gap-2",
                               ann.type === 'important' ? "bg-rose-600 text-white hover:bg-rose-700" :
                               ann.type === 'warning' ? "bg-amber-600 text-white hover:bg-amber-700" :
-                              "bg-white text-slate-900 hover:bg-slate-50"
+                              "bg-slate-950 text-white hover:bg-black"
                             )}
                           >
+                            <CheckCircle2 size={14} />
                             Enterado
                           </button>
                         </div>
@@ -777,16 +778,25 @@ export default function ParentDashboard() {
                         <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{ann.content}</p>
                       </div>
                       
-                      {!ann.acknowledgedBy?.includes(auth.currentUser?.uid) && (
+                      {ann.acknowledgedBy?.includes(auth.currentUser?.uid) ? (
                         <div className="mt-8 pt-6 border-t border-slate-50 flex items-center justify-between">
-                          <span className="flex items-center gap-2 text-rose-600 text-[10px] font-black uppercase tracking-widest">
+                          <span className="flex items-center gap-2 text-emerald-600 text-[10px] font-black uppercase tracking-widest">
+                            <CheckCircle2 size={16} />
+                            Confirmado
+                          </span>
+                          <div className="text-[9px] font-bold text-slate-400">Lectura registrada</div>
+                        </div>
+                      ) : (
+                        <div className="mt-8 pt-6 border-t border-slate-50 flex items-center justify-between gap-4">
+                          <span className="flex items-center gap-2 text-rose-600 text-[10px] font-black uppercase tracking-widest shrink-0">
                             <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                            No leído
+                            Nuevo
                           </span>
                           <button
                             onClick={() => handleAcknowledgeAnnouncement(ann.id)}
-                            className="px-8 py-3 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-xl shadow-slate-200"
+                            className="flex-1 max-w-[200px] py-4 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-xl shadow-slate-200 flex items-center justify-center gap-2"
                           >
+                            <CheckCircle2 size={16} />
                             Enterado
                           </button>
                         </div>
