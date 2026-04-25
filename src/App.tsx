@@ -126,6 +126,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const navItems = isParent ? [
     { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
+    { name: 'Calificaciones', path: '/?tab=grades', icon: GraduationCap, section: 'dashboard', action: 'view' },
     { name: 'Avisos', path: '/?tab=avisos', icon: BellRing, section: 'dashboard', action: 'view' },
     { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
     { name: 'Datos Fiscales', path: '/?tab=billing', icon: CreditCard, section: 'dashboard', action: 'view' },

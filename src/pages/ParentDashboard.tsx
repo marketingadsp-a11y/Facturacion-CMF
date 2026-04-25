@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc, addDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Student, Payment, AppSettings, SchoolCycle } from '../types';
+import { Student, Payment, AppSettings, SchoolCycle, Subject, StudentGrade } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw, AlertTriangle, Users, Clock, Bell } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
@@ -51,8 +51,10 @@ export default function ParentDashboard() {
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [activeTab, setActiveTab] = useState<'hijos' | 'facturas' | 'billing' | 'avisos'>((searchParams.get('tab') as any) || 'hijos');
+  const [activeTab, setActiveTab] = useState<'hijos' | 'facturas' | 'billing' | 'avisos' | 'grades'>((searchParams.get('tab') as any) || 'hijos');
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([]);
   const [billingData, setBillingData] = useState({
     rfc: '',
     billingName: '',
@@ -63,7 +65,7 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'hijos' || tab === 'facturas' || tab === 'billing' || tab === 'avisos') {
+    if (tab === 'hijos' || tab === 'facturas' || tab === 'billing' || tab === 'avisos' || tab === 'grades') {
       if (tab !== activeTab) setActiveTab(tab as any);
     } else if (!tab && activeTab !== 'hijos') {
       setActiveTab('hijos');
@@ -115,7 +117,12 @@ export default function ParentDashboard() {
       handleFirestoreError(error, OperationType.LIST, 'announcements');
     });
 
-    return () => { sUnsub(); setUnsub(); cUnsub(); annUnsub(); };
+    // 5. Listen to subjects
+    const subUnsub = onSnapshot(collection(db, 'subjects'), (snap) => {
+      setSubjects(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject)));
+    });
+
+    return () => { sUnsub(); setUnsub(); cUnsub(); annUnsub(); subUnsub(); };
   }, [auth.currentUser?.email]);
 
   const currentCycle = cycles.find(c => c.id === settings?.currentCycleId) || null;
@@ -150,7 +157,7 @@ export default function ParentDashboard() {
     }
   }, [paymentStatus, payments, searchParams]);
 
-  // 3. Listen to payments separately when students are loaded
+  // 3. Listen to payments and grades separately when students are loaded
   useEffect(() => {
     if (students.length === 0) return;
 
@@ -165,12 +172,18 @@ export default function ParentDashboard() {
       setLoading(false);
     });
 
-    return () => pUnsub();
+    // Listen to grades for these students
+    const gQuery = query(collection(db, 'grades'), where('studentId', 'in', studentIds));
+    const gUnsub = onSnapshot(gQuery, (gSnap) => {
+      setStudentGrades(gSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as StudentGrade)));
+    });
+
+    return () => { pUnsub(); gUnsub(); };
   }, [students.map(s => s.id).join(',')]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'facturas' || tab === 'hijos' || tab === 'billing' || tab === 'avisos') {
+    if (tab === 'facturas' || tab === 'hijos' || tab === 'billing' || tab === 'avisos' || tab === 'grades') {
       setActiveTab(tab as any);
     }
   }, [searchParams]);
@@ -507,19 +520,19 @@ export default function ParentDashboard() {
                     <h3 className="text-base font-black tracking-tight mb-1">{ann.title}</h3>
                     <p className="text-xs opacity-80 leading-relaxed mb-6 line-clamp-2">{ann.content}</p>
                     
-                    <div className="mt-auto pt-4 border-t border-black/5 flex justify-end">
-                      <button
-                        onClick={() => handleAcknowledgeAnnouncement(ann.id)}
-                        className={cn(
-                          "px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95",
-                          ann.type === 'important' ? "bg-rose-600 text-white" :
-                          ann.type === 'warning' ? "bg-amber-600 text-white" :
-                          "bg-white text-slate-900"
-                        )}
-                      >
-                        Entendido
-                      </button>
-                    </div>
+                        <div className="mt-auto pt-4 border-t border-black/5 flex justify-end">
+                          <button
+                            onClick={() => handleAcknowledgeAnnouncement(ann.id)}
+                            className={cn(
+                              "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95",
+                              ann.type === 'important' ? "bg-rose-600 text-white hover:bg-rose-700" :
+                              ann.type === 'warning' ? "bg-amber-600 text-white hover:bg-amber-700" :
+                              "bg-white text-slate-900 hover:bg-slate-50"
+                            )}
+                          >
+                            Enterado
+                          </button>
+                        </div>
                   </div>
                 </motion.div>
               ))}
@@ -536,7 +549,7 @@ export default function ParentDashboard() {
                 </h1>
               </motion.div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -572,38 +585,6 @@ export default function ParentDashboard() {
                     </p>
                   </div>
                 </motion.div>
-    
-                {/* Quick Actions Card */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  onClick={() => setActiveTab('facturas')}
-                  className="lg:col-span-2 bg-slate-900 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden group cursor-pointer hover:bg-black transition-colors"
-                >
-                  <div className="relative z-10 h-full flex flex-col justify-between">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-lg font-black tracking-tight mb-0.5">Pagos Rápidos</h3>
-                        <p className="text-slate-400 text-[10px] font-medium">Realiza tus aportaciones hoy.</p>
-                      </div>
-                      <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10 group-hover:bg-white group-hover:text-slate-900 transition-all">
-                        <CreditCard size={18} strokeWidth={2.5} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 mt-6">
-                      <div className="flex -space-x-2">
-                        {students.slice(0, 3).map((s, i) => (
-                          <div key={i} className="w-8 h-8 rounded-full border-2 border-slate-900 bg-blue-600 flex items-center justify-center font-black text-[10px]">
-                            {s.name[0]}
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagar Colegiaturas →</p>
-                    </div>
-                  </div>
-                  <div className="absolute -right-5 -top-5 w-40 h-40 bg-blue-600/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-1000" />
-                </motion.div>
               </div>
             </div>
           )}
@@ -627,18 +608,6 @@ export default function ParentDashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
                 <section>
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                      <LayoutDashboard size={24} className="text-slate-400" />
-                      Mis Hijos
-                    </h2>
-                    {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-full border border-rose-100 animate-pulse">
-                        <AlertTriangle size={14} />
-                        <span className="text-[10px] font-bold uppercase tracking-widest">Adeudos Pendientes</span>
-                      </div>
-                    )}
-                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {students.map((student, idx) => {
                       const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
@@ -768,18 +737,6 @@ export default function ParentDashboard() {
             </div>
           ) : activeTab === 'avisos' ? (
             <div className="space-y-8">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-slate-200">
-                  <Bell size={24} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
-                    Avisos Escolares
-                  </h2>
-                  <p className="text-slate-500 font-medium text-sm">Mantente informado sobre las últimas noticias del colegio.</p>
-                </div>
-              </div>
-              
               {announcements.length === 0 ? (
                 <div className="bg-white p-12 rounded-3xl border border-slate-100 shadow-sm text-center">
                   <p className="text-slate-500 italic font-medium">No hay avisos publicados en este momento.</p>
@@ -828,9 +785,9 @@ export default function ParentDashboard() {
                           </span>
                           <button
                             onClick={() => handleAcknowledgeAnnouncement(ann.id)}
-                            className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95"
+                            className="px-8 py-3 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-xl shadow-slate-200"
                           >
-                            Marcar como leído
+                            Enterado
                           </button>
                         </div>
                       )}
@@ -839,18 +796,89 @@ export default function ParentDashboard() {
                 </div>
               )}
             </div>
+          ) : activeTab === 'grades' ? (
+            <div className="space-y-10">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {students.map((student, sIdx) => {
+                  const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
+                  const studentLevelSubjects = subjects.filter(sub => sub.level === student.level);
+                  
+                  return (
+                    <motion.div 
+                      key={student.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: sIdx * 0.1 }}
+                      className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 p-8"
+                    >
+                      <div className="flex items-center gap-4 mb-8">
+                        <div className="w-12 h-12 bg-slate-950 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">
+                          {student.name[0]}
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black text-slate-900 tracking-tight leading-none">{student.name}</h3>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                            {student.grade} {student.group} • {student.level}
+                          </p>
+                        </div>
+                      </div>
+
+                      {studentLevelSubjects.length === 0 ? (
+                        <div className="p-4 bg-slate-50 rounded-2xl text-center">
+                          <p className="text-xs text-slate-500 font-medium">No hay materias configuradas para este nivel.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-6">
+                          {studentLevelSubjects.map((sub, subIdx) => {
+                            // Calculate average across bimestres for this subject
+                            const subjectGrades = studentGradeDocs.map(g => g.subjects[sub.id]).filter(g => g !== undefined && g !== null);
+                            const average = subjectGrades.length > 0 ? (subjectGrades.reduce((a, b) => a + b, 0) / subjectGrades.length).toFixed(1) : '-';
+
+                            return (
+                              <div key={sub.id} className="flex items-center justify-between group">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{sub.category || 'Materia'}</span>
+                                  <span className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{sub.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex gap-1.5 mr-4">
+                                    {[1, 2, 3, 4, 5].map(b => {
+                                      const grade = studentGradeDocs.find(g => g.bimestre === b)?.subjects[sub.id];
+                                      return (
+                                        <div key={b} className={cn(
+                                          "w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black",
+                                          grade !== undefined ? "bg-blue-50 text-blue-600 border border-blue-100" : "bg-slate-50 text-slate-300 border border-slate-100"
+                                        )}>
+                                          {grade !== undefined ? grade : b}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className={cn(
+                                    "w-12 h-12 rounded-2xl flex flex-col items-center justify-center shadow-inner",
+                                    average === '-' ? "bg-slate-50 border border-slate-100" : 
+                                    Number(average) >= 9 ? "bg-emerald-50 border border-emerald-100 text-emerald-600" :
+                                    Number(average) >= 6 ? "bg-blue-50 border border-blue-100 text-blue-600" :
+                                    "bg-rose-50 border border-rose-100 text-rose-600"
+                                  )}>
+                                    <span className="text-[8px] font-black uppercase tracking-tighter opacity-50">PROM</span>
+                                    <span className="text-base font-black leading-none">{average}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
           ) : activeTab === 'facturas' ? (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
               <div className="lg:col-span-2 space-y-10">
                 <section>
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-                        <FileText size={20} strokeWidth={2.5} />
-                      </div>
-                      Historial de Comprobantes
-                    </h2>
-                  </div>
                   <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
                     {/* Desktop Table View */}
                     <div className="hidden md:block overflow-x-auto">
@@ -1015,10 +1043,6 @@ export default function ParentDashboard() {
               <div className="space-y-6">
                 <div className="bg-blue-600 p-8 rounded-[2rem] text-white shadow-xl shadow-blue-100 relative overflow-hidden">
                   <div className="relative z-10">
-                    <h3 className="text-lg font-bold mb-2">Información de Pago</h3>
-                    <p className="text-blue-100 text-sm mb-6">
-                      Recuerda realizar tus pagos antes del día {settings?.dueDay || 10} de cada mes para evitar recargos.
-                    </p>
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-white/20 rounded-xl">
@@ -1037,17 +1061,6 @@ export default function ParentDashboard() {
             </div>
           ) : (
             <section>
-              <div className="flex items-center gap-3 mb-10">
-                <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-slate-200">
-                  <CreditCard size={24} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
-                    Datos de Facturación
-                  </h2>
-                  <p className="text-slate-500 font-medium text-sm">Configura tu perfil fiscal para recibir facturas.</p>
-                </div>
-              </div>
               <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden mb-12">
                 <form onSubmit={handleSaveBillingData} className="p-10 space-y-10">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
