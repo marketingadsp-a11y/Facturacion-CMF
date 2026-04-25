@@ -194,13 +194,33 @@ export default function ChecadorKiosk() {
       setMatchedEmployee(emp);
       setActionType(type);
 
-      const birthDateStr = emp.birthDate;
-      const isBirthday = birthDateStr && isSameDay(
-        new Date(birthDateStr + 'T12:00:00'),
-        new Date()
-      );
+      const isBirthday = emp.birthDate && (() => {
+        const bDay = new Date(emp.birthDate + 'T12:00:00');
+        const now = new Date();
+        return bDay.getMonth() === now.getMonth() && bDay.getDate() === now.getDate();
+      })();
 
       if (isBirthday) {
+        // Multiple bursts for extra impact
+        const duration = 5 * 1000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+        const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+        const interval: any = setInterval(() => {
+          const timeLeft = animationEnd - Date.now();
+
+          if (timeLeft <= 0) {
+            return clearInterval(interval);
+          }
+
+          const particleCount = 50 * (timeLeft / duration);
+          // since particles fall down, start a bit higher than random
+          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+        }, 250);
+
         confetti({
           particleCount: 150,
           spread: 70,
@@ -227,6 +247,13 @@ export default function ChecadorKiosk() {
         cooldownRef.current = false;
       }, 3000);
     }
+  };
+
+  const checkIsBirthday = (employee: Employee | null) => {
+    if (!employee || !employee.birthDate) return false;
+    const bDay = new Date(employee.birthDate + 'T12:00:00');
+    const now = new Date();
+    return bDay.getMonth() === now.getMonth() && bDay.getDate() === now.getDate();
   };
 
   return (
@@ -315,50 +342,42 @@ export default function ChecadorKiosk() {
                       transition={{ type: "spring", stiffness: 200, damping: 15 }}
                       className={cn(
                         "w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-2xl relative",
-                        (() => {
-                          const birthDateStr = matchedEmployee.birthDate;
-                          const isBirthday = birthDateStr && isSameDay(new Date(birthDateStr + 'T12:00:00'), new Date());
-                          return isBirthday ? "bg-gradient-to-tr from-yellow-400 to-orange-500 text-white" : (actionType === 'Entrada' ? "bg-emerald-500 text-white" : "bg-blue-500 text-white");
-                        })()
+                        checkIsBirthday(matchedEmployee) ? "bg-gradient-to-tr from-yellow-400 to-orange-500 text-white" : (actionType === 'Entrada' ? "bg-emerald-500 text-white" : "bg-blue-500 text-white")
                       )}
                     >
-                      {(() => {
-                        const birthDateStr = matchedEmployee.birthDate;
-                        const isBirthday = birthDateStr && isSameDay(new Date(birthDateStr + 'T12:00:00'), new Date());
-                        if (isBirthday) return <span className="text-5xl animate-bounce">🎂</span>;
-                        return actionType === 'Entrada' ? <Check size={48} strokeWidth={3} /> : <LogOutIcon size={40} strokeWidth={3} />;
-                      })()}
+                      {checkIsBirthday(matchedEmployee) ? (
+                        <span className="text-5xl animate-bounce">🎂</span>
+                      ) : (
+                        actionType === 'Entrada' ? <Check size={48} strokeWidth={3} /> : <LogOutIcon size={40} strokeWidth={3} />
+                      )}
                     </motion.div>
                     
-                    {(() => {
-                      const birthDateStr = matchedEmployee.birthDate;
-                      const isBirthday = birthDateStr && isSameDay(new Date(birthDateStr + 'T12:00:00'), new Date());
-                      if (isBirthday) {
-                        const parts = matchedEmployee.name.split(' ');
-                        const firstName = parts[0] || '';
-                        const firstLastName = parts[1] || '';
-                        return (
-                          <div className="text-center mb-4">
-                            <h2 className="text-4xl font-black text-white tracking-tighter uppercase italic drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse">
-                              ¡FELIZ CUMPLEAÑOS!
-                            </h2>
-                            <h3 className="text-2xl font-black text-yellow-300 tracking-tight">
-                              {firstName} {firstLastName}
-                            </h3>
-                          </div>
-                        );
-                      }
-                      return (
+                    {checkIsBirthday(matchedEmployee) ? (
+                        (() => {
+                          const parts = matchedEmployee!.name.split(' ');
+                          const firstName = parts[0] || '';
+                          const firstLastName = parts[1] || '';
+                          return (
+                            <div className="text-center mb-4">
+                              <h2 className="text-4xl font-black text-white tracking-tighter uppercase italic drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse">
+                                ¡FELIZ CUMPLEAÑOS!
+                              </h2>
+                              <h3 className="text-2xl font-black text-yellow-300 tracking-tight">
+                                {firstName} {firstLastName}
+                              </h3>
+                            </div>
+                          );
+                        })()
+                      ) : (
                         <>
                           <h2 className="text-3xl font-black text-white text-center tracking-tight mb-2">
-                            {matchedEmployee.name}
+                            {matchedEmployee?.name}
                           </h2>
                           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60 mb-8">
-                            {matchedEmployee.position}
+                            {matchedEmployee?.position}
                           </p>
                         </>
-                      );
-                    })()}
+                      )}
 
                     <div className={cn(
                       "px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest border shadow-xl flex items-center gap-3",
