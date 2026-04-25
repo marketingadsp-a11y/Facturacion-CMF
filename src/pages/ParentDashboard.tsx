@@ -797,83 +797,147 @@ export default function ParentDashboard() {
               )}
             </div>
           ) : activeTab === 'grades' ? (
-            <div className="space-y-10">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {students.map((student, sIdx) => {
-                  const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
-                  const studentLevelSubjects = subjects.filter(sub => sub.level === student.level);
-                  
-                  return (
-                    <motion.div 
-                      key={student.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: sIdx * 0.1 }}
-                      className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 p-8"
-                    >
-                      <div className="flex items-center gap-4 mb-8">
-                        <div className="w-12 h-12 bg-slate-950 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">
-                          {student.name[0]}
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-black text-slate-900 tracking-tight leading-none">{student.name}</h3>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                            {student.grade} {student.group} • {student.level}
-                          </p>
-                        </div>
-                      </div>
+            <div className="space-y-8">
+              {students.length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center">
+                  <p className="text-slate-400 font-medium">No hay alumnos vinculados.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-8">
+                  {students.map((student, sIdx) => {
+                    const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
+                    const studentLevelSubjects = subjects.filter(sub => sub.level === student.level);
+                    const academicSubjectNames = studentLevelSubjects
+                      .filter(s => s.category === 'Académica' || !s.category)
+                      .map(s => s.name);
+                    
+                    // Calculate overall average correctly: only include academic subjects
+                    const allAcademicGrades: number[] = [];
+                    studentGradeDocs.forEach(g => {
+                      if (g.subjects) {
+                        academicSubjectNames.forEach(subName => {
+                          const val = g.subjects[subName];
+                          if (typeof val === 'number') {
+                            allAcademicGrades.push(val);
+                          }
+                        });
+                      }
+                    });
 
-                      {studentLevelSubjects.length === 0 ? (
-                        <div className="p-4 bg-slate-50 rounded-2xl text-center">
-                          <p className="text-xs text-slate-500 font-medium">No hay materias configuradas para este nivel.</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {studentLevelSubjects.map((sub, subIdx) => {
-                            // Calculate average across bimestres for this subject
-                            const subjectGrades = studentGradeDocs.map(g => g.subjects[sub.id]).filter(g => g !== undefined && g !== null);
-                            const average = subjectGrades.length > 0 ? (subjectGrades.reduce((a, b) => a + b, 0) / subjectGrades.length).toFixed(1) : '-';
+                    const overallAverage = allAcademicGrades.length > 0 
+                      ? (allAcademicGrades.reduce((a, b) => a + b, 0) / allAcademicGrades.length).toFixed(1) 
+                      : '-';
 
-                            return (
-                              <div key={sub.id} className="flex items-center justify-between group">
-                                <div className="flex flex-col">
-                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{sub.category || 'Materia'}</span>
-                                  <span className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{sub.name}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <div className="flex gap-1.5 mr-4">
-                                    {[1, 2, 3, 4, 5].map(b => {
-                                      const grade = studentGradeDocs.find(g => g.bimestre === b)?.subjects[sub.id];
-                                      return (
-                                        <div key={b} className={cn(
-                                          "w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black",
-                                          grade !== undefined ? "bg-blue-50 text-blue-600 border border-blue-100" : "bg-slate-50 text-slate-300 border border-slate-100"
-                                        )}>
-                                          {grade !== undefined ? grade : b}
+                    return (
+                      <motion.div 
+                        key={student.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: sIdx * 0.1 }}
+                        className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden"
+                      >
+                        {/* Header Section - More Compact */}
+                        <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/50">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-lg shadow-sm">
+                              {student.name[0]}
+                            </div>
+                            <div>
+                              <h3 className="text-base font-bold text-slate-900 leading-none">{student.name}</h3>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                {student.grade} {student.group} • {student.level}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
+                            <div className="text-right">
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">PROMEDIO ACADÉMICO</p>
+                              <p className="text-lg font-black text-slate-900 leading-none tabular-nums">{overallAverage}</p>
+                            </div>
+                            <div className={cn(
+                              "w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px]",
+                              overallAverage === '-' ? "bg-slate-100 text-slate-300" :
+                              Number(overallAverage) >= 9 ? "bg-emerald-500 text-white" :
+                              Number(overallAverage) >= 8 ? "bg-blue-500 text-white" :
+                              Number(overallAverage) >= 6 ? "bg-amber-500 text-white" :
+                              "bg-rose-500 text-white"
+                            )}>
+                              {overallAverage === '-' ? '-' : Number(overallAverage) >= 9 ? 'A+' : Number(overallAverage) >= 8 ? 'B' : 'C'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse table-fixed min-w-[700px]">
+                            <thead>
+                              <tr className="bg-white text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 border-b border-slate-50">
+                                <th className="px-6 py-3 w-1/3">Materia</th>
+                                <th className="px-2 py-3 text-center w-12">B1</th>
+                                <th className="px-2 py-3 text-center w-12">B2</th>
+                                <th className="px-2 py-3 text-center w-12">B3</th>
+                                <th className="px-2 py-3 text-center w-12">B4</th>
+                                <th className="px-2 py-3 text-center w-12">B5</th>
+                                <th className="px-6 py-3 text-right w-24">Promedio</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {studentLevelSubjects.length === 0 ? (
+                                <tr>
+                                  <td colSpan={7} className="px-6 py-8 text-center text-slate-400 italic text-[10px]">
+                                    No hay materias configuradas para este nivel.
+                                  </td>
+                                </tr>
+                              ) : (
+                                studentLevelSubjects.map((sub) => {
+                                  const subjectGradesArr = studentGradeDocs.map(g => g.subjects?.[sub.name]).filter(g => typeof g === 'number');
+                                  const subAverage = subjectGradesArr.length > 0 ? (subjectGradesArr.reduce((a, b) => (a as any) + (b as any), 0) / subjectGradesArr.length).toFixed(1) : '-';
+
+                                  return (
+                                    <tr key={sub.id} className="hover:bg-slate-50/50 transition-colors group">
+                                      <td className="px-6 py-3">
+                                        <div className="flex flex-col">
+                                          <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-none mb-1">{sub.category || 'Materia'}</span>
+                                          <span className="text-xs font-semibold text-slate-700 truncate">{sub.name}</span>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                  <div className={cn(
-                                    "w-12 h-12 rounded-2xl flex flex-col items-center justify-center shadow-inner",
-                                    average === '-' ? "bg-slate-50 border border-slate-100" : 
-                                    Number(average) >= 9 ? "bg-emerald-50 border border-emerald-100 text-emerald-600" :
-                                    Number(average) >= 6 ? "bg-blue-50 border border-blue-100 text-blue-600" :
-                                    "bg-rose-50 border border-rose-100 text-rose-600"
-                                  )}>
-                                    <span className="text-[8px] font-black uppercase tracking-tighter opacity-50">PROM</span>
-                                    <span className="text-base font-black leading-none">{average}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
+                                      </td>
+                                      {[1, 2, 3, 4, 5].map(b => {
+                                        const grade = studentGradeDocs.find(g => g.bimestre === b)?.subjects?.[sub.name];
+                                        return (
+                                          <td key={b} className="px-2 py-3 text-center">
+                                            <span className={cn(
+                                              "text-[10px] font-bold tabular-nums",
+                                              grade === undefined ? "text-slate-200" :
+                                              grade >= 9 ? "text-emerald-600" :
+                                              grade >= 8 ? "text-blue-600" :
+                                              grade >= 6 ? "text-amber-600" :
+                                              "text-rose-600"
+                                            )}>
+                                              {grade !== undefined ? grade : '—'}
+                                            </span>
+                                          </td>
+                                        );
+                                      })}
+                                      <td className="px-6 py-3 text-right">
+                                        <span className={cn(
+                                          "text-xs font-black tabular-nums",
+                                          subAverage === '-' ? "text-slate-200" : "text-slate-900"
+                                        )}>
+                                          {subAverage}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
                         </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : activeTab === 'facturas' ? (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">

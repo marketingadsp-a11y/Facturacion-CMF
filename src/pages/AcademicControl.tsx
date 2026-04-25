@@ -482,17 +482,17 @@ export default function AcademicControl() {
                       const debtStatus = calculateStudentDebts(student, payments, currentCycle || null, settings);
                       
                       const studentGrades = grades.filter(g => g.studentId === student.id && (!currentCycle || g.cycleId === currentCycle.id));
-                      const studentLevelSubjects = subjects
-                        .filter(sub => sub.level?.toLowerCase().trim() === student.level?.toLowerCase().trim())
+                      const academicSubjectNames = subjects
+                        .filter(sub => sub.level?.toLowerCase().trim() === student.level?.toLowerCase().trim() && (sub.category === 'Académica' || !sub.category))
                         .map(sub => sub.name);
 
                       const getBimestreAvg = (num: number) => {
-                        const bg = studentGrades.find(g => g.bimestre === num);
+                        const bg = studentGrades.find(g => Number(g.bimestre) === num);
                         if (!bg || !bg.subjects) return null;
                         
-                        // Filter only grades for subjects that belong to the student's current level
+                        // Filter only grades for subjects that are Academic and belong to the student's level
                         const numericGrades = Object.entries(bg.subjects)
-                          .filter(([name, val]) => studentLevelSubjects.includes(name) && typeof val === 'number')
+                          .filter(([name, val]) => academicSubjectNames.includes(name) && typeof val === 'number')
                           .map(([_, val]) => val as number);
 
                         if (numericGrades.length === 0) return null;

@@ -240,8 +240,9 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
   const getBimestreAvg = (bimestre: number) => {
     const bg = grades.find(g => g.bimestre === bimestre);
     if (!bg || !bg.subjects) return '-';
+    // Only include ACADEMIC subjects in the primary average
     const numericGrades = Object.entries(bg.subjects)
-        .filter(([subj, val]) => (academicSubjects.includes(subj) || curricularSubjects.includes(subj)) && typeof val === 'number')
+        .filter(([subj, val]) => academicSubjects.includes(subj) && typeof val === 'number')
         .map(([_, val]) => val as number);
     
     if (numericGrades.length === 0) return '-';
