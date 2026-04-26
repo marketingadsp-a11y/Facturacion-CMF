@@ -31,14 +31,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     alignItems: 'center',
-    minHeight: 22,
+    minHeight: 20,
   },
   tableHeaderRow: {
     flexDirection: 'row',
     backgroundColor: '#0F172A',
     borderTopLeftRadius: 4,
     borderTopRightRadius: 4,
-    minHeight: 24,
+    minHeight: 22,
     alignItems: 'center',
   },
   tableCellSubject: {
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
   coverHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 15,
   },
   coverSchoolDetails: {
     flex: 1,
@@ -101,8 +101,8 @@ const styles = StyleSheet.create({
   },
   coverTitleArea: {
     alignItems: 'center',
-    marginBottom: 30,
-    paddingVertical: 15,
+    marginBottom: 20,
+    paddingVertical: 10,
     borderTopWidth: 2,
     borderBottomWidth: 2,
     borderColor: '#0F172A',
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   coverStudentArea: {
-    marginBottom: 30,
+    marginBottom: 20,
   },
   coverStudentSubtitle: {
     fontSize: 9,
@@ -184,6 +184,10 @@ interface ReportCardPDFProps {
 }
 
 export default function ReportCardPDF({ student, grades, subjects, settings, cycle }: ReportCardPDFProps) {
+  const proxiedLogo = settings?.logoUrl && settings.logoUrl.length > 0 
+    ? `/api/proxy/image?url=${encodeURIComponent(settings.logoUrl)}`
+    : null;
+
   const academicSubjects = subjects
     .filter(s => s.category !== 'Extracurricular' && s.category !== 'Aspectos Formativos')
     .map(s => s.name);
@@ -270,7 +274,12 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
           <View style={[styles.pane, { borderRightWidth: 1, borderRightColor: '#F1F5F9', borderRightStyle: 'dashed' }]}>
             <View style={{ flex: 1 }} />
             <View style={{ alignItems: 'center', opacity: 0.5 }}>
-              {settings?.logoUrl && <Image src={settings.logoUrl} style={{ width: 40, height: 40, marginBottom: 10 }} />}
+              {proxiedLogo && (
+                <Image 
+                  src={proxiedLogo} 
+                  style={{ width: 40, height: 40, marginBottom: 10 }} 
+                />
+              )}
               <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#64748B' }}>{settings?.schoolName || 'Institución'}</Text>
               <Text style={{ fontSize: 8, color: '#94A3B8', marginTop: 5 }}>{settings?.pdfFooter || 'Documento oficial generado sistemáticamente.'}</Text>
             </View>
@@ -281,15 +290,20 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
             <View style={styles.paneContent}>
               <View style={styles.coverHeader}>
                 <View style={{ width: 70, height: 70, justifyContent: 'center' }}>
-                  {settings?.logoUrl ? (
-                    <Image src={settings.logoUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  {proxiedLogo ? (
+                    <Image 
+                      src={proxiedLogo} 
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                    />
                   ) : (
                     <View style={{ width: 70, height: 70, backgroundColor: '#E2E8F0', borderRadius: 8 }} />
                   )}
                 </View>
                 <View style={styles.coverSchoolDetails}>
                   <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0F172A', marginBottom: 2 }}>{settings?.schoolName || 'COLEGIO MÉXICO'}</Text>
-                  <Text style={{ fontSize: 7, color: '#475569', marginBottom: 2, textTransform: 'uppercase' }}>CLAVE CENTRO DE TRABAJO</Text>
+                  <Text style={{ fontSize: 7, color: '#475569', marginBottom: 2, textTransform: 'uppercase' }}>
+                    {settings?.levelCCT?.[student.level] || 'CLAVE CENTRO DE TRABAJO'}
+                  </Text>
                   <Text style={{ fontSize: 9, color: '#0F172A', fontWeight: 'bold' }}>NIVEL DE {student.level?.toUpperCase() || 'ESTUDIOS'}</Text>
                 </View>
               </View>

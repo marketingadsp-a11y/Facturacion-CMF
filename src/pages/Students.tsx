@@ -46,7 +46,7 @@ export default function Students() {
     motherLastName: '',
     birthDate: '',
     gender: 'H' as 'H' | 'M',
-    birthState: 'MC',
+    birthState: 'JC',
     curp: '',
     email: '',
     phone: '',
@@ -137,7 +137,7 @@ export default function Students() {
         motherLastName: student.motherLastName || '',
         birthDate: student.birthDate || '',
         gender: (student.gender as 'H' | 'M') || 'H',
-        birthState: student.birthState || 'MC',
+        birthState: student.birthState || 'JC',
         curp: student.curp || '',
         email: student.email || '',
         phone: student.phone || '',
@@ -1166,28 +1166,33 @@ export default function Students() {
         )}
       </AnimatePresence>
       
-      {/* Toast de Éxito Correo */}
+      {/* Modal de Éxito Correo */}
       <AnimatePresence>
         {showEmailSuccess && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 100 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 100 }}
-            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-slate-950 text-white px-6 py-4 rounded-2xl shadow-2xl border border-slate-800"
-          >
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white shrink-0">
-              <Check size={20} />
-            </div>
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-widest leading-none mb-1">¡Enviado!</p>
-              <p className="text-[10px] text-slate-400 font-bold">El correo ha sido reenviado con éxito al padre de familia.</p>
-            </div>
-            <div className="ml-4 pl-4 border-l border-slate-800">
-               <button onClick={() => setShowEmailSuccess(false)} className="text-slate-500 hover:text-white transition-colors">
-                 <X size={16} />
-               </button>
-            </div>
-          </motion.div>
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-8 max-w-sm w-full text-center space-y-4"
+            >
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-2xl mx-auto shadow-inner">
+                <Check size={32} strokeWidth={3} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">¡Correo Enviado!</h3>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed mt-2">
+                  El correo de bienvenida ha sido reenviado con éxito al padre de familia.
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowEmailSuccess(false)}
+                className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+              >
+                Entendido
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

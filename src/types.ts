@@ -293,6 +293,7 @@ export interface AppSettings {
   visitorSuccessTimeout?: number; // Seconds to show success screen
   welcomeEmailSubject?: string;
   welcomeEmailBody?: string;
+  levelCCT?: Record<string, string>;
 }
 
 export interface Subject {

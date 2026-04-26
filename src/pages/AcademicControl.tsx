@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
+import OfficialListPDF from '../components/OfficialListPDF';
 import { calculateStudentDebts } from '../lib/paymentUtils';
 import { calculateCURP, STATES } from '../lib/studentUtils';
 import { createRoot } from 'react-dom/client';
@@ -40,6 +41,27 @@ export default function AcademicControl() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [codeModalStudent, setCodeModalStudent] = useState<Student | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+
+  const [isGroupSelectModalOpen, setIsGroupSelectModalOpen] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('');
+
+  const currentCycle = cycles.find(c => c.id === settings?.currentCycleId);
+
+  useEffect(() => {
+    // If we were on studentList and it's active, show the prompt if no filters are set
+    if (activeTab === 'studentList' && !filterLevel && !filterGrade && !filterGroup) {
+      setIsGroupSelectModalOpen(true);
+    }
+  }, [activeTab]);
+
+  const handleApplyGroupFilter = () => {
+    setFilterLevel(selectedLevel);
+    setFilterGrade(selectedGrade);
+    setFilterGroup(selectedGroup);
+    setIsGroupSelectModalOpen(false);
+  };
 
   useEffect(() => {
     const qEnrollments = query(collection(db, 'enrollments'), orderBy('createdAt', 'desc'));
@@ -309,6 +331,30 @@ export default function AcademicControl() {
               Materias
             </button>
           </div>
+          {activeTab === 'studentList' && filterLevel && filterGrade && filterGroup && (
+            <PDFDownloadLink
+              document={
+                <OfficialListPDF 
+                  students={filteredStudents}
+                  settings={settings}
+                  level={filterLevel}
+                  grade={filterGrade}
+                  group={filterGroup}
+                  cycleName={currentCycle?.name || 'ACTUAL'}
+                />
+              }
+              fileName={`LISTA_${filterLevel}_${filterGrade}_${filterGroup}.pdf`}
+              className="bg-slate-950 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-slate-200 transition-all active:scale-95"
+            >
+              {/* @ts-ignore */}
+              {({ loading }: any) => (
+                <>
+                  <Printer size={14} />
+                  {loading ? 'Generando...' : 'Imprimir Lista'}
+                </>
+              )}
+            </PDFDownloadLink>
+          )}
           {activeTab === 'enrollments' && (
             <button
               onClick={handleCopyLink}
@@ -437,6 +483,12 @@ export default function AcademicControl() {
             </div>
             
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsGroupSelectModalOpen(true)}
+                className="bg-slate-900 text-white px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-black transition-all"
+              >
+                <Filter size={12} /> Cambiar Grupo
+              </button>
               <select
                 value={filterLevel}
                 onChange={(e) => setFilterLevel(e.target.value)}
@@ -492,6 +544,7 @@ export default function AcademicControl() {
               <table className="w-full text-left border-collapse table-auto">
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-slate-950 text-slate-400 text-[8px] font-black uppercase tracking-[0.2em] border-b border-slate-800">
+                    <th className="px-4 py-3 border-r border-slate-800 text-center w-px whitespace-nowrap">No.</th>
                     <th className="px-4 py-3 border-r border-slate-800 italic w-px whitespace-nowrap">Expediente Alumno</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center italic">ID / CURP</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center">Nivel</th>
@@ -505,7 +558,6 @@ export default function AcademicControl() {
                 <tbody className="divide-y divide-slate-100 text-[10px]">
                   {filteredStudents.length > 0 ? (
                     filteredStudents.map((student) => {
-                      const currentCycle = cycles.find(c => c.id === settings?.currentCycleId);
                       const debtStatus = calculateStudentDebts(student, payments, currentCycle || null, settings);
                       
                       const studentGrades = grades.filter(g => g.studentId === student.id && (!currentCycle || g.cycleId === currentCycle.id));
@@ -536,6 +588,9 @@ export default function AcademicControl() {
                           key={student.id} 
                           className="group hover:bg-slate-950 hover:text-white transition-all cursor-default"
                         >
+                          <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center font-black text-slate-400 group-hover:text-white w-px whitespace-nowrap">
+                            {filteredStudents.indexOf(student) + 1}
+                          </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 w-px whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <div className="w-6 h-6 rounded bg-slate-100 group-hover:bg-slate-800 flex items-center justify-center font-black text-slate-500 text-[8px] group-hover:text-slate-400 border border-slate-200 group-hover:border-slate-700 shrink-0">
@@ -624,6 +679,118 @@ export default function AcademicControl() {
       {activeTab === 'subjects' && (
         <SubjectsManagement subjects={subjects} settings={settings} />
       )}
+
+      {/* Select Group Modal */}
+      <AnimatePresence>
+        {isGroupSelectModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              onClick={() => setIsGroupSelectModalOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-slate-200"
+            >
+              <div className="p-6 border-b border-slate-100 bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg">
+                    <Filter size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">Seleccionar Grupo</h2>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Control de Listas Oficiales</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-6 text-center">
+                <div className="grid grid-cols-1 gap-4">
+                  <button
+                    onClick={() => {
+                      setFilterLevel('');
+                      setFilterGrade('');
+                      setFilterGroup('');
+                      setIsGroupSelectModalOpen(false);
+                    }}
+                    className="w-full py-4 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1 transition-all group"
+                  >
+                    <UserRound size={20} className="text-slate-400 group-hover:text-slate-900 transition-colors" />
+                    <span className="text-[11px] font-black text-slate-900 uppercase tracking-widest">Ver Todos los Alumnos</span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase italic">Matrícula General</span>
+                  </button>
+
+                  <div className="relative py-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-100"></div>
+                    </div>
+                    <div className="relative flex justify-center">
+                      <span className="bg-white px-2 text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">O SELECCIONAR GRUPO</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 ml-1">Nivel</label>
+                      <select
+                        value={selectedLevel}
+                        onChange={(e) => setSelectedLevel(e.target.value)}
+                        className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
+                      >
+                        <option value="">NIVEL</option>
+                        {(settings?.academicLevels || []).map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 ml-1">Grado</label>
+                      <select
+                        value={selectedGrade}
+                        onChange={(e) => setSelectedGrade(e.target.value)}
+                        className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
+                      >
+                        <option value="">GRADO</option>
+                        {(settings?.academicGrades || []).map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 ml-1">Grupo</label>
+                      <select
+                        value={selectedGroup}
+                        onChange={(e) => setSelectedGroup(e.target.value)}
+                        className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
+                      >
+                        <option value="">GRUPO</option>
+                        {(settings?.academicGroups || ['A', 'B', 'C', 'D']).map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                   <button
+                    onClick={() => setIsGroupSelectModalOpen(false)}
+                    className="flex-1 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={handleApplyGroupFilter}
+                    disabled={!selectedLevel || !selectedGrade || !selectedGroup}
+                    className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-slate-100"
+                  >
+                    Confirmar Seleccion
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Code Modal */}
       <AnimatePresence>

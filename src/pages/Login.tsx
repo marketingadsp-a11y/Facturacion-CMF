@@ -147,23 +147,23 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 font-sans tracking-tight">
       <div className="w-full max-w-sm">
-        <div className="mb-12 text-center flex flex-col items-center">
-          <div className="w-64 h-64 flex items-center justify-center mb-6">
+        <div className="mb-4 text-center flex flex-col items-center">
+          <div className="w-32 h-32 flex items-center justify-center mb-2">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="w-full h-full object-contain drop-shadow-2xl" referrerPolicy="no-referrer" />
             ) : (
-              <GraduationCap size={128} className="text-slate-900" strokeWidth={1} />
+              <GraduationCap size={64} className="text-slate-900" strokeWidth={1} />
             )}
           </div>
           {loginTitle && (
-            <h1 className="text-slate-900 text-base font-black uppercase tracking-[0.3em] mb-1">{loginTitle}</h1>
+            <h1 className="text-slate-900 text-xs font-black uppercase tracking-[0.3em] mb-0.5">{loginTitle}</h1>
           )}
           {loginSubtitle && (
-            <p className="text-slate-400 text-[11px] font-black uppercase tracking-widest">{loginSubtitle}</p>
+            <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest">{loginSubtitle}</p>
           )}
         </div>
 
-        <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
           <div className="p-8 space-y-6">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xs font-black uppercase tracking-[0.15em] text-slate-800">
@@ -365,7 +365,7 @@ export default function Login() {
             ASOCIACION EDUCADORA DEL SUR DE JALISCO
           </p>
           <p className="text-slate-500 text-[9px] font-bold uppercase tracking-widest bg-slate-950/5 inline-block px-3 py-1 rounded-full">
-            {developerAttribution || 'Powered by Antigravity'}
+            {developerAttribution || 'Creado por Cristobal Moran - 3411975639'}
           </p>
         </div>
       </div>

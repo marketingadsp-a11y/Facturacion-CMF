@@ -1,4 +1,5 @@
 import express from 'express';
+import { Buffer } from 'buffer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -340,6 +341,41 @@ app.post('/api/mail/welcome', async (req, res) => {
   } catch (error: any) {
     console.error('Email Error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Image Proxy Endpoint for School Logo and other public assets in PDFs
+app.get('/api/proxy/image', async (req, res) => {
+  const imageUrl = req.query.url as string;
+  if (!imageUrl) {
+    return res.status(400).send('URL de imagen requerida');
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout
+
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Error al obtener imagen (${response.status})`);
+    }
+
+    const contentType = response.headers.get('Content-Type') || 'image/png';
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.send(buffer);
+  } catch (error: any) {
+    console.error('Image Proxy Error:', error);
+    return res.status(500).send('Error al procesar la imagen');
   }
 });
 

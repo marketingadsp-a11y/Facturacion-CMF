@@ -33,9 +33,11 @@ import {
   AlertCircle,
   FileText,
   GraduationCap,
-  MapPin
+  MapPin,
+  Database
 } from 'lucide-react';
-import { formatCurrency } from '../lib/utils';
+import { motion } from 'motion/react';
+import { formatCurrency, cn } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
 import ChargesCatalog from '../components/settings/ChargesCatalog';
 import { loadExampleData } from '../services/exampleDataService';
@@ -74,6 +76,7 @@ export default function Settings() {
   const [gradeLocks, setGradeLocks] = useState<BimestreLock[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [userRoleFilter, setUserRoleFilter] = useState<'Todos' | UserRole>('Todos');
 
   const { hasPermission, userProfile } = usePermissions();
 
@@ -262,875 +265,1108 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-5xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Ajustes del Sistema</h1>
-        <p className="text-slate-500">Configura la información de tu colegio, ciclos escolares y facturación.</p>
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-slate-950 tracking-tight uppercase">Configuración</h1>
+          <p className="text-slate-500 font-medium text-sm">Administra el núcleo operativo y la identidad de tu institución.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {saved && (
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border border-emerald-100"
+            >
+              <CheckCircle2 size={16} />
+              Cambios guardados
+            </motion.div>
+          )}
+          {(activeTab === 'general' ? hasPermission('settings', 'editGeneral') : 
+            activeTab === 'cycles' ? hasPermission('settings', 'editCycles') : 
+            activeTab === 'billing' ? hasPermission('settings', 'editRules') : 
+            ['academic', 'reception'].includes(activeTab)) && (
+            <button
+              onClick={handleSave}
+              className="bg-slate-950 hover:bg-slate-900 text-white px-6 py-3 rounded-2xl flex items-center gap-2 font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-200 transition-all active:scale-95 disabled:opacity-50"
+            >
+              <Save size={18} />
+              Guardar Cambios
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        {/* Sidebar Tabs */}
-        <div className="space-y-1">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Sidebar Nav */}
+        <div className="lg:col-span-3 space-y-1">
+          <div className="px-4 py-2 mb-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sistema</p>
+          </div>
           <button 
             onClick={() => setActiveTab('general')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'general' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'general' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            <Globe size={18} /> General
-          </button>
-          <button 
-            onClick={() => setActiveTab('cycles')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'cycles' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
-          >
-            <Calendar size={18} /> Ciclos y Colegiaturas
+            <Globe size={18} className={activeTab === 'general' ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-500'} />
+            <span className="text-sm font-bold">Identidad Global</span>
           </button>
           <button 
             onClick={() => setActiveTab('academic')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'academic' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'academic' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            <GraduationCap size={18} /> Datos Académicos
+            <GraduationCap size={18} className={activeTab === 'academic' ? 'text-indigo-400' : 'text-slate-400 group-hover:text-indigo-500'} />
+            <span className="text-sm font-bold">Académico</span>
           </button>
           <button 
-            onClick={() => setActiveTab('reception')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'reception' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            onClick={() => setActiveTab('cycles')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'cycles' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-white hover:shadow-sm'}`}
           >
-            <Users size={18} /> Atención y Recepción
+            <Calendar size={18} className={activeTab === 'cycles' ? 'text-orange-400' : 'text-slate-400 group-hover:text-orange-500'} />
+            <span className="text-sm font-bold">Ciclos y Costos</span>
+          </button>
+          
+          <div className="px-4 py-2 mt-6 mb-2 border-t border-slate-100 pt-6">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Operación</p>
+          </div>
+          <button 
+            onClick={() => setActiveTab('reception')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'reception' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            <Users size={18} className={activeTab === 'reception' ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-500'} />
+            <span className="text-sm font-bold">Recepción</span>
           </button>
           <button 
             onClick={() => setActiveTab('courses')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'courses' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'courses' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            <BookOpen size={18} /> Catálogo de Cursos
+            <BookOpen size={18} className={activeTab === 'courses' ? 'text-emerald-400' : 'text-slate-400 group-hover:text-emerald-500'} />
+            <span className="text-sm font-bold">Cursos</span>
           </button>
           <button 
             onClick={() => setActiveTab('charges')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'charges' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'charges' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            <CreditCard size={18} /> Catálogo de Cobros
+            <CreditCard size={18} className={activeTab === 'charges' ? 'text-purple-400' : 'text-slate-400 group-hover:text-purple-500'} />
+            <span className="text-sm font-bold">Cobros Extra</span>
           </button>
+
+          <div className="px-4 py-2 mt-6 mb-2 border-t border-slate-100 pt-6">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Seguridad</p>
+          </div>
           <button 
             onClick={() => setActiveTab('billing')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'billing' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'billing' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            <Key size={18} /> Facturación
+            <Key size={18} className={activeTab === 'billing' ? 'text-emerald-400' : 'text-slate-400 group-hover:text-emerald-500'} />
+            <span className="text-sm font-bold">Pasarelas/APIs</span>
           </button>
           {hasPermission('settings', 'manageUsers') && (
             <button 
               onClick={() => setActiveTab('users')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'users' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'users' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
             >
-              <Shield size={18} /> Gestión de Usuarios
+              <Shield size={18} className={activeTab === 'users' ? 'text-indigo-400' : 'text-slate-400 group-hover:text-indigo-500'} />
+              <span className="text-sm font-bold">Colaboradores</span>
             </button>
           )}
           {hasPermission('settings', 'manageUsers') && (
             <button 
               onClick={() => setActiveTab('locks')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'locks' ? 'bg-white text-blue-600 font-semibold shadow-sm border border-slate-100' : 'text-slate-600 hover:bg-white'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'locks' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
             >
-              <Lock size={18} /> Bloqueos de Notas
+              <Lock size={18} className={activeTab === 'locks' ? 'text-amber-400' : 'text-slate-400 group-hover:text-amber-500'} />
+              <span className="text-sm font-bold">Bloqueos</span>
             </button>
           )}
           {userProfile?.role === 'Superadministrador' && (
             <button 
               onClick={() => setActiveTab('danger')}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${activeTab === 'danger' ? 'bg-red-50 text-red-600 font-semibold shadow-sm border border-red-100' : 'text-slate-600 hover:bg-white'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'danger' ? 'bg-red-600 text-white shadow-lg' : 'text-red-500 hover:bg-red-50'}`}
             >
-              <AlertTriangle size={18} /> Zona de Peligro
+              <AlertTriangle size={18} />
+              <span className="text-sm font-bold">Zona Crítica</span>
             </button>
           )}
         </div>
 
-        {/* Content */}
-        <div className="md:col-span-3 space-y-6">
+        {/* Content Area */}
+        <div className="lg:col-span-9">
           {activeTab === 'general' && (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-              <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                <Globe size={20} className="text-blue-600" />
-                Información del Colegio
-              </h2>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre Comercial</label>
-                  <input
-                    value={settings.schoolName}
-                    onChange={(e) => setSettings({...settings, schoolName: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Razón Social</label>
-                  <input
-                    value={settings.legalName}
-                    onChange={(e) => setSettings({...settings, legalName: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">URL del Logotipo</label>
-                  <div className="flex gap-4 items-center">
-                    <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
-                      {settings.logoUrl ? (
-                        <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                      ) : (
-                        <ImageIcon className="text-slate-400" size={24} />
-                      )}
-                    </div>
-                    <input
-                      placeholder="https://ejemplo.com/logo.png"
-                      value={settings.logoUrl}
-                      onChange={(e) => setSettings({...settings, logoUrl: e.target.value})}
-                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">URL de Fondo del Checador (Kiosk)</label>
-                  <input
-                    placeholder="https://ejemplo.com/background.jpg"
-                    value={settings.kioskBackgroundUrl || ''}
-                    onChange={(e) => setSettings({...settings, kioskBackgroundUrl: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-2 italic">
-                    * Si dejas este campo vacío, se usará el fondo oscuro predeterminado por el sistema.
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                    Personalización Página 404 (No Encontrado)
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">URL de Fondo 404</label>
-                      <input
-                        placeholder="https://ejemplo.com/404-bg.jpg"
-                        value={settings.notFoundBackgroundUrl || ''}
-                        onChange={(e) => setSettings({...settings, notFoundBackgroundUrl: e.target.value})}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
-                      />
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+              {/* Card: Colegio */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                      <Globe size={20} />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Texto del Error</label>
-                      <input
-                        placeholder="Lo sentimos, no pudimos encontrar la página que buscas."
-                        value={settings.notFoundText || ''}
-                        onChange={(e) => setSettings({...settings, notFoundText: e.target.value})}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
-                      />
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Identidad Institucional</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Información pública y legal</p>
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Enrollment Settings */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <FileText size={20} className="text-indigo-600" />
-                  Configuración de Inscripciones
-                </h2>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre del Link Público (Slug)</label>
-                  <div className="flex gap-2 items-center">
-                    <div className="px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 text-sm font-medium">
-                      {window.location.origin}/
-                    </div>
-                    <input
-                      placeholder="enroll"
-                      value={settings.enrollmentSlug || ''}
-                      onChange={(e) => setSettings({...settings, enrollmentSlug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')})}
-                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold"
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-2 italic">
-                    * Este es el nombre que aparecerá en la URL para las inscripciones públicas. Solo usa letras minúsculas, números y guiones.
-                  </p>
-                </div>
-              </div>
-
-              {/* Developer Attribution Settings - Superadmin only */}
-              {userProfile?.role === 'Superadministrador' && (
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                  <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Edit2 size={20} className="text-emerald-600" />
-                    Atribución del Desarrollador (Footer)
-                  </h2>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Texto de Créditos / Desarrollador</label>
-                    <input
-                      placeholder="Creado por CIUDAPP MX - Cristobal Moran"
-                      value={settings.developerAttribution || ''}
-                      onChange={(e) => setSettings({...settings, developerAttribution: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-2 italic">
-                      * Este texto aparecerá en el pie de página de la pantalla de inicio de sesión y en el formulario público de visitas.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* PDF & Registration Config */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <FileText size={20} className="text-indigo-600" />
-                  Configuración de PDF y Registro de Padres
-                </h2>
                 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Instrucciones de Registro (Una por línea)</label>
-                    <textarea
-                      rows={5}
-                      value={settings.registrationInstructions || ''}
-                      onChange={(e) => setSettings({...settings, registrationInstructions: e.target.value})}
-                      placeholder="Escriba los pasos para el registro..."
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm leading-relaxed"
-                    />
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Nombre Comercial</label>
+                      <input
+                         value={settings.schoolName}
+                         onChange={(e) => setSettings({...settings, schoolName: e.target.value})}
+                         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Razón Social</label>
+                      <input
+                        value={settings.legalName}
+                        onChange={(e) => setSettings({...settings, legalName: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                      />
+                    </div>
                   </div>
-                  
+
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Logotipo Institucional</label>
+                      <div className="flex gap-4 items-center">
+                        <div className="w-20 h-20 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm group relative">
+                          {settings.logoUrl ? (
+                            <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
+                          ) : (
+                            <ImageIcon className="text-slate-300" size={32} />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            placeholder="URL del logo (png, jpg)"
+                            value={settings.logoUrl}
+                            onChange={(e) => setSettings({...settings, logoUrl: e.target.value})}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium text-xs transition-all focus:bg-white"
+                          />
+                          <p className="text-[9px] text-slate-400 mt-2 font-medium">Se recomienda fondo transparente.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card: Personalization */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <ShieldAlert size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Acceso y Login</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Personalizar bienvenida</p>
+                    </div>
+                  </div>
+                  <div className="p-8 space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Título de Bienvenida</label>
+                      <input
+                        value={settings.loginTitle || ''}
+                        onChange={(e) => setSettings({...settings, loginTitle: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Subtítulo</label>
+                      <input
+                        value={settings.loginSubtitle || ''}
+                        onChange={(e) => setSettings({...settings, loginSubtitle: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-200">
+                      <Clock size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Checador y Kiosk</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Fondos de pantalla</p>
+                    </div>
+                  </div>
+                  <div className="p-8 space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Fondo del Checador (URL)</label>
+                      <input
+                        value={settings.kioskBackgroundUrl || ''}
+                        onChange={(e) => setSettings({...settings, kioskBackgroundUrl: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none font-medium text-xs transition-all focus:bg-white"
+                      />
+                    </div>
+                    <div className="p-4 bg-orange-50/50 rounded-xl border border-orange-100">
+                      <p className="text-[10px] text-orange-700 font-bold leading-relaxed italic">
+                        * Dejar vacío para usar el tema oscuro predeterminado con el logo del colegio.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card: Registration Instructions */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                    <FileText size={20} />
+                  </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Pie de Página en PDF (Footer)</label>
+                    <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Registro de Padres</h2>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Formatos y documentos</p>
+                  </div>
+                </div>
+                
+                <div className="p-8 space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Instrucciones de Registro</label>
+                      <textarea
+                        rows={6}
+                        value={settings.registrationInstructions || ''}
+                        onChange={(e) => setSettings({...settings, registrationInstructions: e.target.value})}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold leading-relaxed transition-all focus:bg-white resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Previsualización en PDF</label>
+                      <div className="p-6 bg-slate-950 rounded-xl text-white shadow-lg relative overflow-hidden h-full min-h-[160px]">
+                        <div className="absolute top-0 right-0 p-3">
+                          <CheckCircle2 size={16} className="text-emerald-400" />
+                        </div>
+                        <p className="text-[10px] font-black uppercase mb-4 text-emerald-400 tracking-widest">Ejemplo de PDF</p>
+                        <div className="space-y-1.5 opacity-60">
+                           {settings.registrationInstructions?.split('\n').filter(Boolean).slice(0, 3).map((line, i) => (
+                             <p key={i} className="text-[10px] font-medium leading-tight truncate">{line}</p>
+                           )) || <p className="text-[10px] italic">No hay instrucciones registradas</p>}
+                           <p className="text-[10px] mt-4 border-t border-white/10 pt-4 font-black uppercase text-center opacity-40">
+                             {settings.pdfFooter || 'Pie de página'}
+                           </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-8 border-t border-slate-50">
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Pie de Página en PDF (Footer)</label>
                     <input
                       value={settings.pdfFooter || ''}
                       onChange={(e) => setSettings({...settings, pdfFooter: e.target.value})}
-                      placeholder="Ej: GENERADO POR EL SISTEMA DE GESTIÓN ESCOLAR"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Welcome Email Template */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Bell size={20} className="text-blue-500" />
-                    Correo de Bienvenida (Portal Padres)
-                  </h2>
-                  <div className="px-2 py-1 bg-blue-100 text-blue-600 rounded-lg text-[10px] font-black uppercase">
-                    Envío Automático
+              {/* Card: Email Template */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                      <Bell size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Correo de Bienvenida</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Portal de padres</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tighter">
+                    <Check size={12} strokeWidth={3} /> Envío Automático Activo
                   </div>
                 </div>
                 
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Este correo se enviará automáticamente al padre cuando se registre un nuevo alumno. 
-                  Puedes usar variables: <code className="bg-slate-100 px-1 rounded text-blue-600">{`{alumno}`}</code>, 
-                  <code className="bg-slate-100 px-1 rounded text-blue-600">{`{codigo}`}</code>, 
-                  <code className="bg-slate-100 px-1 rounded text-blue-600">{`{colegio}`}</code>.
-                </p>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Asunto del Correo</label>
-                    <input
-                      value={settings.welcomeEmailSubject || ''}
-                      onChange={(e) => setSettings({...settings, welcomeEmailSubject: e.target.value})}
-                      placeholder="Ej: Bienvenido al Portal de Padres - {colegio}"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+                <div className="p-8 space-y-6">
+                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                    <p className="text-[10px] text-blue-700 font-bold leading-relaxed">
+                      Este correo se enviará al correo de acceso de los padres cuando se genere su código. 
+                      Variables disponibles: <span className="bg-white px-1.5 py-0.5 rounded border border-blue-200">{`{alumno}`}</span>, <span className="bg-white px-1.5 py-0.5 rounded border border-blue-200">{`{codigo}`}</span>, <span className="bg-white px-1.5 py-0.5 rounded border border-blue-200">{`{colegio}`}</span>
+                    </p>
                   </div>
-                  
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Cuerpo del Mensaje (HTML soportado)</label>
-                    <textarea
-                      rows={8}
-                      value={settings.welcomeEmailBody || ''}
-                      onChange={(e) => setSettings({...settings, welcomeEmailBody: e.target.value})}
-                      placeholder="Hola, te damos la bienvenida al portal..."
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm leading-relaxed font-mono"
-                    />
-                    <div className="mt-2 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Previsualización Sugerida</h4>
-                       <div className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">
-                          {settings.welcomeEmailBody?.replace('{alumno}', 'JUAN PEREZ').replace('{codigo}', '12345').replace('{colegio}', settings.schoolName) || 'Configure el cuerpo del correo para ver la previsualización.'}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="space-y-6">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Asunto</label>
+                        <input
+                          value={settings.welcomeEmailSubject || ''}
+                          onChange={(e) => setSettings({...settings, welcomeEmailSubject: e.target.value})}
+                          placeholder="Bienvenido al Portal - {colegio}"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Cuerpo (HTML / Texto)</label>
+                        <textarea
+                          rows={8}
+                          value={settings.welcomeEmailBody || ''}
+                          onChange={(e) => setSettings({...settings, welcomeEmailBody: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium leading-relaxed transition-all focus:bg-white resize-none font-mono"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Previsualización en tiempo real</label>
+                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 h-full min-h-[340px] flex flex-col">
+                          <div className="flex items-center gap-3 mb-6">
+                            <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden">
+                               {settings.logoUrl && <img src={settings.logoUrl} className="w-full h-full object-contain" />}
+                            </div>
+                            <div>
+                               <p className="text-[11px] font-black text-slate-900">{settings.schoolName}</p>
+                               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Soporte Escolar</p>
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                             <h4 className="text-base font-black text-slate-900 mb-4">
+                                {settings.welcomeEmailSubject?.replace('{colegio}', settings.schoolName) || 'Asunto del correo'}
+                             </h4>
+                             <div className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap italic">
+                                {settings.welcomeEmailBody?.replace('{alumno}', 'JUAN PEREZ').replace('{codigo}', 'CODE-XXXX').replace('{colegio}', settings.schoolName) || 'Escribe el contenido para ver como se verá...'}
+                             </div>
+                          </div>
                        </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Login Customization */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <ShieldAlert size={20} className="text-blue-600" />
-                  Personalización de Inicio de Sesión
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Título de Bienvenida</label>
-                    <input
-                      value={settings.loginTitle || ''}
-                      onChange={(e) => setSettings({...settings, loginTitle: e.target.value})}
-                      placeholder="Ej: Sistema de Control"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Subtítulo de Bienvenida</label>
-                    <input
-                      value={settings.loginSubtitle || ''}
-                      onChange={(e) => setSettings({...settings, loginSubtitle: e.target.value})}
-                      placeholder="Ej: Colegio México Franciscano"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+              {/* Card: 404 & Credits */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-200">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Página de Error y Atribución</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Configuración visual</p>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 italic">
-                  * Si se dejan vacíos, no se mostrará ningún texto en la pantalla de acceso.
-                </p>
+                
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">URL de Fondo 404</label>
+                      <input
+                        value={settings.notFoundBackgroundUrl || ''}
+                        onChange={(e) => setSettings({...settings, notFoundBackgroundUrl: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none font-medium text-xs transition-all focus:bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Firma del Desarrollador (Footer)</label>
+                      <input
+                        value={settings.developerAttribution || ''}
+                        onChange={(e) => setSettings({...settings, developerAttribution: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Texto del Error 404</label>
+                     <textarea
+                        rows={1}
+                        value={settings.notFoundText || ''}
+                        onChange={(e) => setSettings({...settings, notFoundText: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none font-bold text-slate-800 transition-all focus:bg-white resize-none"
+                     />
+                     <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-100 flex items-start gap-2">
+                        <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-red-700 font-bold leading-tight">Esta configuración afecta la experiencia de usuario cuando intentan acceder a una página restringida o inexistente.</p>
+                     </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === 'cycles' && (
-            <div className="space-y-6">
-              {/* Tuition Rules */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Clock size={20} className="text-orange-600" />
-                  Reglas de Pago y Recargos
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Día Máximo de Pago (Sin recargos)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="31"
-                      value={isNaN(settings.dueDay) ? '' : settings.dueDay}
-                      onChange={(e) => setSettings({...settings, dueDay: parseInt(e.target.value) || 0})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">Ejemplo: 10 para el día 10 de cada mes.</p>
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Rules */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-200">
+                      <Clock size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Reglas de Pago</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Vencimientos y recargos</p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Monto de Recargo</label>
-                    <div className="flex gap-2">
+                  <div className="p-8 space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Día Máximo de Pago</label>
                       <input
                         type="number"
-                        value={isNaN(settings.lateFeeAmount) ? '' : settings.lateFeeAmount}
-                        onChange={(e) => setSettings({...settings, lateFeeAmount: parseFloat(e.target.value) || 0})}
-                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        min="1"
+                        max="31"
+                        value={isNaN(settings.dueDay) ? '' : settings.dueDay}
+                        onChange={(e) => setSettings({...settings, dueDay: parseInt(e.target.value) || 0})}
+                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
                       />
-                      <select
-                        value={settings.lateFeeType}
-                        onChange={(e) => setSettings({...settings, lateFeeType: e.target.value as 'fixed' | 'percentage'})}
-                        className="w-32 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      >
-                        <option value="fixed">$ Fijo</option>
-                        <option value="percentage">% Porc.</option>
-                      </select>
+                      <p className="text-[9px] text-slate-400 mt-2 font-medium italic">* Día del mes después del cual se aplican recargos.</p>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Monto de Recargo</label>
+                        <input
+                          type="number"
+                          value={isNaN(settings.lateFeeAmount) ? '' : settings.lateFeeAmount}
+                          onChange={(e) => setSettings({...settings, lateFeeAmount: parseFloat(e.target.value) || 0})}
+                          className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Tipo</label>
+                        <select
+                          value={settings.lateFeeType}
+                          onChange={(e) => setSettings({...settings, lateFeeType: e.target.value as 'fixed' | 'percentage'})}
+                          className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat"
+                        >
+                          <option value="fixed">$ Fijo</option>
+                          <option value="percentage">% Porcentaje</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Add New Cycle */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                        <Plus size={20} strokeWidth={3} />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Nuevo Ciclo</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Registrar apertura</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-8 space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Nombre</label>
+                        <input
+                          placeholder="2025-2026"
+                          value={newCycle.name}
+                          onChange={(e) => setNewCycle({...newCycle, name: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Monto Colegiatura</label>
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          value={isNaN(newCycle.tuitionAmount) ? '' : newCycle.tuitionAmount}
+                          onChange={(e) => setNewCycle({...newCycle, tuitionAmount: parseFloat(e.target.value) || 0})}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 ml-1">Meses Cobrables</label>
+                      <div className="flex flex-wrap gap-2">
+                        {MONTHS.map((month, index) => (
+                          <button
+                            key={month}
+                            onClick={() => toggleMonth(index)}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all border ${newCycle.billableMonths.includes(index) ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'}`}
+                          >
+                            {month.substring(0, 3)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleAddCycle}
+                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-blue-100"
+                    >
+                      <Save size={18} /> Registrar Ciclo Académico
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Cycle Management */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Calendar size={20} className="text-blue-600" />
-                  Ciclos Escolares
-                </h2>
-
-                {/* Add New Cycle */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
-                  <h3 className="text-sm font-bold text-slate-700">Registrar Nuevo Ciclo</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre del Ciclo</label>
-                      <input
-                        placeholder="Ej. 2025-2026"
-                        value={newCycle.name}
-                        onChange={(e) => setNewCycle({...newCycle, name: e.target.value})}
-                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo de Colegiatura Mensual</label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        value={isNaN(newCycle.tuitionAmount) ? '' : newCycle.tuitionAmount}
-                        onChange={(e) => setNewCycle({...newCycle, tuitionAmount: parseFloat(e.target.value) || 0})}
-                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
+              {/* Cycle Management List */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                    <Calendar size={20} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Meses a Cobrar</label>
-                    <div className="flex flex-wrap gap-2">
-                      {MONTHS.map((month, index) => (
-                        <button
-                          key={month}
-                          onClick={() => toggleMonth(index)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${newCycle.billableMonths.includes(index) ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300'}`}
-                        >
-                          {month}
-                        </button>
-                      ))}
-                    </div>
+                    <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Ciclos Registrados</h2>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Historial y selección</p>
                   </div>
-                  <button
-                    onClick={handleAddCycle}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
-                  >
-                    <Plus size={18} /> Registrar Ciclo
-                  </button>
                 </div>
-
-                {/* Cycles List */}
-                <div className="space-y-3">
-                  <label className="block text-xs font-semibold text-slate-700">Ciclo Actual y Lista de Ciclos</label>
-                  {cycles.map(cycle => (
-                    <div key={cycle.id} className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${settings.currentCycleId === cycle.id ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100'}`}>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-800">{cycle.name}</span>
-                          {settings.currentCycleId === cycle.id && (
-                            <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full uppercase">Actual</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">
-                          Colegiatura: {formatCurrency(cycle.tuitionAmount)} • {cycle.billableMonths.length} meses cobrables
-                        </p>
-                      </div>
-                      <button
+                <div className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {cycles.map(cycle => (
+                      <div 
+                        key={cycle.id} 
                         onClick={() => setSettings({...settings, currentCycleId: cycle.id})}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${settings.currentCycleId === cycle.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                        className={`group p-6 rounded-xl border-2 transition-all cursor-pointer relative overflow-hidden ${settings.currentCycleId === cycle.id ? 'bg-slate-900 border-slate-900 shadow-xl scale-[1.02]' : 'bg-white border-slate-50 hover:border-slate-200 shadow-sm'}`}
                       >
-                        {settings.currentCycleId === cycle.id ? 'Seleccionado' : 'Seleccionar'}
-                      </button>
-                    </div>
-                  ))}
+                        {settings.currentCycleId === cycle.id && (
+                           <div className="absolute top-0 right-0 p-4">
+                              <CheckCircle2 size={24} className="text-emerald-400" />
+                           </div>
+                        )}
+                        <div className="space-y-4">
+                          <div>
+                            <p className={`text-xl font-black ${settings.currentCycleId === cycle.id ? 'text-white' : 'text-slate-900'}`}>{cycle.name}</p>
+                            <p className={`text-[10px] font-bold uppercase tracking-widest ${settings.currentCycleId === cycle.id ? 'text-slate-400' : 'text-slate-500'}`}>Ciclo Escolar</p>
+                          </div>
+                          
+                          <div className={`p-4 rounded-xl ${settings.currentCycleId === cycle.id ? 'bg-white/10' : 'bg-slate-50'}`}>
+                             <p className={`text-lg font-black ${settings.currentCycleId === cycle.id ? 'text-emerald-400' : 'text-slate-900'}`}>{formatCurrency(cycle.tuitionAmount)}</p>
+                             <p className={`text-[9px] font-bold uppercase ${settings.currentCycleId === cycle.id ? 'text-slate-400' : 'text-slate-500'}`}>Mensualidad Base</p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                             {cycle.billableMonths.slice(0, 4).map(m => (
+                               <span key={m} className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${settings.currentCycleId === cycle.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                 {MONTHS[m].substring(0, 3)}
+                               </span>
+                             ))}
+                             {cycle.billableMonths.length > 4 && (
+                               <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${settings.currentCycleId === cycle.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                 +{cycle.billableMonths.length - 4}
+                               </span>
+                             )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'billing' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Key size={20} className="text-emerald-600" />
-                  Integración Facturapi
-                </h2>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">API Key (Secret Key)</label>
-                    <input
-                      type="password"
-                      placeholder="sk_test_..."
-                      value={settings.facturapiApiKey}
-                      onChange={(e) => setSettings({...settings, facturapiApiKey: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">Obtén tu llave en dashboard.facturapi.io</p>
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-lg shadow-slate-200">
+                    <CreditCard size={20} />
                   </div>
-                  
-                  <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                    <input
-                      type="checkbox"
-                      id="sandbox"
-                      checked={settings.facturapiSandbox}
-                      onChange={(e) => setSettings({...settings, facturapiSandbox: e.target.checked})}
-                      className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500"
-                    />
-                    <label htmlFor="sandbox" className="text-sm font-medium text-emerald-900 cursor-pointer">
-                      Modo Sandbox (Pruebas)
-                    </label>
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Pasarelas de Pago</h2>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Facturación y cobro digital</p>
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <CreditCard size={20} className="text-blue-600" />
-                  Integración Conekta (Pagos en Línea)
-                </h2>
                 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Public Key</label>
-                    <input
-                      placeholder="key_..."
-                      value={settings.conektaPublicKey}
-                      onChange={(e) => setSettings({...settings, conektaPublicKey: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Private Key (Secret Key)</label>
-                    <input
-                      type="password"
-                      placeholder="key_..."
-                      value={settings.conektaPrivateKey}
-                      onChange={(e) => setSettings({...settings, conektaPrivateKey: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-400">
-                    Configura estas llaves para permitir que los padres paguen colegiaturas con tarjeta, transferencia o efectivo (OXXO) desde la app.
-                  </p>
+                <div className="p-8 space-y-12">
+                   {/* Facturapi */}
+                   <div className="space-y-6">
+                      <div className="flex items-center gap-3">
+                        <img src="https://www.facturapi.io/img/logo.svg" alt="Facturapi" className="h-6 opacity-80" />
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest ml-2">Integration</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">API Key (Producción/Test)</label>
+                          <input
+                            type="password"
+                            value={settings.facturapiApiKey || ''}
+                            onChange={(e) => setSettings({...settings, facturapiApiKey: e.target.value})}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"
+                          />
+                        </div>
+                        <div className="flex items-center gap-6">
+                           <div className="flex items-center gap-2">
+                             <input
+                               type="checkbox"
+                               checked={settings.facturapiSandbox}
+                               onChange={(e) => setSettings({...settings, facturapiSandbox: e.target.checked})}
+                               className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500"
+                             />
+                             <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">Modo Sandbox</span>
+                           </div>
+                        </div>
+                      </div>
+                   </div>
+
+                   {/* Conekta */}
+                   <div className="pt-12 border-t border-slate-100 space-y-6">
+                      <div className="flex items-center gap-3">
+                        <img src="https://cdn.conekta.io/branding/logo-conekta.svg" alt="Conekta" className="h-4 opacity-80" />
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest ml-2">Digital Payments</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Private API Key</label>
+                          <input
+                            type="password"
+                            value={settings.conektaPrivateKey || ''}
+                            onChange={(e) => setSettings({...settings, conektaPrivateKey: e.target.value})}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Public API Key</label>
+                          <input
+                            type="text"
+                            value={settings.conektaPublicKey || ''}
+                            onChange={(e) => setSettings({...settings, conektaPublicKey: e.target.value})}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                   </div>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'courses' && (
-            <CoursesCatalog />
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-600 flex items-center justify-center text-white shadow-lg shadow-rose-200">
+                      <BookOpen size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Catálogo de Cursos</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Gestión de oferta educativa</p>
+                    </div>
+                  </div>
+                  <div className="p-8">
+                     <CoursesCatalog />
+                  </div>
+               </div>
+            </div>
           )}
 
           {activeTab === 'locks' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Lock size={20} className="text-amber-600" />
-                  Bloqueos de Calificaciones
-                </h2>
-                <div className="space-y-3">
-                  {gradeLocks.length === 0 && (
-                    <div className="py-12 text-center text-slate-400">
-                      No hay bimestres bloqueados actualmente.
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-600 flex items-center justify-center text-white shadow-lg shadow-amber-200">
+                      <Lock size={20} />
                     </div>
-                  )}
-                  {gradeLocks.map(lock => (
-                    <div key={lock.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900"> Bimestre {lock.bimestre} - {lock.level}</p>
-                        <p className="text-xs text-slate-500">
-                          {lock.grade} {lock.group} • Ciclo: {cycles.find(c => c.id === lock.cycleId)?.name || lock.cycleId}
-                        </p>
-                        {lock.lockedAt && (
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            Bloqueado el: {lock.lockedAt.toDate().toLocaleString()}
-                          </p>
-                        )}
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Bloqueos de Grado</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Control de captura de notas</p>
+                    </div>
+                  </div>
+                  <div className="p-8 space-y-4">
+                    {gradeLocks.length === 0 && (
+                      <div className="py-20 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <Lock size={40} className="mx-auto text-slate-200 mb-4" />
+                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No hay bimestres bloqueados</p>
                       </div>
-                      <button 
-                        onClick={async () => {
-                          if (window.confirm('¿Estás seguro de desbloquear este bimestre? El docente podrá volver a editar calificaciones.')) {
-                            try {
-                              await deleteDoc(doc(db, 'bimestreLocks', lock.id));
-                            } catch (error) {
-                              console.error("Error deleting lock:", error);
-                            }
-                          }
-                        }}
-                        className="px-4 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
-                      >
-                        <Unlock size={16} /> Desbloquear
-                      </button>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {gradeLocks.map(lock => (
+                        <div key={lock.id} className="p-6 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between group hover:bg-white hover:shadow-xl transition-all">
+                          <div className="flex items-center gap-4">
+                             <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-amber-600 shadow-sm border border-slate-100">
+                                <span className="text-lg font-black">{lock.bimestre}</span>
+                             </div>
+                             <div>
+                                <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{lock.level} - {lock.grade} {lock.group}</p>
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest italic opacity-60">Bimestre académico</p>
+                             </div>
+                          </div>
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm('¿Desbloquear este grado? Los docentes podrán editar notas nuevamente.')) {
+                                try {
+                                  await deleteDoc(doc(db, 'bimestreLocks', lock.id));
+                                } catch (error) {
+                                  console.error("Error deleting lock:", error);
+                                }
+                              }
+                            }}
+                            className="p-3 bg-amber-100 text-amber-700 hover:bg-amber-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            title="Desbloquear"
+                          >
+                            <Unlock size={18} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+               </div>
             </div>
           )}
 
           {activeTab === 'academic' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-8">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                      <GraduationCap size={20} className="text-blue-600" />
-                      Estructura Académica Global
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Define los niveles, grados y grupos que se utilizarán en todo el sistema.
-                    </p>
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <GraduationCap size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Estructura Académica Global</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Niveles, grados y grupos</p>
+                    </div>
                   </div>
-                  <button
-                    onClick={handleSave}
-                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
-                  >
-                    <Save size={18} /> Guardar Cambios
-                  </button>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                
+                <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-12">
                   <AcademicListManager 
-                    title="Niveles" 
-                    description="Ej. Primaria, Secundaria"
+                    title="Niveles Educativos" 
+                    description="Clasificación general"
                     items={settings.academicLevels || []} 
                     onUpdate={(newItems) => setSettings({...settings, academicLevels: newItems})}
                   />
                   <AcademicListManager 
                     title="Grados" 
-                    description="Ej. 1ro, 2do"
+                    description="Etapas por nivel"
                     items={settings.academicGrades || []} 
                     onUpdate={(newItems) => setSettings({...settings, academicGrades: newItems})}
                   />
                   <AcademicListManager 
                     title="Grupos" 
-                    description="Ej. A, B, Verde"
+                    description="Secciones de clase"
                     items={settings.academicGroups || []} 
                     onUpdate={(newItems) => setSettings({...settings, academicGroups: newItems})}
                   />
+                </div>
+              </div>
+
+              {/* Nuevo Card: Gestionar CCT por Nivel */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <Key size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Gestionar CCT</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Clave de Centro de Trabajo por Nivel</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {settings.academicLevels?.map((level) => (
+                      <div key={level}>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">{level}</label>
+                        <input
+                          placeholder="Ingrese CCT..."
+                          value={settings.levelCCT?.[level] || ''}
+                          onChange={(e) => {
+                            const newLevelCCT = { ...(settings.levelCCT || {}) };
+                            newLevelCCT[level] = e.target.value;
+                            setSettings({ ...settings, levelCCT: newLevelCCT });
+                          }}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                    ))}
+                    {(!settings.academicLevels || settings.academicLevels.length === 0) && (
+                      <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <AlertCircle className="mx-auto text-slate-300 mb-2" size={32} />
+                        <p className="text-sm font-bold text-slate-400">Primero configura los Niveles Educativos arriba.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'reception' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-8">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                      <Users size={20} className="text-indigo-600" />
-                      Configuración de Recepción
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Gestiona los perfiles de visitantes y los motivos de atención.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleSave}
-                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
-                  >
-                    <Save size={18} /> Guardar Cambios
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <AcademicListManager 
-                    title="Nivel o Área" 
-                    description="Departamentos o áreas de atención"
-                    items={settings.receptionAreas || []} 
-                    onUpdate={(newItems) => setSettings({...settings, receptionAreas: newItems})}
-                  />
-                  <AcademicListManager 
-                    title="Motivos de Atención" 
-                    description="Razones de la solicitud"
-                    items={settings.receptionReasons || []} 
-                    onUpdate={(newItems) => setSettings({...settings, receptionReasons: newItems})}
-                  />
-                </div>
-
-                {userProfile?.role === 'Superadministrador' && (
-                  <div className="pt-8 border-t border-slate-100 space-y-6">
-                    <div className="flex items-center gap-2">
-                       <CheckCircle2 size={18} className="text-emerald-600" />
-                       <h3 className="text-base font-bold text-slate-800">Mensaje de Éxito y QR (Público)</h3>
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                      <Users size={20} />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Título de Éxito</label>
-                        <input
-                          placeholder="¡Registro Exitoso!"
-                          value={settings.receptionSuccessTitle || ''}
-                          onChange={(e) => setSettings({...settings, receptionSuccessTitle: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Cuerpo del Mensaje</label>
-                        <textarea
-                          rows={3}
-                          placeholder="Hemos recibido tu registro. Por favor, toma asiento, en un momento te atenderemos."
-                          value={settings.receptionSuccessMessage || ''}
-                          onChange={(e) => setSettings({...settings, receptionSuccessMessage: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Contenido Código QR (Ej. Red Wi-Fi o Link)</label>
-                        <input
-                          placeholder="WIFI:S:MiRed;T:WPA;P:MiPassword;;"
-                          value={settings.visitorQrCodeContent || ''}
-                          onChange={(e) => setSettings({...settings, visitorQrCodeContent: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1 italic">
-                          Tip: Puedes usar formato WIFI: o una URL completa.
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Etiqueta Superior QR</label>
-                        <input
-                          placeholder="Escanea para"
-                          value={settings.visitorQrCodeLabel || ''}
-                          onChange={(e) => setSettings({...settings, visitorQrCodeLabel: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Descripción QR</label>
-                        <input
-                          placeholder="Contenido exclusivo"
-                          value={settings.visitorQrCodeDescription || ''}
-                          onChange={(e) => setSettings({...settings, visitorQrCodeDescription: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Tiempo de Espera (Segundos)</label>
-                        <input
-                          type="number"
-                          placeholder="5"
-                          value={settings.visitorSuccessTimeout || ''}
-                          onChange={(e) => setSettings({...settings, visitorSuccessTimeout: parseInt(e.target.value) || 0})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1 italic">
-                          Tiempo que permanece la pantalla de éxito antes de reiniciarse.
-                        </p>
-                      </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Atención al Público</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Catálogos de recepción</p>
                     </div>
                   </div>
-                )}
+                </div>
+                
+                <div className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                    <AcademicListManager 
+                      title="Áreas de Atención" 
+                      description="Ej. Dirección, Caja"
+                      items={settings.receptionAreas || []} 
+                      onUpdate={(newItems) => setSettings({...settings, receptionAreas: newItems})}
+                    />
+                    <AcademicListManager 
+                      title="Motivos de Visita" 
+                      description="Razones de consulta"
+                      items={settings.receptionReasons || []} 
+                      onUpdate={(newItems) => setSettings({...settings, receptionReasons: newItems})}
+                    />
+                  </div>
+
+                  {userProfile?.role === 'Superadministrador' && (
+                    <div className="mt-12 pt-12 border-t border-slate-100 space-y-8">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                          <CheckCircle2 size={16} />
+                        </div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Kiosk Público (QR)</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Título de Éxito</label>
+                          <input
+                            placeholder="¡Registro Exitoso!"
+                            value={settings.receptionSuccessTitle || ''}
+                            onChange={(e) => setSettings({...settings, receptionSuccessTitle: e.target.value})}
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Contenido QR (ej. WiFi)</label>
+                          <input
+                            placeholder="WIFI:S:MyNet..."
+                            value={settings.visitorQrCodeContent || ''}
+                            onChange={(e) => setSettings({...settings, visitorQrCodeContent: e.target.value})}
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-medium text-xs"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Mensaje de Confirmación</label>
+                          <textarea
+                            rows={2}
+                            value={settings.receptionSuccessMessage || ''}
+                            onChange={(e) => setSettings({...settings, receptionSuccessMessage: e.target.value})}
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-medium text-xs resize-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'danger' && userProfile?.role === 'Superadministrador' && (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 space-y-6">
-              <h2 className="font-bold text-red-600 flex items-center gap-2">
-                <AlertTriangle size={20} />
-                Zona de Peligro
-              </h2>
-              
-              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-sm font-bold text-red-900">Restablecer Datos del Sistema</h3>
-                    <p className="text-xs text-red-700 mt-1">
-                      Esta acción eliminará permanentemente todos los alumnos, pagos, gastos, ciclos y anuncios. 
-                      Las cuentas de usuario administrativas y la configuración general se mantendrán.
-                    </p>
+          {activeTab === 'charges' && (
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-600 flex items-center justify-center text-white shadow-lg shadow-purple-200">
+                      <CreditCard size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Cobros Extraordinarios</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Catálogo de conceptos adicionales</p>
+                    </div>
                   </div>
-                </div>
-                
-                <div className="pt-4 border-t border-red-200 space-y-4">
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm('¿Deseas cargar datos de ejemplo? Esto agregará alumnos, pagos, gastos, ciclos y anuncios para que veas el sistema funcionando.')) return;
-                      
-                      try {
-                        setLoading(true);
-                        await loadExampleData();
-                        alert('Datos de ejemplo cargados correctamente.');
-                        window.location.reload();
-                      } catch (error) {
-                        console.error("Error loading example data:", error);
-                        alert('Error al cargar datos: ' + (error.message || 'Desconocido'));
-                      } finally {
-                        setLoading(false);
-                      }
-                    }}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-100 transition-all active:scale-95"
-                  >
-                    Cargar Datos de Ejemplo
-                  </button>
+                  <div className="p-8">
+                     <ChargesCatalog />
+                  </div>
+               </div>
+            </div>
+          )}
 
-                  <button
-                    onClick={async () => {
-                      const confirm1 = window.confirm('¿ESTÁS ABSOLUTAMENTE SEGURO? Esta acción no se puede deshacer.');
-                      if (!confirm1) return;
-                      
-                      const confirm2 = window.prompt('Para confirmar, escribe "ELIMINAR TODO" en mayúsculas:');
-                      if (confirm2 !== 'ELIMINAR TODO') return;
+          {activeTab === 'danger' && userProfile?.role === 'Superadministrador' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-red-50/50 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-100">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-red-900 uppercase tracking-tight">Zona Crítica</h2>
+                      <p className="text-[10px] text-red-700/60 font-bold uppercase tracking-widest">Acciones irreversibles</p>
+                    </div>
+                  </div>
+                  
+                  <div className="p-8 space-y-8">
+                    <div className="p-8 bg-red-50 rounded-xl border border-red-100 relative overflow-hidden">
+                       <div className="absolute -top-10 -right-10 text-red-100/50 rotate-12">
+                          <AlertCircle size={160} />
+                       </div>
+                       <div className="relative z-10 space-y-6">
+                         <div>
+                           <h3 className="text-xl font-black text-red-900 mb-2">Mantenimiento de Datos</h3>
+                           <p className="text-sm text-red-700 font-medium leading-relaxed max-w-2xl">
+                             Estas herramientas permiten gestionar el estado de la base de datos. Úsalas con extrema precaución ya que pueden afectar la integridad de la información escolar.
+                           </p>
+                         </div>
+                         
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm('¿Cargar datos de ejemplo? Esto agregará información ficticia para demostración.')) return;
+                                try {
+                                  setLoading(true);
+                                  await loadExampleData();
+                                  alert('Datos cargados. La página se recargará.');
+                                  window.location.reload();
+                                } catch (error) {
+                                  alert('Error: ' + error.message);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              className="group p-6 bg-white rounded-xl border border-red-100 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-100 transition-all text-left"
+                            >
+                               <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                  <Database size={24} />
+                               </div>
+                               <p className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">Cargar Alumnos Demo</p>
+                               <p className="text-[10px] text-slate-500 font-bold">Poblar sistema con datos ficticios</p>
+                            </button>
 
-                      try {
-                        const collections = [
-                          'students', 'payments', 'expenses', 'cycles', 
-                          'announcements', 'grades', 'attendance', 
-                          'reception_visits', 'bimestreLocks', 'enrollments'
-                        ];
-                        for (const coll of collections) {
-                          const snap = await getDocs(collection(db, coll));
-                          const deletePromises = snap.docs.map(d => deleteDoc(doc(db, coll, d.id)));
-                          await Promise.all(deletePromises);
-                        }
-                        alert('Datos restablecidos correctamente.');
-                        window.location.reload();
-                      } catch (error) {
-                        console.error("Error resetting data:", error);
-                        alert('Error al restablecer datos.');
-                      }
-                    }}
-                    className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-100 transition-all active:scale-95"
-                  >
-                    Restablecer Sistema (Borrar Todo)
-                  </button>
+                            <button
+                              onClick={async () => {
+                                const confirm1 = window.confirm('¿ESTÁS SEGURO? Se borrarán todos los alumnos y pagos.');
+                                if (!confirm1) return;
+                                const confirm2 = window.prompt('Escribe "ELIMINAR TODO" para confirmar:');
+                                if (confirm2 !== 'ELIMINAR TODO') return;
+
+                                try {
+                                  const collections = ['students', 'payments', 'expenses', 'cycles', 'announcements', 'grades', 'attendance', 'reception_visits', 'bimestreLocks', 'enrollments'];
+                                  for (const coll of collections) {
+                                    const snap = await getDocs(collection(db, coll));
+                                    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, coll, d.id))));
+                                  }
+                                  alert('Sistema restablecido.');
+                                  window.location.reload();
+                                } catch (error) {
+                                  alert('Error al borrar.');
+                                }
+                              }}
+                              className="group p-6 bg-white rounded-xl border border-red-100 hover:border-red-600 hover:shadow-xl hover:shadow-red-100 transition-all text-left"
+                            >
+                               <div className="w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center mb-4 group-hover:bg-red-600 group-hover:text-white transition-all">
+                                  <Trash2 size={24} />
+                               </div>
+                               <p className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1 text-red-600">Restablecer Todo</p>
+                               <p className="text-[10px] text-slate-500 font-bold">Borrar información operativa permanentemente</p>
+                            </button>
+                       </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'users' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Shield size={20} className="text-indigo-600" />
-                    Usuarios Administrativos
-                  </h2>
-                  <button 
-                    onClick={() => {
-                      setEditingUser(null);
-                      setUserFormData({ email: '', name: '', password: '', role: 'Cajero', permissions: DEFAULT_PERMISSIONS['Cajero'] });
-                      setIsUserModalOpen(true);
-                    }}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all"
-                  >
-                    <Plus size={16} /> Nuevo Usuario
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {appUsers.map(user => (
-                    <div key={user.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between group">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
-                          {user.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{user.name}</p>
-                          <p className="text-[10px] text-slate-500">{user.email} • <span className="font-bold text-indigo-600 uppercase">{user.role}</span></p>
-                        </div>
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                        <Shield size={20} />
                       </div>
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => {
-                            setEditingUser(user);
-                            setUserFormData({ ...user, password: '' });
-                            setIsUserModalOpen(true);
-                          }}
-                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button 
-                          onClick={async () => {
-                            if (window.confirm('¿Estás seguro de eliminar este usuario?')) {
-                              try {
-                                await deleteDoc(doc(db, 'users', user.id));
-                              } catch (error) {
-                                console.error("Error deleting user:", error);
-                              }
-                            }
-                          }}
-                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                      <div>
+                        <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Panel de Seguridad</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Usuarios y privilegios</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <button 
+                      onClick={() => {
+                        setEditingUser(null);
+                        setUserFormData({ email: '', name: '', password: '', role: 'Cajero', permissions: DEFAULT_PERMISSIONS['Cajero'] });
+                        setIsUserModalOpen(true);
+                      }}
+                      className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                    >
+                      <Plus size={16} strokeWidth={3} /> Nuevo Operador
+                    </button>
+                  </div>
+                  
+                  <div className="p-8">
+                    <div className="flex items-center gap-2 mb-8 bg-slate-50 p-1.5 rounded-xl w-fit border border-slate-200">
+                      {(['Todos', 'Superadministrador', 'Administrador', 'Cajero', 'Docente', 'Recepción'] as const).map((role) => (
+                        <button
+                          key={role}
+                          onClick={() => setUserRoleFilter(role)}
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                            userRoleFilter === role 
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
+                              : "text-slate-400 hover:text-slate-600"
+                          )}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {appUsers
+                        .filter(u => (userRoleFilter === 'Todos' || u.role === userRoleFilter) && u.role !== 'Padre')
+                        .map(user => (
+                       <div key={user.id} className="p-6 bg-white rounded-xl border border-slate-100 flex flex-col justify-between group hover:border-blue-200 hover:shadow-xl transition-all relative">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-lg font-black shadow-inner">
+                              {user.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-black text-slate-900 leading-none mb-1">{user.name}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase truncate max-w-[140px]">{user.email}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center justify-between pt-4 border-t border-slate-100/50">
+                             <span className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${user.role === 'Administrador' ? 'bg-rose-100 text-rose-600' : user.role === 'Superadministrador' ? 'bg-indigo-900 text-white' : 'bg-blue-100 text-blue-600'}`}>
+                               {user.role}
+                             </span>
+                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => {
+                                    setEditingUser(user);
+                                    setUserFormData({ ...user, password: '' });
+                                    setIsUserModalOpen(true);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button 
+                                  onClick={async () => {
+                                    if (window.confirm('¿Eliminar acceso a este usuario?')) {
+                                      try {
+                                        await deleteDoc(doc(db, 'users', user.id));
+                                      } catch (error) {
+                                        console.error("Error deleting user:", error);
+                                      }
+                                    }
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                             </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    </div>
+                  </div>
+               </div>
             </div>
           )}
 
           {isUserModalOpen && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-              <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 border border-slate-200">
                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                   <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                     <Shield className="text-indigo-600" />
@@ -1149,7 +1385,7 @@ export default function Settings() {
                         required
                         value={userFormData.name}
                         onChange={(e) => setUserFormData({...userFormData, name: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                       />
                     </div>
                     <div>
@@ -1159,7 +1395,7 @@ export default function Settings() {
                         type="email"
                         value={userFormData.email}
                         onChange={(e) => setUserFormData({...userFormData, email: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                         disabled={!!editingUser}
                       />
                     </div>
@@ -1171,7 +1407,7 @@ export default function Settings() {
                           type="password"
                           value={userFormData.password}
                           onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
-                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                           placeholder="Mínimo 6 caracteres"
                         />
                       </div>
@@ -1186,7 +1422,7 @@ export default function Settings() {
                           const role = e.target.value as UserRole;
                           setUserFormData({...userFormData, role, permissions: DEFAULT_PERMISSIONS[role]});
                         }}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat"
                       >
                         <option value="Superadministrador">Superadministrador</option>
                         <option value="Administrador">Administrador</option>
@@ -1547,7 +1783,7 @@ export default function Settings() {
               activeTab === 'billing' ? hasPermission('settings', 'editRules') : false) && (
               <button
                 onClick={handleSave}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl flex items-center gap-2 font-bold shadow-lg shadow-blue-100 transition-all active:scale-95"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-blue-100 transition-all active:scale-95"
               >
                 <Save size={20} />
                 Guardar Configuración
@@ -1640,11 +1876,11 @@ function AcademicListManager({ title, description, items, onUpdate }: AcademicLi
           onChange={(e) => setNewItem(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
           placeholder="Agregar..."
-          className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
           onClick={handleAdd}
-          className="p-1.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-sm transition-all active:scale-95 flex items-center justify-center shrink-0 w-8 h-8"
+          className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition-all active:scale-95 flex items-center justify-center shrink-0 w-8 h-8"
         >
           <Plus size={14} />
         </button>
@@ -1652,7 +1888,7 @@ function AcademicListManager({ title, description, items, onUpdate }: AcademicLi
 
       <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
         {items.map((item, index) => (
-          <div key={index} className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-100 group hover:border-slate-200 transition-all">
+          <div key={index} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 group hover:border-slate-200 transition-all">
             {editingIndex === index ? (
               <div className="flex-1 flex gap-2 items-center">
                 <input

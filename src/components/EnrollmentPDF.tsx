@@ -154,6 +154,10 @@ interface Props {
 }
 
 const EnrollmentPDF: React.FC<Props> = ({ enrollment, settings }) => {
+  const proxiedLogo = settings?.logoUrl && settings.logoUrl.length > 0 
+    ? `/api/proxy/image?url=${encodeURIComponent(settings.logoUrl)}`
+    : null;
+
   const dateStr = enrollment.createdAt ? format(enrollment.createdAt.toDate(), 'dd/MM/yyyy HH:mm', { locale: es }) : '';
 
   return (
@@ -162,8 +166,8 @@ const EnrollmentPDF: React.FC<Props> = ({ enrollment, settings }) => {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoSection}>
-            {settings?.logoUrl && (
-              <Image src={{ uri: settings.logoUrl, method: 'GET', headers: { Referer: '' }, body: '' }} style={styles.logo} />
+            {proxiedLogo && (
+              <Image src={proxiedLogo} style={styles.logo} />
             )}
             <View>
               <Text style={styles.schoolName}>{settings?.schoolName || 'Institución Educativa'}</Text>
