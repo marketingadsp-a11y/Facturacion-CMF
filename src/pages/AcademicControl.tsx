@@ -643,13 +643,15 @@ export default function AcademicControl() {
                           
                           <td className="px-4 py-2.5 text-right w-px whitespace-nowrap">
                             <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handlePrintBoleta(student)}
-                                className="p-1.5 bg-slate-100 text-slate-600 hover:!bg-emerald-500 hover:!text-white group-hover:bg-slate-800 group-hover:text-slate-400 rounded transition-all"
-                                title="Boleta"
+                              <a
+                                href={`/imprimir-boleta/${student.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 bg-slate-100 text-slate-600 hover:!bg-emerald-500 hover:!text-white group-hover:bg-slate-800 group-hover:text-slate-400 rounded transition-all flex items-center justify-center"
+                                title="Imprimir Boleta"
                               >
                                 <Printer size={13} />
-                              </button>
+                              </a>
                               <button
                                 onClick={() => handleEditStudent(student)}
                                 className="p-1.5 bg-slate-100 text-slate-600 hover:!bg-blue-600 hover:!text-white group-hover:bg-slate-800 group-hover:text-slate-400 rounded transition-all"
