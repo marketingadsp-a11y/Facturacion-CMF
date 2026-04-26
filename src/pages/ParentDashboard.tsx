@@ -634,9 +634,17 @@ export default function ParentDashboard() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <h3 className="font-black text-slate-900 truncate text-base tracking-tight leading-tight">{student.name} {student.lastName}</h3>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate mt-0.5">
-                                {student.grade} {student.group} <span className="text-blue-500 mx-1">•</span> {student.level}
-                              </p>
+                              <div className="flex flex-col mt-0.5">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">
+                                  {student.grade} {student.group} <span className="text-blue-500 mx-1">•</span> {student.level}
+                                </p>
+                                {student.curp && (
+                                  <p className="text-[9px] font-mono text-slate-500 mt-1 flex items-center gap-1.5">
+                                    <span className="text-[8px] bg-slate-100 px-1 rounded font-bold text-slate-400">CURP</span>
+                                    {student.curp}
+                                  </p>
+                                )}
+                              </div>
                             </div>
                             <button 
                               onClick={() => handleOpenHistory(student)}

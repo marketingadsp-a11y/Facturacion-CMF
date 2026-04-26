@@ -306,6 +306,43 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
   }
 });
 
+// Mail Endpoint using Resend
+app.post('/api/mail/welcome', async (req, res) => {
+  const { to, subject, body } = req.body;
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.error('RESEND_API_KEY not configured in environment');
+    return res.status(500).json({ error: 'Configuración de correo no disponible.' });
+  }
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Control Escolar <onboarding@resend.dev>', // Resend testing domain
+        to,
+        subject,
+        html: body
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Error de Resend');
+    }
+
+    res.json({ success: true, id: data.id });
+  } catch (error: any) {
+    console.error('Email Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Catch-all for undefined API routes
 app.all('/api/*', (req, res) => {
   res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.url}` });

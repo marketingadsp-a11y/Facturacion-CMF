@@ -5,6 +5,7 @@ import { GraduationCap, CheckCircle2, AlertCircle, Send, ArrowRight, ArrowLeft }
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { AppSettings } from '../types';
+import { calculateCURP, STATES } from '../lib/studentUtils';
 
 const SECTIONS = [
   'Bienvenida',
@@ -42,6 +43,7 @@ export default function EnrollmentForm() {
     level: '',
     birthPlaceCity: '',
     birthPlaceState: '',
+    birthPlaceStateCode: '',
     birthDate: '',
     age: '',
     gender: 'Hombre',
@@ -87,6 +89,24 @@ export default function EnrollmentForm() {
       workTogether: false
     }
   });
+
+  // Auto-calculate CURP
+  React.useEffect(() => {
+    if (formData.studentName && formData.studentLastName && formData.birthDate && formData.gender && formData.birthPlaceStateCode) {
+      const calculatedToken = calculateCURP({
+        firstName: formData.studentName,
+        lastName: formData.studentLastName,
+        motherLastName: formData.studentMotherLastName,
+        birthDate: formData.birthDate,
+        gender: formData.gender === 'Hombre' ? 'H' : 'M',
+        birthState: formData.birthPlaceStateCode || '' 
+      });
+      
+      if (calculatedToken && (!formData.curp || formData.curp.slice(0, 16) !== calculatedToken)) {
+        setFormData(prev => ({ ...prev, curp: calculatedToken + (prev.curp.slice(16) || '') }));
+      }
+    }
+  }, [formData.studentName, formData.studentLastName, formData.studentMotherLastName, formData.birthDate, formData.gender, formData.birthPlaceStateCode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -300,8 +320,25 @@ export default function EnrollmentForm() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <FormInput label="Ciudad Nacimiento" name="birthPlaceCity" value={formData.birthPlaceCity} onChange={handleChange} />
-                    <FormInput label="Estado Nacimiento" name="birthPlaceState" value={formData.birthPlaceState} onChange={handleChange} />
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Estado Nacimiento *</label>
+                      <select 
+                        name="birthPlaceState" 
+                        value={formData.birthPlaceState} 
+                        onChange={(e) => {
+                          const stateName = e.target.value;
+                          const stateCode = STATES.find(s => s.name === stateName)?.code || '';
+                          setFormData(prev => ({ ...prev, birthPlaceState: stateName, birthPlaceStateCode: stateCode }));
+                        }} 
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold"
+                        required
+                      >
+                        <option value="">Selecciona estado</option>
+                        {STATES.map(s => (
+                          <option key={s.code} value={s.name}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <FormInput label="Fecha Nacimiento" name="birthDate" type="date" value={formData.birthDate} onChange={handleChange} required />
                   </div>
 

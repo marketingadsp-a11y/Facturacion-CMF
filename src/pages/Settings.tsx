@@ -502,6 +502,55 @@ export default function Settings() {
                 </div>
               </div>
 
+              {/* Welcome Email Template */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Bell size={20} className="text-blue-500" />
+                    Correo de Bienvenida (Portal Padres)
+                  </h2>
+                  <div className="px-2 py-1 bg-blue-100 text-blue-600 rounded-lg text-[10px] font-black uppercase">
+                    Envío Automático
+                  </div>
+                </div>
+                
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Este correo se enviará automáticamente al padre cuando se registre un nuevo alumno. 
+                  Puedes usar variables: <code className="bg-slate-100 px-1 rounded text-blue-600">{`{alumno}`}</code>, 
+                  <code className="bg-slate-100 px-1 rounded text-blue-600">{`{codigo}`}</code>, 
+                  <code className="bg-slate-100 px-1 rounded text-blue-600">{`{colegio}`}</code>.
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Asunto del Correo</label>
+                    <input
+                      value={settings.welcomeEmailSubject || ''}
+                      onChange={(e) => setSettings({...settings, welcomeEmailSubject: e.target.value})}
+                      placeholder="Ej: Bienvenido al Portal de Padres - {colegio}"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Cuerpo del Mensaje (HTML soportado)</label>
+                    <textarea
+                      rows={8}
+                      value={settings.welcomeEmailBody || ''}
+                      onChange={(e) => setSettings({...settings, welcomeEmailBody: e.target.value})}
+                      placeholder="Hola, te damos la bienvenida al portal..."
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm leading-relaxed font-mono"
+                    />
+                    <div className="mt-2 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Previsualización Sugerida</h4>
+                       <div className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">
+                          {settings.welcomeEmailBody?.replace('{alumno}', 'JUAN PEREZ').replace('{codigo}', '12345').replace('{colegio}', settings.schoolName) || 'Configure el cuerpo del correo para ver la previsualización.'}
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Login Customization */}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">

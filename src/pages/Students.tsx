@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, BookOpen, ReceiptText, ShieldCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { calculateStudentDebts } from '../lib/paymentUtils';
+import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
+import { calculateCURP, STATES } from '../lib/studentUtils';
+import { sendWelcomeEmail } from '../services/mailService';
 import { motion, AnimatePresence } from 'motion/react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
@@ -27,17 +29,24 @@ export default function Students() {
   const [filterGroup, setFilterGroup] = useState('');
   const [filterDebt, setFilterDebt] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<{name: string, curp: string} | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
   const [codeModalStudent, setCodeModalStudent] = useState<Student | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [showEmailSuccess, setShowEmailSuccess] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
     name: '',
     lastName: '',
+    motherLastName: '',
+    birthDate: '',
+    gender: 'H' as 'H' | 'M',
+    birthState: 'MC',
     curp: '',
     email: '',
     phone: '',
@@ -50,8 +59,31 @@ export default function Students() {
     billingAddress: '',
     zipCode: '',
     taxSystem: '605',
-    registrationCode: ''
+    registrationCode: '',
+    startPayment: 'current' as 'current' | 'next',
+    enrollmentMonth: undefined as number | undefined,
+    enrollmentYear: undefined as number | undefined
   });
+
+  // Auto-calculate CURP
+  useEffect(() => {
+    if (formData.name && formData.lastName && formData.birthDate && formData.gender && formData.birthState) {
+      const calculatedToken = calculateCURP({
+        firstName: formData.name,
+        lastName: formData.lastName,
+        motherLastName: formData.motherLastName,
+        birthDate: formData.birthDate,
+        gender: formData.gender,
+        birthState: formData.birthState
+      });
+      
+      // Only update if it's different and not already complete (if they want to manually edit the last digits)
+      // but usually users want it to stay linked. Let's update it if the first 16 change.
+      if (calculatedToken && (!formData.curp || formData.curp.slice(0, 16) !== calculatedToken)) {
+        setFormData(prev => ({ ...prev, curp: calculatedToken + (prev.curp.slice(16) || '') }));
+      }
+    }
+  }, [formData.name, formData.lastName, formData.motherLastName, formData.birthDate, formData.gender, formData.birthState]);
 
   useEffect(() => {
     const q = query(collection(db, 'students'), orderBy('lastName', 'asc'));
@@ -102,6 +134,10 @@ export default function Students() {
       setFormData({
         name: student.name || '',
         lastName: student.lastName || '',
+        motherLastName: student.motherLastName || '',
+        birthDate: student.birthDate || '',
+        gender: (student.gender as 'H' | 'M') || 'H',
+        birthState: student.birthState || 'MC',
         curp: student.curp || '',
         email: student.email || '',
         phone: student.phone || '',
@@ -114,12 +150,36 @@ export default function Students() {
         billingAddress: student.billingAddress || '',
         zipCode: student.zipCode || '',
         taxSystem: student.taxSystem || '605',
-        registrationCode: student.registrationCode || generateRegistrationCode()
+        registrationCode: student.registrationCode || generateRegistrationCode(),
+        startPayment: 'current',
+        enrollmentMonth: student.enrollmentMonth,
+        enrollmentYear: student.enrollmentYear
       });
     } else {
       setEditingStudent(null);
       setFormData({
-        name: '', lastName: '', curp: '', email: '', phone: '', parentEmail: '', level: 'Primaria', grade: '', group: '', rfc: '', billingName: '', billingAddress: '', zipCode: '', taxSystem: '605', registrationCode: generateRegistrationCode()
+        name: '', 
+        lastName: '', 
+        motherLastName: '',
+        birthDate: '',
+        gender: 'H',
+        birthState: 'MC',
+        curp: '', 
+        email: '', 
+        phone: '', 
+        parentEmail: '', 
+        level: 'Primaria', 
+        grade: '', 
+        group: '', 
+        rfc: '', 
+        billingName: '', 
+        billingAddress: '', 
+        zipCode: '', 
+        taxSystem: '605', 
+        registrationCode: generateRegistrationCode(),
+        startPayment: 'current',
+        enrollmentMonth: undefined,
+        enrollmentYear: undefined
       });
     }
     setIsModalOpen(true);
@@ -130,9 +190,63 @@ export default function Students() {
     setIsHistoryModalOpen(true);
   };
 
+  const handleResendEmail = async (student: Student) => {
+    if (!settings || !student.parentEmail) return;
+    
+    setSendingEmailId(student.id);
+    try {
+      await sendWelcomeEmail(student, settings);
+      setShowEmailSuccess(true);
+      setTimeout(() => setShowEmailSuccess(false), 5000);
+    } catch (error) {
+      console.error('Error reenviando correo:', error);
+      alert('Hubo un error al reenviar el correo. Por favor intente más tarde.');
+    } finally {
+      setSendingEmailId(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const isDuplicate = students.some(s => {
+        // Skip check for the student currently being edited
+        if (editingStudent && s.id === editingStudent.id) return false;
+        
+        // Match by CURP (strongest identifier)
+        const sameCurp = formData.curp && s.curp === formData.curp;
+        
+        // Match by Full Identity (Name + BirthDate)
+        const sameIdentity = 
+          s.name.toLowerCase().trim() === formData.name.toLowerCase().trim() &&
+          s.lastName.toLowerCase().trim() === formData.lastName.toLowerCase().trim() &&
+          (s.motherLastName || '').toLowerCase().trim() === (formData.motherLastName || '').toLowerCase().trim() &&
+          s.birthDate === formData.birthDate;
+          
+        return sameCurp || sameIdentity;
+      });
+
+      if (isDuplicate) {
+        const existing = students.find(s => {
+          if (editingStudent && s.id === editingStudent.id) return false;
+          const sameCurp = formData.curp && s.curp === formData.curp;
+          const sameIdentity = 
+            s.name.toLowerCase().trim() === formData.name.toLowerCase().trim() &&
+            s.lastName.toLowerCase().trim() === formData.lastName.toLowerCase().trim() &&
+            (s.motherLastName || '').toLowerCase().trim() === (formData.motherLastName || '').toLowerCase().trim() &&
+            s.birthDate === formData.birthDate;
+          return sameCurp || sameIdentity;
+        });
+
+        if (existing) {
+          setDuplicateError({
+            name: `${existing.name} ${existing.lastName}`,
+            curp: existing.curp || 'SIN CURP'
+          });
+        }
+        return;
+      }
+
       // Check if registrationCode already exists for another student (NOT a sibling)
       const codeExists = students.some(s => 
         s.registrationCode === formData.registrationCode && 
@@ -145,11 +259,26 @@ export default function Students() {
         return;
       }
 
+      const now = new Date();
+      let enrollmentMonth = now.getMonth();
+      let enrollmentYear = now.getFullYear();
+
+      if (formData.startPayment === 'next') {
+        const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        enrollmentMonth = nextDate.getMonth();
+        enrollmentYear = nextDate.getFullYear();
+      }
+
       let dataToSave = {
         ...formData,
         parentEmail: formData.parentEmail.toLowerCase().trim(),
+        enrollmentMonth,
+        enrollmentYear,
         updatedAt: serverTimestamp()
       };
+      
+      // Remove startPayment from the data sent to Firestore as it's a UI-only helper
+      const { startPayment, ...cleanedData } = dataToSave;
 
       // Validate generic RFC tax system
       if ((formData.rfc === 'XAXX010101000' || formData.rfc === 'XEXX010101000') && formData.taxSystem !== '616') {
@@ -157,12 +286,17 @@ export default function Students() {
       }
 
       if (editingStudent) {
-        await updateDoc(doc(db, 'students', editingStudent.id), dataToSave);
+        await updateDoc(doc(db, 'students', editingStudent.id), cleanedData);
       } else {
-        await addDoc(collection(db, 'students'), {
-          ...dataToSave,
+        const docRef = await addDoc(collection(db, 'students'), {
+          ...cleanedData,
           createdAt: serverTimestamp()
         });
+        
+        // Trigger welcome email for new students if settings are available
+        if (settings) {
+          sendWelcomeEmail({ id: docRef.id, ...cleanedData, createdAt: Timestamp.now() } as Student, settings);
+        }
       }
       setIsModalOpen(false);
     } catch (error) {
@@ -336,10 +470,10 @@ export default function Students() {
                       key={student.id} 
                       className="group hover:bg-slate-950 hover:text-white transition-all cursor-default text-[10px]"
                     >
-                      <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800">
-                        {student.lastName}
+                      <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800 text-slate-900 group-hover:text-white">
+                        {student.lastName} {student.motherLastName || ''}
                       </td>
-                      <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800">
+                      <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800 group-hover:text-white">
                         {student.name}
                       </td>
                       <td className="px-4 py-2 border-r border-slate-100 font-mono text-[9px] whitespace-nowrap group-hover:border-slate-800 group-hover:text-slate-300">
@@ -355,13 +489,13 @@ export default function Students() {
                           {student.level}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 whitespace-nowrap">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 whitespace-nowrap group-hover:text-white">
                         {student.grade}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 whitespace-nowrap">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 whitespace-nowrap group-hover:text-white">
                         {student.group || '-'}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-emerald-600 whitespace-nowrap">
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-emerald-600 whitespace-nowrap group-hover:text-emerald-400">
                         <button
                           onClick={() => setCodeModalStudent(student)}
                           className="hover:text-indigo-600 transition-colors uppercase tracking-tight"
@@ -369,8 +503,33 @@ export default function Students() {
                           {student.registrationCode || '-'}
                         </button>
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500 whitespace-nowrap">
-                        {student.parentEmail || '-'}
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500 whitespace-nowrap group-hover:text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span>{student.parentEmail || '-'}</span>
+                          {student.parentEmail && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleResendEmail(student);
+                              }}
+                              disabled={sendingEmailId === student.id}
+                              className={cn(
+                                "p-1 rounded-md transition-all hover:bg-slate-800 hover:text-white",
+                                sendingEmailId === student.id ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                              )}
+                              title="Reenviar correo de bienvenida"
+                            >
+                              {sendingEmailId === student.id ? (
+                                <div className="w-3 h-3 border-2 border-slate-400 border-t-white rounded-full animate-spin" />
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <Mail size={12} />
+                                  <span className="hidden group-hover:inline text-[8px] font-black uppercase">Reenviar</span>
+                                </div>
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">
                         {debtStatus.hasDebt ? (
@@ -442,196 +601,340 @@ export default function Students() {
         </div>
       </div>
 
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 italic">
-                <GraduationCap className="text-blue-600 not-italic" size={20} />
-                {editingStudent ? 'Editar Expediente' : 'Nuevo Expediente'}
-              </h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-1.5 hover:bg-slate-200 rounded-md transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[70vh]">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Basic Info */}
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Información Básica</h3>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre(s) *</label>
-                    <input
-                      required
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+      {/* Modal Rediseñado */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+              <motion.div
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="relative bg-white w-full max-w-5xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] border border-slate-200"
+            >
+              {/* Header Compacto */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center text-white shadow-md">
+                    <UserPlus size={20} />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Apellidos *</label>
-                    <input
-                      required
-                      value={formData.lastName}
-                      onChange={(e) => setFormData({...formData, lastName: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Nivel *</label>
-                      <select
-                        required
-                        value={formData.level}
-                        onChange={(e) => setFormData({...formData, level: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      >
-                        <option value="">Seleccionar Nivel</option>
-                        {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
-                          <option key={level} value={level}>{level}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">CURP</label>
-                      <input
-                        value={formData.curp}
-                        onChange={(e) => setFormData({...formData, curp: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Grado *</label>
-                      <select
-                        required
-                        value={formData.grade}
-                        onChange={(e) => setFormData({...formData, grade: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      >
-                        <option value="">Seleccionar Grado</option>
-                        {(settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
-                          <option key={grade} value={grade}>{grade}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Grupo</label>
-                      <select
-                        value={formData.group}
-                        onChange={(e) => setFormData({...formData, group: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      >
-                        <option value="">Seleccionar Grupo</option>
-                        {(settings?.academicGroups || ['A', 'B', 'C']).map(group => (
-                          <option key={group} value={group}>{group}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Contact & Billing */}
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contacto y Facturación</h3>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Correo Electrónico Alumno</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1 text-blue-600">Correo del Padre (Acceso Portal) *</label>
-                    <input
-                      type="email"
-                      value={formData.parentEmail}
-                      onChange={(e) => setFormData({...formData, parentEmail: e.target.value})}
-                      className="w-full px-4 py-2 bg-blue-50/50 border border-blue-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      placeholder="correo@padre.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">RFC</label>
-                    <input
-                      value={formData.rfc}
-                      onChange={(e) => setFormData({...formData, rfc: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Razón Social Facturación</label>
-                    <input
-                      value={formData.billingName}
-                      onChange={(e) => setFormData({...formData, billingName: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Código Postal</label>
-                    <input
-                      value={formData.zipCode}
-                      onChange={(e) => setFormData({...formData, zipCode: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Régimen Fiscal (SAT)</label>
-                    <select
-                      value={formData.taxSystem}
-                      onChange={(e) => setFormData({...formData, taxSystem: e.target.value})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    >
-                      <option value="601">601 - General de Ley Personas Morales</option>
-                      <option value="603">603 - Personas Morales con Fines no Lucrativos</option>
-                      <option value="605">605 - Sueldos y Salarios</option>
-                      <option value="606">606 - Arrendamiento</option>
-                      <option value="612">612 - Personas Físicas con Actividades Empresariales</option>
-                      <option value="616">616 - Sin obligaciones fiscales</option>
-                      <option value="626">626 - Régimen Simplificado de Confianza (RESICO)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1 text-emerald-600">Código de Registro (5 dígitos) *</label>
-                    <input
-                      required
-                      maxLength={5}
-                      value={formData.registrationCode}
-                      onChange={(e) => setFormData({...formData, registrationCode: e.target.value.replace(/\D/g, '').slice(0, 5)})}
-                      className="w-full px-4 py-2 bg-emerald-50/50 border border-emerald-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-center tracking-widest"
-                      placeholder="12345"
-                    />
-                    <p className="text-[9px] text-slate-400 mt-1 italic">
-                      Este código vincula al padre con el alumno. Úsalo para hermanos.
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight leading-none uppercase">
+                      {editingStudent ? 'Editar Registro' : 'Nuevo Expediente'}
+                    </h2>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">
+                      Control Escolar • Ciclo {currentCycle?.name || 'Actual'}
                     </p>
                   </div>
                 </div>
+                <button 
+                  onClick={() => setIsModalOpen(false)} 
+                  className="p-1.5 hover:bg-slate-100 rounded-md transition-all text-slate-400 hover:text-slate-900"
+                >
+                  <X size={18} />
+                </button>
               </div>
+              
+              <form id="student-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 bg-white">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Bloque 1: Identidad */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                       <User size={14} className="text-blue-600" />
+                       <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.1em]">Identidad</span>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Nombre(s) *</label>
+                        <input
+                          required
+                          value={formData.name}
+                          onChange={(e) => setFormData({...formData, name: e.target.value})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Paterno *</label>
+                          <input
+                            required
+                            value={formData.lastName}
+                            onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Materno</label>
+                          <input
+                            value={formData.motherLastName}
+                            onChange={(e) => setFormData({...formData, motherLastName: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                          />
+                        </div>
+                      </div>
 
-              <div className="mt-8 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-95"
-                >
-                  {editingStudent ? 'Guardar Cambios' : 'Registrar Alumno'}
-                </button>
+                      <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                           <div>
+                              <label className="block text-[9px] font-bold text-blue-800 uppercase mb-1">Nacimiento</label>
+                              <input
+                                 type="date"
+                                 required
+                                 value={formData.birthDate}
+                                 onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
+                                 className="w-full px-2 py-1.5 bg-white border border-blue-200 rounded text-[10px] font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                              />
+                           </div>
+                           <div>
+                              <label className="block text-[9px] font-bold text-blue-800 uppercase mb-1">Género</label>
+                              <select
+                                 required
+                                 value={formData.gender}
+                                 onChange={(e) => setFormData({...formData, gender: e.target.value as 'H' | 'M'})}
+                                 className="w-full px-2 py-1.5 bg-white border border-blue-200 rounded text-[10px] font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                              >
+                                 <option value="H">Hombre</option>
+                                 <option value="M">Mujer</option>
+                              </select>
+                           </div>
+                        </div>
+                        <div>
+                           <label className="block text-[9px] font-bold text-blue-800 uppercase mb-1">Estado de Nacimiento</label>
+                           <select
+                              required
+                              value={formData.birthState}
+                              onChange={(e) => setFormData({...formData, birthState: e.target.value})}
+                              className="w-full px-2 py-1.5 bg-white border border-blue-200 rounded text-[10px] font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                           >
+                              {STATES.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1 flex items-center justify-between">
+                            CURP CALCULADA
+                            <Sparkles size={10} className="text-blue-400" />
+                          </label>
+                          <input
+                            value={formData.curp}
+                            onChange={(e) => setFormData({...formData, curp: e.target.value.toUpperCase()})}
+                            className="w-full px-3 py-2 bg-white border border-blue-300 rounded focus:border-blue-600 outline-none uppercase font-mono font-black text-[11px] text-blue-800 text-center tracking-wider"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloque 2: Académico & Finanzas */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                       <BookOpen size={14} className="text-indigo-600" />
+                       <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.1em]">Academia y Pagos</span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Nivel Educativo *</label>
+                        <select
+                          required
+                          value={formData.level}
+                          onChange={(e) => setFormData({...formData, level: e.target.value})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold transition-all"
+                        >
+                          <option value="">Seleccionar...</option>
+                          {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria']).map(level => (
+                            <option key={level} value={level}>{level}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Grado *</label>
+                          <select
+                            required
+                            value={formData.grade}
+                            onChange={(e) => setFormData({...formData, grade: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-xs font-bold"
+                          >
+                            <option value="">Grado</option>
+                            {(settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
+                              <option key={grade} value={grade}>{grade}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Grupo</label>
+                          <select
+                            value={formData.group}
+                            onChange={(e) => setFormData({...formData, group: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-xs font-bold"
+                          >
+                            <option value="">Grupo</option>
+                            {(settings?.academicGroups || ['A', 'B', 'C']).map(group => (
+                              <option key={group} value={group}>{group}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Configuración de Cobro */}
+                      <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <ReceiptText size={12} className="text-emerald-600" />
+                          <span className="text-[9px] font-black text-emerald-800 uppercase">Inicio de Cobros</span>
+                        </div>
+                        
+                        {!editingStudent ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setFormData({...formData, startPayment: 'current'})}
+                              className={cn(
+                                "p-2 rounded border transition-all text-center",
+                                formData.startPayment === 'current' 
+                                  ? "bg-emerald-600 text-white border-emerald-600" 
+                                  : "bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                              )}
+                            >
+                              <p className="text-[10px] font-black uppercase">Mes Actual</p>
+                              <p className="text-[8px] opacity-80">{format(new Date(), 'MMMM', { locale: es })}</p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormData({...formData, startPayment: 'next'})}
+                              className={cn(
+                                "p-2 rounded border transition-all text-center",
+                                formData.startPayment === 'next' 
+                                  ? "bg-emerald-600 text-white border-emerald-600" 
+                                  : "bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                              )}
+                            >
+                              <p className="text-[10px] font-black uppercase">Prox. Mes</p>
+                              <p className="text-[8px] opacity-80">{format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1), 'MMMM', { locale: es })}</p>
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-emerald-700 font-bold italic text-center">Inscrito: {formData.enrollmentMonth !== undefined ? MONTH_NAMES[formData.enrollmentMonth] : '-'} {formData.enrollmentYear}</p>
+                        )}
+                      </div>
+
+                      <div>
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Código de Registro *</label>
+                         <input
+                            required
+                            maxLength={5}
+                            value={formData.registrationCode}
+                            onChange={(e) => setFormData({...formData, registrationCode: e.target.value.replace(/\D/g, '')})}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-950 rounded-lg text-white font-mono font-black text-center text-lg tracking-[0.2em] shadow-inner"
+                         />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloque 3: Contacto y SAT */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                       <Mail size={14} className="text-slate-600" />
+                       <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.1em]">Contacto y Fiscal</span>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[10px] font-black text-blue-600 uppercase ml-1">Correo Acceso Padres *</label>
+                          {editingStudent && formData.parentEmail && (
+                            <button
+                              type="button"
+                              onClick={() => handleResendEmail(editingStudent)}
+                              disabled={sendingEmailId === editingStudent.id}
+                              className="flex items-center gap-1 text-[9px] font-black text-blue-600 hover:text-blue-800 uppercase transition-all"
+                            >
+                              {sendingEmailId === editingStudent.id ? (
+                                <div className="w-2 h-2 border border-blue-600 border-t-white rounded-full animate-spin" />
+                              ) : (
+                                <Mail size={10} />
+                              )}
+                              Reenviar Invitación
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="email"
+                          required
+                          value={formData.parentEmail}
+                          onChange={(e) => setFormData({...formData, parentEmail: e.target.value})}
+                          className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg focus:bg-white focus:border-blue-600 outline-none text-xs font-bold"
+                          placeholder="obligatorio para el portal"
+                        />
+                      </div>
+                      
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <ShieldCheck size={12} className="text-slate-400" />
+                          <span className="text-[9px] font-black text-slate-500 uppercase italic">Facturación CFDI 4.0</span>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">RFC</label>
+                          <input
+                            value={formData.rfc}
+                            onChange={(e) => setFormData({...formData, rfc: e.target.value.toUpperCase()})}
+                            className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs font-bold uppercase outline-none focus:border-slate-900"
+                            placeholder="XAXX010101000"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Régimen Fiscal</label>
+                          <select
+                            value={formData.taxSystem}
+                            onChange={(e) => setFormData({...formData, taxSystem: e.target.value})}
+                            className="w-full px-3 py-1.5 border border-slate-200 rounded text-[10px] font-bold outline-none focus:border-slate-900"
+                          >
+                            <option value="605">605 - Sueldos y Salarios</option>
+                            <option value="601">601 - General Personas Morales</option>
+                            <option value="616">616 - Sin obligaciones</option>
+                            <option value="626">626 - RESICO</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </form>
+
+              {/* Botonera de Acción */}
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">
+                  * Todos los campos identitarios son obligatorios para el sistema.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 hover:text-slate-900 transition-all"
+                  >
+                    Descartar
+                  </button>
+                  <button
+                    type="submit"
+                    form="student-form"
+                    className="px-6 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-lg shadow-slate-200 flex items-center gap-2"
+                  >
+                    {editingStudent ? <Edit2 size={12} /> : <Check size={12} />}
+                    {editingStudent ? 'Actualizar' : 'Finalizar Alta'}
+                  </button>
+                </div>
               </div>
-            </form>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* History Modal */}
       {isHistoryModalOpen && selectedStudent && (
@@ -814,6 +1117,77 @@ export default function Students() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Error por Duplicado */}
+      <AnimatePresence>
+        {duplicateError && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDuplicateError(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-red-100"
+            >
+              <div className="p-8 text-center">
+                <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <AlertCircle size={40} />
+                </div>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">¡Alumno ya existe!</h3>
+                <p className="text-sm text-slate-500 leading-relaxed mb-6">
+                  Hemos detectado que ya existe un expediente activo con estos datos.
+                </p>
+                
+                <div className="bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100 text-left">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Expediente Coincidente:</p>
+                  <p className="text-sm font-bold text-slate-900 uppercase">{duplicateError.name}</p>
+                  <p className="text-[10px] font-mono text-slate-500 mt-1">{duplicateError.curp}</p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDuplicateError(null)}
+                    className="flex-1 px-6 py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-lg shadow-slate-200"
+                  >
+                    Entendido
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      {/* Toast de Éxito Correo */}
+      <AnimatePresence>
+        {showEmailSuccess && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 100 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 100 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-slate-950 text-white px-6 py-4 rounded-2xl shadow-2xl border border-slate-800"
+          >
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white shrink-0">
+              <Check size={20} />
+            </div>
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-widest leading-none mb-1">¡Enviado!</p>
+              <p className="text-[10px] text-slate-400 font-bold">El correo ha sido reenviado con éxito al padre de familia.</p>
+            </div>
+            <div className="ml-4 pl-4 border-l border-slate-800">
+               <button onClick={() => setShowEmailSuccess(false)} className="text-slate-500 hover:text-white transition-colors">
+                 <X size={16} />
+               </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

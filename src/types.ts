@@ -2,9 +2,15 @@ import { Timestamp } from 'firebase/firestore';
 
 export interface Student {
   id: string;
-  name: string;
-  lastName: string;
+  name: string; // Used for Given Names
+  lastName: string; // Used for Paternal Last Name
+  motherLastName?: string; // Maternal Last Name
+  birthDate?: string; // YYYY-MM-DD
+  gender?: 'H' | 'M'; // Hombre / Mujer
+  birthState?: string; // 2-letter state code
   curp?: string;
+  enrollmentMonth?: number; // 0-11
+  enrollmentYear?: number;
   email?: string;
   phone?: string;
   parentEmail?: string; // Link to parent user
@@ -131,6 +137,7 @@ export interface Enrollment {
   level: string;
   birthPlaceCity: string;
   birthPlaceState: string;
+  birthPlaceStateCode?: string; // 2-letter state code for CURP
   birthDate: string;
   age: number;
   gender: 'Hombre' | 'Mujer';
@@ -284,6 +291,8 @@ export interface AppSettings {
   visitorQrCodeLabel?: string;
   visitorQrCodeDescription?: string;
   visitorSuccessTimeout?: number; // Seconds to show success screen
+  welcomeEmailSubject?: string;
+  welcomeEmailBody?: string;
 }
 
 export interface Subject {

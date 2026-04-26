@@ -18,7 +18,7 @@ export interface StudentDebtStatus {
   nextTuition: Debt | null;
 }
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
@@ -56,6 +56,13 @@ export function calculateStudentDebts(
   });
 
   chronologicalMonths.forEach(({ monthIndex, year }) => {
+    // Only consider months on or after enrollment date
+    if (student.enrollmentYear !== undefined && student.enrollmentMonth !== undefined) {
+      if (year < student.enrollmentYear || (year === student.enrollmentYear && monthIndex < student.enrollmentMonth)) {
+        return;
+      }
+    }
+
     const isPastOrCurrent = (year < currentYear) || (year === currentYear && monthIndex <= currentMonth);
     const conceptToFind = `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year}`;
     

@@ -3,7 +3,7 @@ import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2 } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -12,6 +12,7 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import { calculateStudentDebts } from '../lib/paymentUtils';
+import { calculateCURP, STATES } from '../lib/studentUtils';
 import { createRoot } from 'react-dom/client';
 
 export default function AcademicControl() {
@@ -126,7 +127,11 @@ export default function AcademicControl() {
 
         await addDoc(collection(db, 'students'), {
           name: enrol.studentName,
-          lastName: `${enrol.studentLastName} ${enrol.studentMotherLastName}`,
+          lastName: enrol.studentLastName,
+          motherLastName: enrol.studentMotherLastName,
+          birthDate: enrol.birthDate,
+          gender: enrol.gender === 'Hombre' ? 'H' : 'M',
+          birthState: enrol.birthPlaceStateCode || '', 
           curp: enrol.curp,
           email: enrol.fatherEmail || enrol.motherEmail || '',
           phone: enrol.phone,
@@ -154,6 +159,10 @@ export default function AcademicControl() {
     setStudentFormData({
       name: student.name,
       lastName: student.lastName,
+      motherLastName: student.motherLastName || '',
+      birthDate: student.birthDate || '',
+      gender: student.gender || 'H',
+      birthState: student.birthState || 'MC',
       curp: student.curp,
       level: student.level,
       grade: student.grade,
@@ -162,6 +171,24 @@ export default function AcademicControl() {
       phone: student.phone
     });
   };
+
+  // Auto-calculate CURP in edit modal
+  useEffect(() => {
+    if (editingStudent && studentFormData.name && studentFormData.lastName && studentFormData.birthDate && studentFormData.gender && studentFormData.birthState) {
+      const calculatedToken = calculateCURP({
+        firstName: studentFormData.name,
+        lastName: studentFormData.lastName,
+        motherLastName: studentFormData.motherLastName,
+        birthDate: studentFormData.birthDate,
+        gender: studentFormData.gender as 'H' | 'M',
+        birthState: studentFormData.birthState
+      });
+      
+      if (calculatedToken && (!studentFormData.curp || studentFormData.curp.slice(0, 16) !== calculatedToken)) {
+        setStudentFormData(prev => ({ ...prev, curp: calculatedToken + (prev.curp?.slice(16) || '') }));
+      }
+    }
+  }, [studentFormData.name, studentFormData.lastName, studentFormData.motherLastName, studentFormData.birthDate, studentFormData.gender, studentFormData.birthState, editingStudent]);
 
   const handleSaveStudent = async () => {
     if (!editingStudent) return;
@@ -747,11 +774,60 @@ export default function AcademicControl() {
                   value={studentFormData.name} 
                   onChange={(e: any) => setStudentFormData({...studentFormData, name: e.target.value})} 
                 />
-                <FormInput 
-                  label="Apellidos" 
-                  value={studentFormData.lastName} 
-                  onChange={(e: any) => setStudentFormData({...studentFormData, lastName: e.target.value})} 
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <FormInput 
+                    label="Paterno" 
+                    value={studentFormData.lastName} 
+                    onChange={(e: any) => setStudentFormData({...studentFormData, lastName: e.target.value})} 
+                  />
+                  <FormInput 
+                    label="Materno" 
+                    value={studentFormData.motherLastName} 
+                    onChange={(e: any) => setStudentFormData({...studentFormData, motherLastName: e.target.value})} 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 pb-2 bg-blue-50/30 p-4 rounded-2xl border border-blue-100/50">
+                     <div className="col-span-2 flex items-center gap-2 mb-1">
+                        <Sparkles size={12} className="text-blue-500" />
+                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Generación de CURP</span>
+                     </div>
+                     <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Fecha de Nacimiento *</label>
+                        <input
+                           type="date"
+                           required
+                           value={studentFormData.birthDate}
+                           onChange={(e) => setStudentFormData({...studentFormData, birthDate: e.target.value})}
+                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Género *</label>
+                        <select
+                           required
+                           value={studentFormData.gender}
+                           onChange={(e) => setStudentFormData({...studentFormData, gender: e.target.value as 'H' | 'M'})}
+                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                        >
+                           <option value="H">Hombre</option>
+                           <option value="M">Mujer</option>
+                        </select>
+                     </div>
+                     <div className="col-span-2">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Estado de Nacimiento *</label>
+                        <select
+                           required
+                           value={studentFormData.birthState}
+                           onChange={(e) => setStudentFormData({...studentFormData, birthState: e.target.value})}
+                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                        >
+                           {STATES.map(s => (
+                              <option key={s.code} value={s.code}>{s.name}</option>
+                           ))}
+                        </select>
+                     </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
