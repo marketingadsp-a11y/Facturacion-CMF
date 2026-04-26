@@ -473,8 +473,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 };
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const [user] = useAuthState(auth);
-  const { loading } = usePermissions();
+  const [user, loading] = useAuthState(auth);
 
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-slate-50">
