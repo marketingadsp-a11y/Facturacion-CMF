@@ -17,8 +17,22 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
+    
+    // Safety timeout: if after 10 seconds we are still loading, force stop loading
+    // and log the current state.
+    const timeoutId = setTimeout(() => {
+      setLoading((current) => {
+        if (current) {
+          console.warn("PermissionsProvider: Loading timeout reached (10s). Forcing loading to false.");
+          return false;
+        }
+        return current;
+      });
+    }, 10000);
 
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      console.log("PermissionsProvider: Auth state changed:", user?.email || 'No user');
+      
       // Clean up previous profile listener if it exists
       if (unsubscribeProfile) {
         unsubscribeProfile();
@@ -28,24 +42,30 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       if (user) {
         unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), (snap) => {
           if (snap.exists()) {
+            console.log("PermissionsProvider: Profile found");
             setUserProfile({ id: snap.id, ...snap.data() } as AppUser);
           } else {
+            console.log("PermissionsProvider: No profile document exists for this user");
             setUserProfile(null);
           }
           setLoading(false);
+          clearTimeout(timeoutId);
         }, (error) => {
-          console.error("Error fetching user profile:", error);
+          console.error("PermissionsProvider: Error fetching user profile:", error);
           setLoading(false);
+          clearTimeout(timeoutId);
         });
       } else {
         setUserProfile(null);
         setLoading(false);
+        clearTimeout(timeoutId);
       }
     });
 
     return () => {
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
+      clearTimeout(timeoutId);
     };
   }, []);
 
