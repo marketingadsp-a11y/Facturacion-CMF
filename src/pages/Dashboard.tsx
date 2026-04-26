@@ -592,7 +592,7 @@ export default function Dashboard() {
           </div>
 
           {/* Chart Section */}
-          {(hasPermission('payments', 'view') || hasPermission('expenses', 'view')) && (
+          {(hasPermission('payments', 'view') || hasPermission('expenses', 'view')) && !loading && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -619,56 +619,62 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="h-[260px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#020617" stopOpacity={0.05}/>
-                        <stop offset="95%" stopColor="#020617" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 9, fontWeight: 900, fill: '#64748b' }}
-                      dy={10}
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }}
-                      tickFormatter={(value) => `$${value}`}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        borderRadius: '8px', 
-                        border: '1px solid #e2e8f0', 
-                        fontSize: '11px',
-                        fontWeight: '900',
-                        color: '#0f172a',
-                        textTransform: 'uppercase'
-                      }} 
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="ingresos" 
-                      stroke="#020617" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#colorIngresos)" 
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="gastos" 
-                      stroke="#94a3b8" 
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
-                      fill="transparent" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={100}>
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#020617" stopOpacity={0.05}/>
+                          <stop offset="95%" stopColor="#020617" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }}
+                        dy={10}
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }}
+                        tickFormatter={(value) => `$${value}`}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          borderRadius: '8px', 
+                          border: '1px solid #e2e8f0', 
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          color: '#0f172a',
+                          textTransform: 'uppercase'
+                        }} 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="ingresos" 
+                        stroke="#020617" 
+                        strokeWidth={2}
+                        fillOpacity={1} 
+                        fill="url(#colorIngresos)" 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="gastos" 
+                        stroke="#94a3b8" 
+                        strokeWidth={1.5}
+                        strokeDasharray="4 4"
+                        fill="transparent" 
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Cargando datos financieros...</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}

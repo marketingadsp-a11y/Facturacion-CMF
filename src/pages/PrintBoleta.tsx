@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
 import ReportCardPDF from '../components/ReportCardPDF';
 import { PDFViewer } from '@react-pdf/renderer';
+import { GraduationCap, Clock } from 'lucide-react';
 
 export default function PrintBoleta() {
   const { studentId } = useParams();
@@ -79,10 +80,39 @@ export default function PrintBoleta() {
     );
   }
 
-  if (!student || !cycle) {
+  if (!student) {
     return (
-      <div className="h-screen flex items-center justify-center p-6 text-center bg-white text-slate-500">
-        <p>No se pudo cargar la información del alumno o no hay ciclo activo para mostrar la boleta.</p>
+      <div className="h-screen flex flex-col items-center justify-center p-6 text-center bg-white text-slate-500">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+          <GraduationCap size={32} className="text-slate-300" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Alumno no encontrado</h2>
+        <p>No se pudo cargar la información del alumno con ID: {studentId}</p>
+        <button 
+          onClick={() => window.close()}
+          className="mt-6 px-6 py-2 bg-slate-900 text-white rounded-lg font-bold"
+        >
+          Cerrar Ventana
+        </button>
+      </div>
+    );
+  }
+
+  if (!cycle) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center p-6 text-center bg-white text-slate-500">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+          <Clock size={32} className="text-slate-300" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Ciclo Escolar no encontrado</h2>
+        <p>No hay un ciclo escolar activo configurado en el sistema o el ciclo actual no es válido.</p>
+        <p className="text-xs mt-2">Por favor configure el ciclo escolar actual en Ajustes &gt; Ciclos.</p>
+        <button 
+          onClick={() => window.close()}
+          className="mt-6 px-6 py-2 bg-slate-900 text-white rounded-lg font-bold"
+        >
+          Cerrar Ventana
+        </button>
       </div>
     );
   }

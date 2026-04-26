@@ -1,22 +1,13 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Font } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet } from '@react-pdf/renderer';
 import { TimeLog } from '../types';
 import { format, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-Font.register({
-  family: 'Inter',
-  fonts: [
-    { src: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.ttf', fontWeight: 400 },
-    { src: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.ttf', fontWeight: 700 },
-    { src: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-900-normal.ttf', fontWeight: 900 }
-  ]
-});
-
 const styles = StyleSheet.create({
-  page: { padding: 30, backgroundColor: '#ffffff', fontFamily: 'Inter' },
+  page: { padding: 30, backgroundColor: '#ffffff', fontFamily: 'Helvetica' },
   headerDiv: { marginBottom: 20, borderBottomWidth: 2, borderBottomColor: '#1e293b', paddingBottom: 10 },
-  schoolName: { fontSize: 20, fontWeight: 900, color: '#0f172a' },
+  schoolName: { fontSize: 20, fontWeight: 'bold', color: '#0f172a' },
   title: { fontSize: 14, fontWeight: 700, color: '#475569', marginTop: 4 },
   dateText: { fontSize: 10, color: '#64748b', marginTop: 4 },
   table: { width: '100%', borderStyle: 'solid', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 4 },
@@ -26,7 +17,7 @@ const styles = StyleSheet.create({
   colEntrada: { width: '20%', padding: 6, borderRightWidth: 1, borderRightColor: '#e2e8f0' },
   colSalida: { width: '20%', padding: 6, borderRightWidth: 1, borderRightColor: '#e2e8f0' },
   colTotal: { width: '25%', padding: 6 },
-  headerText: { fontSize: 9, fontWeight: 900, color: '#334155', textTransform: 'uppercase' },
+  headerText: { fontSize: 9, fontWeight: 'bold', color: '#334155', textTransform: 'uppercase' },
   cellText: { fontSize: 9, color: '#475569' },
   cellTextBold: { fontSize: 9, fontWeight: 700, color: '#0f172a' }
 });

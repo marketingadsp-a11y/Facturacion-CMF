@@ -14,7 +14,6 @@ import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import OfficialListPDF from '../components/OfficialListPDF';
 import { calculateStudentDebts } from '../lib/paymentUtils';
 import { calculateCURP, STATES } from '../lib/studentUtils';
-import { createRoot } from 'react-dom/client';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();

@@ -1,22 +1,12 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
 import { Student, AppSettings } from '../types';
-
-// Register fonts
-Font.register({
-  family: 'Inter',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiA.woff2', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiA.woff2', fontWeight: 700 },
-    { src: 'https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuI6fAZ9hiA.woff2', fontWeight: 900 },
-  ],
-});
 
 const styles = StyleSheet.create({
   page: {
     padding: 40,
     backgroundColor: '#FFFFFF',
-    fontFamily: 'Inter',
+    fontFamily: 'Helvetica',
   },
   header: {
     flexDirection: 'row',
@@ -38,7 +28,7 @@ const styles = StyleSheet.create({
   },
   schoolName: {
     fontSize: 16,
-    fontWeight: 900,
+    fontWeight: 'bold',
     color: '#0F172A',
     textTransform: 'uppercase',
   },
@@ -56,7 +46,7 @@ const styles = StyleSheet.create({
   },
   titleMain: {
     fontSize: 12,
-    fontWeight: 900,
+    fontWeight: 'bold',
     color: '#0F172A',
     textTransform: 'uppercase',
     letterSpacing: 2,
@@ -85,7 +75,7 @@ const styles = StyleSheet.create({
   tableHeaderCell: {
     padding: 8,
     fontSize: 8,
-    fontWeight: 900,
+    fontWeight: 'bold',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -180,11 +170,11 @@ export default function OfficialListPDF({ students, settings, level, grade, grou
           
           {students.map((student, index) => (
             <View key={student.id} style={[styles.tableRow, index % 2 === 1 ? styles.tableRowEven : {}]}>
-              <Text style={[styles.tableCell, styles.colNo, { fontWeight: 700 }]}>{index + 1}</Text>
-              <Text style={[styles.tableCell, styles.colName, { fontWeight: 700, textTransform: 'uppercase' }]}>
+              <Text style={[styles.tableCell, styles.colNo, { fontWeight: 'bold' }]}>{index + 1}</Text>
+              <Text style={[styles.tableCell, styles.colName, { fontWeight: 'bold', textTransform: 'uppercase' }]}>
                 {student.lastName} {student.motherLastName || ''} {student.name}
               </Text>
-              <Text style={[styles.tableCell, styles.colCurp, { fontStyle: 'italic', fontSize: 8 }]}>
+              <Text style={[styles.tableCell, styles.colCurp, { fontSize: 8 }]}>
                 {student.curp || 'N/A'}
               </Text>
             </View>
