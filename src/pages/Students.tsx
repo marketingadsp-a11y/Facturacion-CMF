@@ -247,16 +247,29 @@ export default function Students() {
         return;
       }
 
-      // Check if registrationCode already exists for another student (NOT a sibling)
-      const codeExists = students.some(s => 
+      let finalParentEmail = formData.parentEmail.toLowerCase().trim();
+
+      // Check if registrationCode already exists for another student
+      const existingWithCode = students.find(s => 
         s.registrationCode === formData.registrationCode && 
-        (!editingStudent || s.id !== editingStudent.id) &&
-        s.parentEmail.toLowerCase().trim() !== formData.parentEmail.toLowerCase().trim()
+        (!editingStudent || s.id !== editingStudent.id)
       );
 
-      if (codeExists) {
-        alert('Este código de registro ya está en uso por otro alumno. Por favor, ingrese un código único.');
-        return;
+      if (existingWithCode) {
+        const confirmLink = window.confirm(
+          `VINCULACIÓN FAMILIAR: El código "${formData.registrationCode}" ya está asignado a ${existingWithCode.name} ${existingWithCode.lastName}.\n\n` +
+          `¿Desea vincular a este nuevo alumno al mismo código? Esto permitirá que el padre vea a ambos hijos con el mismo acceso.`
+        );
+        
+        if (!confirmLink) {
+          return;
+        }
+        
+        // Ensure parent email consistency if they differ
+        if (existingWithCode.parentEmail && existingWithCode.parentEmail.toLowerCase().trim() !== finalParentEmail) {
+          finalParentEmail = existingWithCode.parentEmail.toLowerCase().trim();
+          setFormData(prev => ({ ...prev, parentEmail: existingWithCode.parentEmail }));
+        }
       }
 
       const now = new Date();
@@ -271,7 +284,7 @@ export default function Students() {
 
       let dataToSave = {
         ...formData,
-        parentEmail: formData.parentEmail.toLowerCase().trim(),
+        parentEmail: finalParentEmail,
         enrollmentMonth,
         enrollmentYear,
         updatedAt: serverTimestamp()
