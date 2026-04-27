@@ -310,27 +310,30 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
 // Mail Endpoint using Resend
 app.post('/api/mail/welcome', async (req, res) => {
   const { to, subject, body } = req.body;
-  const apiKey = process.env.RESEND_API_KEY;
-
-  if (!apiKey) {
-    console.error('RESEND_API_KEY not configured in environment');
-    return res.status(500).json({ error: 'Configuración de correo no disponible.' });
-  }
 
   try {
-    // Get sender from settings
+    // Get sender and API key from settings
     let fromEmail = 'Control Escolar <onboarding@resend.dev>';
+    let apiKey = process.env.RESEND_API_KEY;
+
     try {
       const db = getDb();
       const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
       if (settingsSnap.exists()) {
-        const mailFrom = settingsSnap.data()?.mailFrom;
-        if (mailFrom) {
-          fromEmail = mailFrom;
+        const data = settingsSnap.data();
+        if (data?.mailFrom) {
+          fromEmail = data.mailFrom;
+        }
+        if (data?.resendApiKey) {
+          apiKey = data.resendApiKey;
         }
       }
     } catch (e) {
-      console.warn('Could not fetch mailFrom from settings, using default:', e);
+      console.warn('Could not fetch mail settings from Firestore, using defaults:', e);
+    }
+
+    if (!apiKey) {
+      return res.status(500).json({ error: 'No Resend API Key configured. Please add it in settings or environment variables.' });
     }
 
     const response = await fetch('https://api.resend.com/emails', {

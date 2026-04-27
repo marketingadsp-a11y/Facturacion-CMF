@@ -611,16 +611,6 @@ export default function Settings() {
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium leading-relaxed transition-all focus:bg-white resize-none font-mono"
                         />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Remitente Personalizado (Email)</label>
-                        <input
-                          value={settings.mailFrom || ''}
-                          onChange={(e) => setSettings({...settings, mailFrom: e.target.value})}
-                          placeholder="onboarding@resend.dev"
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
-                        />
-                        <p className="text-[9px] text-slate-400 mt-2 font-medium">Debe ser un dominio verificado en Resend para enviar a terceros.</p>
-                      </div>
                     </div>
                     
                     <div className="space-y-4">
@@ -936,6 +926,39 @@ export default function Settings() {
                             onChange={(e) => setSettings({...settings, conektaPublicKey: e.target.value})}
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"
                           />
+                        </div>
+                      </div>
+                   </div>
+
+                   {/* Resend */}
+                   <div className="pt-12 border-t border-slate-100 space-y-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-slate-950 flex items-center justify-center text-white">
+                          <Bell size={16} />
+                        </div>
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest ml-2">Resend Email Gateway</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">API Key</label>
+                          <input
+                            type="password"
+                            value={settings.resendApiKey || ''}
+                            onChange={(e) => setSettings({...settings, resendApiKey: e.target.value})}
+                            placeholder="re_..."
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Remitente Autorizado (From)</label>
+                          <input
+                            type="text"
+                            value={settings.mailFrom || ''}
+                            onChange={(e) => setSettings({...settings, mailFrom: e.target.value})}
+                            placeholder="Escuela <aviso@tudominio.com>"
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                          />
+                          <p className="text-[9px] text-slate-400 mt-2 font-medium">Debe ser un dominio verificado en Resend para que los correos lleguen a los destinatarios.</p>
                         </div>
                       </div>
                    </div>
