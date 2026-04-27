@@ -611,6 +611,16 @@ export default function Settings() {
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium leading-relaxed transition-all focus:bg-white resize-none font-mono"
                         />
                       </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Remitente Personalizado (Email)</label>
+                        <input
+                          value={settings.mailFrom || ''}
+                          onChange={(e) => setSettings({...settings, mailFrom: e.target.value})}
+                          placeholder="onboarding@resend.dev"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                        <p className="text-[9px] text-slate-400 mt-2 font-medium">Debe ser un dominio verificado en Resend para enviar a terceros.</p>
+                      </div>
                     </div>
                     
                     <div className="space-y-4">

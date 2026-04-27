@@ -318,6 +318,21 @@ app.post('/api/mail/welcome', async (req, res) => {
   }
 
   try {
+    // Get sender from settings
+    let fromEmail = 'Control Escolar <onboarding@resend.dev>';
+    try {
+      const db = getDb();
+      const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
+      if (settingsSnap.exists()) {
+        const mailFrom = settingsSnap.data()?.mailFrom;
+        if (mailFrom) {
+          fromEmail = mailFrom;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch mailFrom from settings, using default:', e);
+    }
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -325,7 +340,7 @@ app.post('/api/mail/welcome', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Control Escolar <onboarding@resend.dev>', // Resend testing domain
+        from: fromEmail,
         to,
         subject,
         html: body
