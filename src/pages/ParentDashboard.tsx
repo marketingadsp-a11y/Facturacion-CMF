@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, where, orderBy, doc, getDoc, writeBatch, serverTimestamp, updateDoc, addDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Student, Payment, AppSettings, SchoolCycle, Subject, StudentGrade } from '../types';
+import { Student, Payment, AppSettings, SchoolCycle, Subject, StudentGrade, ScheduleSlot, TeacherSubstitution } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { User, CreditCard, FileText, Download, AlertCircle, CheckCircle2, Loader2, Calendar, LayoutDashboard, History, GraduationCap, X, Save, Wallet, RefreshCw, AlertTriangle, Users, Clock, Bell } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
@@ -33,6 +33,25 @@ const TAX_SYSTEMS = [
   { id: '626', name: 'Régimen Simplificado de Confianza' }
 ];
 
+const DAYS_OF_WEEK = [
+  { id: 1, name: 'Lunes' },
+  { id: 2, name: 'Martes' },
+  { id: 3, name: 'Miércoles' },
+  { id: 4, name: 'Jueves' },
+  { id: 5, name: 'Viernes' },
+];
+
+const DEFAULT_TIME_PERIODS = [
+  { label: '1er Periodo', time: '07:30 - 08:20' },
+  { label: '2do Periodo', time: '08:20 - 09:10' },
+  { label: '3er Periodo', time: '09:10 - 10:00' },
+  { label: 'Receso', time: '10:00 - 10:30', isBreak: true },
+  { label: '4to Periodo', time: '10:30 - 11:20' },
+  { label: '5to Periodo', time: '11:20 - 12:10' },
+  { label: '6to Periodo', time: '12:10 - 13:00' },
+  { label: '7mo Periodo', time: '13:00 - 13:50' },
+];
+
 export default function ParentDashboard() {
   const { userProfile } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -51,7 +70,7 @@ export default function ParentDashboard() {
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [activeTab, setActiveTab] = useState<'hijos' | 'facturas' | 'billing' | 'avisos' | 'grades'>((searchParams.get('tab') as any) || 'hijos');
+  const [activeTab, setActiveTab] = useState<'hijos' | 'facturas' | 'billing' | 'avisos' | 'grades' | 'horarios'>((searchParams.get('tab') as any) || 'hijos');
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([]);
@@ -63,9 +82,24 @@ export default function ParentDashboard() {
     taxSystem: ''
   });
 
+  // Scheduling states for parent portal
+  const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
+  const [substitutions, setSubstitutions] = useState<TeacherSubstitution[]>([]);
+  const [selectedStudentForSchedule, setSelectedStudentForSchedule] = useState<Student | null>(null);
+  const [mobileActiveDay, setMobileActiveDay] = useState<number>(1);
+
+  // Dynamic activePeriods for selected child
+  const activePeriods = useMemo(() => {
+    const levelToUse = selectedStudentForSchedule?.level || '';
+    if (settings?.levelPeriods?.[levelToUse] && settings.levelPeriods[levelToUse].length > 0) {
+      return settings.levelPeriods[levelToUse];
+    }
+    return DEFAULT_TIME_PERIODS;
+  }, [settings, selectedStudentForSchedule]);
+
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'hijos' || tab === 'facturas' || tab === 'billing' || tab === 'avisos' || tab === 'grades') {
+    if (tab === 'hijos' || tab === 'facturas' || tab === 'billing' || tab === 'avisos' || tab === 'grades' || tab === 'horarios') {
       if (tab !== activeTab) setActiveTab(tab as any);
     } else if (!tab && activeTab !== 'hijos') {
       setActiveTab('hijos');
@@ -183,10 +217,50 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'facturas' || tab === 'hijos' || tab === 'billing' || tab === 'avisos' || tab === 'grades') {
+    if (tab === 'facturas' || tab === 'hijos' || tab === 'billing' || tab === 'avisos' || tab === 'grades' || tab === 'horarios') {
       setActiveTab(tab as any);
     }
   }, [searchParams]);
+
+  // Set default selected student for schedule when students load
+  useEffect(() => {
+    if (students.length > 0 && !selectedStudentForSchedule) {
+      setSelectedStudentForSchedule(students[0]);
+    }
+  }, [students, selectedStudentForSchedule]);
+
+  // Subscribe to schedules and today's substitutions
+  useEffect(() => {
+    if (!settings?.currentCycleId) return;
+
+    // Subscribe to schedules
+    const qSchedules = query(
+      collection(db, 'schedules'), 
+      where('cycleId', '==', settings.currentCycleId)
+    );
+    const unsubSchedules = onSnapshot(qSchedules, (snap) => {
+      setSchedules(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleSlot)));
+    }, (error) => {
+      console.error("Error subscribing to parent schedules:", error);
+    });
+
+    // Subscribe to today's substitutions
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const qSubs = query(
+      collection(db, 'substitutions'),
+      where('date', '==', todayStr)
+    );
+    const unsubSubs = onSnapshot(qSubs, (snap) => {
+      setSubstitutions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeacherSubstitution)));
+    }, (error) => {
+      console.error("Error subscribing to parent substitutions:", error);
+    });
+
+    return () => {
+      unsubSchedules();
+      unsubSubs();
+    };
+  }, [settings?.currentCycleId]);
 
   const handleOpenHistory = (student: Student) => {
     setSelectedStudent(student);
@@ -359,6 +433,7 @@ export default function ParentDashboard() {
       // 1. Create a pending payment record in Firestore
       const paymentData = {
         studentId: student.id,
+        cycleId: settings?.currentCycleId || null,
         amount: debt.amount,
         concept: debt.concept,
         date: serverTimestamp(),
@@ -433,6 +508,43 @@ export default function ParentDashboard() {
       console.error("Error acknowledging announcement:", error);
       alert(`No se pudo marcar como enterado. Error: ${error.message}`);
     }
+  };
+
+  const getCellSlot = (dayId: number, periodIndex: number) => {
+    if (!selectedStudentForSchedule) return undefined;
+    return schedules.find(s => {
+      if (s.level !== selectedStudentForSchedule.level ||
+          s.grade !== selectedStudentForSchedule.grade ||
+          s.group !== (selectedStudentForSchedule.group || '') ||
+          s.day !== dayId) {
+        return false;
+      }
+      if (s.periodIndex === periodIndex) return true;
+      // Fallback for old class-only indexing when using the default time periods
+      const isDefault = activePeriods === DEFAULT_TIME_PERIODS;
+      if (isDefault) {
+        const mappedIndex = s.periodIndex < 3 ? s.periodIndex : s.periodIndex + 1;
+        return mappedIndex === periodIndex;
+      }
+      return false;
+    });
+  };
+
+  const getCellSubstitution = (dayId: number, periodIndex: number, slot: ScheduleSlot | undefined) => {
+    if (!slot) return null;
+    const todayDayOfWeek = new Date().getDay(); // 0 = Dom, 1 = Lun, ..., 6 = Sab
+    if (todayDayOfWeek !== dayId) return null;
+
+    return substitutions.find(sub => {
+      if (sub.day !== dayId || sub.absentTeacherId !== slot.teacherId) return false;
+      if (sub.periodIndex === periodIndex) return true;
+      const isDefault = activePeriods === DEFAULT_TIME_PERIODS;
+      if (isDefault) {
+        const mappedIndex = sub.periodIndex < 3 ? sub.periodIndex : sub.periodIndex + 1;
+        return mappedIndex === periodIndex;
+      }
+      return false;
+    });
   };
 
   const unreadAnnouncements = announcements.filter(ann => 
@@ -1140,6 +1252,226 @@ export default function ParentDashboard() {
                   <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
                 </div>
               </div>
+            </div>
+          ) : activeTab === 'horarios' ? (
+            <div className="space-y-6">
+              {/* Selector de Hijo */}
+              {students.length > 1 && (
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-sm font-black text-slate-800 tracking-tight uppercase">Horario de Clases</h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Selecciona el alumno para ver su calendario.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {students.map((st) => (
+                      <button
+                        key={st.id}
+                        onClick={() => setSelectedStudentForSchedule(st)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                          selectedStudentForSchedule?.id === st.id
+                            ? "bg-slate-900 border-slate-900 text-white shadow-md"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        {st.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedStudentForSchedule && (
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  {/* Header del Horario */}
+                  <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-lg shadow-sm">
+                        {selectedStudentForSchedule.name[0]}
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 leading-none">
+                          {selectedStudentForSchedule.name} {selectedStudentForSchedule.lastName}
+                        </h3>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                          {selectedStudentForSchedule.grade} "{selectedStudentForSchedule.group || ''}" • {selectedStudentForSchedule.level}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase bg-white px-3 py-1.5 rounded-xl border border-slate-100">
+                      <Calendar size={14} className="text-slate-400" />
+                      Ciclo Activo: <span className="text-slate-900 font-black">{currentCycle?.name || 'Desconocido'}</span>
+                    </div>
+                  </div>
+
+                  {/* VISTA MÓVIL (Day Tabs + Vertical Period Cards) */}
+                  <div className="md:hidden">
+                    <div className="flex border-b border-slate-100 bg-slate-50/50 p-1 gap-1">
+                      {DAYS_OF_WEEK.map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => setMobileActiveDay(d.id)}
+                          className={cn(
+                            "flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                            mobileActiveDay === d.id
+                              ? "bg-slate-900 text-white shadow-sm"
+                              : "text-slate-500 hover:bg-slate-100"
+                          )}
+                        >
+                          {d.name.substring(0, 3)}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      {activePeriods.map((period, pIdx) => {
+                        if (period.isBreak) {
+                          return (
+                            <div key={`break-mob-${pIdx}`} className="py-2.5 px-4 bg-slate-50 rounded-xl border border-slate-100 text-center flex items-center justify-center gap-2">
+                              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">☕ {period.label} ({period.time})</span>
+                            </div>
+                          );
+                        }
+
+                        const slot = getCellSlot(mobileActiveDay, pIdx);
+                        const sub = getCellSubstitution(mobileActiveDay, pIdx, slot);
+
+                        return (
+                          <div 
+                            key={pIdx}
+                            className={cn(
+                              "p-4 rounded-2xl border transition-all flex items-center justify-between gap-4",
+                              sub ? "bg-rose-50 border-rose-100 shadow-sm" : "bg-white border-slate-100 shadow-sm"
+                            )}
+                          >
+                            <div className="space-y-1">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none">{period.label} ({period.time})</span>
+                              {slot ? (
+                                <>
+                                  <h4 className="text-sm font-bold text-slate-950 leading-tight">{slot.subjectName}</h4>
+                                  <div className="flex flex-col gap-0.5 mt-1">
+                                    <div className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
+                                      <User size={10} className="text-slate-400" />
+                                      {sub ? (
+                                        <>
+                                          <span className="line-through text-slate-400">{slot.teacherName}</span>
+                                          <span className="text-rose-600 font-bold bg-rose-100 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 ml-1">
+                                            {sub.substituteTeacherName}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        slot.teacherName
+                                      )}
+                                    </div>
+                                    {slot.classroom && (
+                                      <p className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
+                                        <Users size={10} className="text-slate-400" />
+                                        Aula: {slot.classroom}
+                                      </p>
+                                    )}
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="text-xs text-slate-300 italic font-medium">Libre / Sin clase asignada</p>
+                              )}
+                            </div>
+                            {sub && (
+                              <span className="bg-rose-600 text-white font-black text-[8px] uppercase tracking-widest px-2 py-1 rounded-md shrink-0 shadow-sm">
+                                Suplencia
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* VISTA ESCRITORIO (Full Weekly Table Grid) */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
+                      <thead>
+                        <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">
+                          <th className="px-6 py-4 w-32 border-r border-slate-100">Horario</th>
+                          {DAYS_OF_WEEK.map(d => (
+                            <th key={d.id} className="px-4 py-4 text-center border-r border-slate-100 last:border-0">{d.name}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {activePeriods.map((period, pIdx) => {
+                          if (period.isBreak) {
+                            return (
+                              <tr key={`break-desk-${pIdx}`} className="bg-slate-50 border-y border-slate-100 text-center">
+                                <td className="px-6 py-3 font-sans border-r border-slate-100">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase leading-none">{period.time}</p>
+                                </td>
+                                <td colSpan={5} className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 italic">
+                                  ☕ {period.label} ☕
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return (
+                            <tr key={pIdx} className="hover:bg-slate-50/20 transition-colors">
+                              <td className="px-6 py-4 bg-slate-50/20 font-sans border-r border-slate-100 align-middle">
+                                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">{period.label}</p>
+                                <p className="text-[9px] text-slate-400 font-bold mt-1 tracking-tight">{period.time}</p>
+                              </td>
+
+                              {DAYS_OF_WEEK.map(day => {
+                                const slot = getCellSlot(day.id, pIdx);
+                                const sub = getCellSubstitution(day.id, pIdx, slot);
+
+                                return (
+                                  <td 
+                                    key={day.id}
+                                    className="px-3 py-3 border-r border-slate-100 last:border-0 align-middle text-center h-24 relative select-none"
+                                  >
+                                    {slot ? (
+                                      <div className={cn(
+                                        "p-2 rounded-xl h-full flex flex-col justify-center items-center relative transition-all border",
+                                        sub 
+                                          ? "bg-rose-50 border-rose-200 shadow-sm" 
+                                          : "bg-white border-slate-100 shadow-sm"
+                                      )}>
+                                        <h4 className="text-[11px] font-black text-slate-950 leading-tight truncate max-w-full uppercase tracking-tight">{slot.subjectName}</h4>
+                                        <div className="text-[9px] text-slate-500 mt-1 truncate max-w-full font-medium">
+                                          {sub ? (
+                                            <>
+                                              <span className="line-through text-slate-400 block">{slot.teacherName}</span>
+                                              <span className="text-rose-600 font-black bg-rose-100 px-1 rounded text-[8px] uppercase tracking-wider mt-0.5 inline-block">
+                                                {sub.substituteTeacherName}
+                                              </span>
+                                            </>
+                                          ) : (
+                                            slot.teacherName
+                                          )}
+                                        </div>
+                                        {slot.classroom && (
+                                          <span className="text-[8px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded mt-1.5 uppercase tracking-wide">
+                                            Aula: {slot.classroom}
+                                          </span>
+                                        )}
+                                        {sub && (
+                                          <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-600 rounded-full animate-pulse shadow-sm" title="Clase sustituida" />
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] text-slate-300 italic font-semibold">—</div>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <section>

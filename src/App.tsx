@@ -37,7 +37,8 @@ import {
   TrendingDown,
   SlidersHorizontal,
   ScrollText,
-  Heart
+  Heart,
+  Calendar
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -57,9 +58,12 @@ import TeacherPortal from './pages/TeacherPortal';
 import Reception from './pages/Reception';
 import ChecadorAdmin from './pages/ChecadorAdmin';
 import ChecadorKiosk from './pages/ChecadorKiosk';
+import ChecadorAlumnos from './pages/ChecadorAlumnos';
+import ChecadorKioskoAlumnos from './pages/ChecadorKioskoAlumnos';
 import PrintBoleta from './pages/PrintBoleta';
 import PublicVisitRegistration from './pages/PublicVisitRegistration';
 import NotFound from './pages/NotFound';
+import Horarios from './pages/Horarios';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -127,6 +131,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const navItems = isParent ? [
     { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
     { name: 'Calificaciones', path: '/?tab=grades', icon: GraduationCap, section: 'dashboard', action: 'view' },
+    { name: 'Horarios', path: '/?tab=horarios', icon: Calendar, section: 'dashboard', action: 'view' },
     { name: 'Avisos', path: '/?tab=avisos', icon: BellRing, section: 'dashboard', action: 'view' },
     { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
     { name: 'Datos Fiscales', path: '/?tab=billing', icon: CreditCard, section: 'dashboard', action: 'view' },
@@ -135,8 +140,10 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Alumnos', path: '/alumnos', icon: UserRound, section: 'students', action: 'view' },
     { name: 'Padres', path: '/padres', icon: Heart, section: 'parents', action: 'view' },
     { name: 'Pagos', path: '/pagos', icon: Banknote, section: 'payments', action: 'view' },
+    { name: 'Horarios', path: '/horarios', icon: Calendar, section: 'controlEscolar', action: 'view' },
     { name: 'Recepción', path: '/recepcion', icon: BellRing, section: 'reception', action: 'view' },
     { name: 'Checador', path: '/checador-admin', icon: UserRound, section: 'timeClock', action: 'view' },
+    { name: 'Checador Alumnos', path: '/checador-alumnos', icon: ClipboardList, section: 'timeClock', action: 'view' },
     { name: 'Control Escolar', path: '/control-escolar', icon: FileBadge, section: 'controlEscolar', action: 'view' },
     { name: 'Docente', path: '/docentes', icon: Presentation, section: 'grading', action: 'view' },
     { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
@@ -508,6 +515,7 @@ const AppContent = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/visita" element={<PublicVisitRegistration />} />
       <Route path="/checador" element={<ChecadorKiosk />} />
+      <Route path="/checador-kiosko-alumnos" element={<ChecadorKioskoAlumnos />} />
       <Route path={`/${enrollmentSlug}`} element={<EnrollmentForm />} />
       {/* Compatibility routes */}
       {enrollmentSlug !== 'inscripcion' && <Route path="/inscripcion" element={<EnrollmentForm />} />}
@@ -526,6 +534,14 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {isParent || !hasPermission('timeClock', 'view') ? <Navigate to="/" /> : <ChecadorAdmin />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/checador-alumnos" 
+        element={
+          <ProtectedRoute>
+            {isParent || !hasPermission('timeClock', 'view') ? <Navigate to="/" /> : <ChecadorAlumnos />}
           </ProtectedRoute>
         } 
       />
@@ -598,6 +614,16 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {isParent ? <Navigate to="/" /> : <TeacherPortal />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/horarios" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Horarios /> : 
+             userProfile?.role === 'Docente' ? <Horarios /> : 
+             !hasPermission('controlEscolar', 'view') ? <Navigate to="/" /> : <Horarios />}
           </ProtectedRoute>
         } 
       />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, orderBy, where, Timestamp, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Employee, TimeLog } from '../types';
+import { Employee, TimeLog, AppUser } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   Users, 
@@ -33,6 +33,7 @@ const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 export default function ChecadorAdmin() {
   const [activeTab, setActiveTab] = useState<'personal' | 'bitacora'>('personal');
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [logs, setLogs] = useState<TimeLog[]>([]);
   const [logDate, setLogDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   
@@ -82,8 +83,14 @@ export default function ChecadorAdmin() {
       setEmployees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
     });
 
+    // Fetch users
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppUser)));
+    });
+
     return () => {
       unsubEmployees();
+      unsubUsers();
       unsubSettings();
     };
   }, []);
@@ -200,67 +207,97 @@ export default function ChecadorAdmin() {
                   <th className="px-6 py-3">Empleado</th>
                   <th className="px-6 py-3">Puesto</th>
                   <th className="px-6 py-3">Biometría</th>
-                  <th className="px-6 py-3">Nacimiento</th>
+                  <th className="px-6 py-3">Usuario y Asignación</th>
                   <th className="px-6 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {employees.map(employee => (
-                  <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs uppercase">
-                          {employee.name.charAt(0)}
+                {employees.map(employee => {
+                  const linkedUser = users.find(u => u.id === employee.id || u.name.toLowerCase().trim() === employee.name.toLowerCase().trim());
+                  return (
+                    <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs uppercase">
+                            {employee.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-slate-900 leading-none">{employee.name}</p>
+                            {linkedUser && (
+                              <p className="text-[10px] text-slate-400 font-bold mt-1 lowercase font-mono">
+                                {linkedUser.email}
+                              </p>
+                            )}
+                            {employee.birthDate && (
+                              <p className="text-[9px] text-slate-400 font-medium mt-1">
+                                🎂 {format(new Date(employee.birthDate + 'T00:00:00'), 'dd MMM yyyy', { locale: es })}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm font-black text-slate-900">{employee.name}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">{employee.position}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {employee.faceDescriptor ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                          <CheckCircle2 size={12} /> Registrada
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded">
-                          <AlertCircle size={12} /> Pendiente
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {employee.birthDate ? (
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
-                          {format(new Date(employee.birthDate + 'T00:00:00'), 'dd MMM yyyy', { locale: es })}
-                        </p>
-                      ) : (
-                        <span className="text-slate-300 italic text-[10px]">No reg.</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {canManage && (
-                        <div className="flex items-center justify-end gap-2">
-                          <button 
-                            onClick={() => openEditModal(employee)}
-                            className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button 
-                            onClick={() => deleteEmployee(employee.id)} 
-                            className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">{employee.position}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {employee.faceDescriptor ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                            <CheckCircle2 size={12} /> Registrada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded">
+                            <AlertCircle size={12} /> Pendiente
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {linkedUser ? (
+                          <div className="space-y-1 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">
+                                {linkedUser.role}
+                              </span>
+                            </div>
+                            {(linkedUser.assignedLevel || linkedUser.assignedGrade || linkedUser.assignedGroup) && (
+                              <p className="text-[9px] text-indigo-600 font-black uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded w-fit">
+                                {linkedUser.assignedLevel} {linkedUser.assignedGrade} "{linkedUser.assignedGroup || ''}"
+                              </p>
+                            )}
+                            {linkedUser.restrictedLevels && linkedUser.restrictedLevels.length > 0 && (
+                              <p className="text-[9px] text-rose-600 font-bold">
+                                Restricciones: {linkedUser.restrictedLevels.join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[10px]">Sin cuenta vinculada</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {canManage && (
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => openEditModal(employee)}
+                              className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-colors"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button 
+                              onClick={() => deleteEmployee(employee.id)} 
+                              className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {employees.length === 0 && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       <div className="py-12 text-center text-slate-400 flex flex-col items-center">
                         <Users size={32} className="opacity-20 mb-3" />
                         <p className="text-[10px] font-black uppercase tracking-widest">No hay personal registrado</p>
@@ -312,27 +349,43 @@ export default function ChecadorAdmin() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {logs.map(log => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <p className="font-mono text-xs text-slate-900 font-bold">
-                          {format(log.timestamp.toDate(), 'HH:mm:ss')}
-                        </p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-black text-slate-900">{log.employeeName}</p>
-                        <p className="text-[10px] font-bold text-slate-500">{log.employeePosition}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={cn(
-                          "px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest",
-                          log.type === 'Entrada' ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"
-                        )}>
-                          {log.type}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {logs.map(log => {
+                    const linkedUserForLog = users.find(u => 
+                      u.id === log.employeeId || 
+                      u.name.toLowerCase().trim() === log.employeeName.toLowerCase().trim()
+                    );
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="font-mono text-xs text-slate-900 font-bold">
+                            {format(log.timestamp.toDate(), 'HH:mm:ss')}
+                          </p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-black text-slate-900">{log.employeeName}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{log.employeePosition}</span>
+                            {linkedUserForLog && (linkedUserForLog.assignedLevel || linkedUserForLog.assignedGrade || linkedUserForLog.assignedGroup) && (
+                              <>
+                                <span className="text-slate-300 text-[9px]">•</span>
+                                <span className="text-[9px] font-black text-indigo-500 uppercase">
+                                  {linkedUserForLog.assignedLevel} {linkedUserForLog.assignedGrade} "{linkedUserForLog.assignedGroup || ''}"
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={cn(
+                            "px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest",
+                            log.type === 'Entrada' ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"
+                          )}>
+                            {log.type}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {logs.length === 0 && (
                     <tr>
                       <td colSpan={3}>

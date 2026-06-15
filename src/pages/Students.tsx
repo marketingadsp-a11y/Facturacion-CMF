@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, Timestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, BookOpen, ReceiptText, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, BookOpen, ReceiptText, ShieldCheck, IdCard, Image as ImageIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
@@ -13,8 +13,9 @@ import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES } from '../lib/studentUtils';
 import { sendWelcomeEmail } from '../services/mailService';
 import { motion, AnimatePresence } from 'motion/react';
-import { PDFDownloadLink } from '@react-pdf/renderer';
+import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
+import StudentCredentialPDF from '../components/StudentCredentialPDF';
 
 export default function Students() {
   const navigate = useNavigate();
@@ -38,6 +39,7 @@ export default function Students() {
   const [codeModalStudent, setCodeModalStudent] = useState<Student | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [showEmailSuccess, setShowEmailSuccess] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -60,6 +62,8 @@ export default function Students() {
     zipCode: '',
     taxSystem: '605',
     registrationCode: '',
+    photoUrl: '',
+    matricula: '',
     startPayment: 'current' as 'current' | 'next',
     enrollmentMonth: undefined as number | undefined,
     enrollmentYear: undefined as number | undefined
@@ -116,6 +120,23 @@ export default function Students() {
     };
   }, []);
 
+  const handleDownloadCredential = async (student: Student) => {
+    try {
+      const blob = await pdf(<StudentCredentialPDF student={student} settings={settings} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Credencial_${student.lastName}_${student.name}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generando credencial:', error);
+      alert('Hubo un error al generar la credencial.');
+    }
+  };
+
   const currentCycle = cycles.find(c => c.id === settings?.currentCycleId) || null;
 
   const generateRegistrationCode = () => {
@@ -123,6 +144,17 @@ export default function Students() {
     let attempts = 0;
     while (students.some(s => s.registrationCode === code) && attempts < 10) {
       code = Math.floor(10000 + Math.random() * 90000).toString();
+      attempts++;
+    }
+    return code;
+  };
+
+  const generateMatriculaCode = (level: string) => {
+    const prefix = settings?.matriculaPrefixes?.[level] || '';
+    let code = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+    let attempts = 0;
+    while (students.some(s => s.matricula === code) && attempts < 20) {
+      code = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
       attempts++;
     }
     return code;
@@ -151,6 +183,8 @@ export default function Students() {
         zipCode: student.zipCode || '',
         taxSystem: student.taxSystem || '605',
         registrationCode: student.registrationCode || generateRegistrationCode(),
+        photoUrl: student.photoUrl || '',
+        matricula: student.matricula || '',
         startPayment: 'current',
         enrollmentMonth: student.enrollmentMonth,
         enrollmentYear: student.enrollmentYear
@@ -177,6 +211,8 @@ export default function Students() {
         zipCode: '', 
         taxSystem: '605', 
         registrationCode: generateRegistrationCode(),
+        photoUrl: '',
+        matricula: generateMatriculaCode('Primaria'),
         startPayment: 'current',
         enrollmentMonth: undefined,
         enrollmentYear: undefined
@@ -209,6 +245,20 @@ export default function Students() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Check for matrícula conflict
+      const hasMatriculaConflict = formData.matricula && students.some(s => 
+        s.matricula === formData.matricula && (!editingStudent || s.id !== editingStudent.id)
+      );
+
+      if (hasMatriculaConflict) {
+        const conflictingStudent = students.find(s => s.matricula === formData.matricula);
+        alert(
+          `CONFLICTO DE MATRÍCULA: La matrícula "${formData.matricula}" ya está asignada a ${conflictingStudent?.name} ${conflictingStudent?.lastName}.\n` +
+          `Por favor, asigne una matrícula diferente.`
+        );
+        return;
+      }
+
       const isDuplicate = students.some(s => {
         // Skip check for the student currently being edited
         if (editingStudent && s.id === editingStudent.id) return false;
@@ -327,6 +377,105 @@ export default function Students() {
     }
   };
 
+  const handleBulkGenerateMatriculas = async () => {
+    const studentsWithoutMatricula = students.filter(s => !s.matricula);
+    
+    if (studentsWithoutMatricula.length === 0) {
+      alert("Todos los alumnos ya cuentan con una matrícula asignada.");
+      return;
+    }
+
+    const confirmGen = window.confirm(
+      `Se generará automáticamente una matrícula para los ${studentsWithoutMatricula.length} alumnos que no la tienen asignada.\n\n` +
+      `¿Desea continuar?`
+    );
+
+    if (!confirmGen) return;
+
+    const usedMatriculas = new Set(students.map(s => s.matricula).filter(Boolean) as string[]);
+    let generatedCount = 0;
+
+    try {
+      const batch = writeBatch(db);
+
+      for (const student of studentsWithoutMatricula) {
+        const level = student.level || 'Primaria';
+        const prefix = settings?.matriculaPrefixes?.[level] || '';
+        
+        let code = '';
+        let attempts = 0;
+        do {
+          code = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+          attempts++;
+        } while (usedMatriculas.has(code) && attempts < 50);
+
+        usedMatriculas.add(code);
+
+        const studentRef = doc(db, 'students', student.id);
+        batch.update(studentRef, {
+          matricula: code,
+          updatedAt: serverTimestamp()
+        });
+        generatedCount++;
+      }
+
+      await batch.commit();
+      alert(`Se han generado e inscrito con éxito ${generatedCount} matrículas para los alumnos.`);
+    } catch (error) {
+      console.error("Error al generar matrículas masivas:", error);
+      alert("Hubo un error al guardar las matrículas masivas.");
+    }
+  };
+
+  const handleBulkReplaceMatriculas = async () => {
+    if (students.length === 0) {
+      alert("No hay alumnos registrados en el sistema.");
+      return;
+    }
+
+    const confirmGen = window.confirm(
+      `¡ATENCIÓN! Se REEMPLAZARÁN y regenerarán las matrículas de los ${students.length} alumnos registrados en el sistema.\n\n` +
+      `ADVERTENCIA: Esta acción invalidará los códigos QR de todas las credenciales impresas con anterioridad.\n\n` +
+      `¿Desea continuar con el reemplazo masivo de matrículas?`
+    );
+
+    if (!confirmGen) return;
+
+    const usedMatriculas = new Set<string>();
+    let generatedCount = 0;
+
+    try {
+      const batch = writeBatch(db);
+
+      for (const student of students) {
+        const level = student.level || 'Primaria';
+        const prefix = settings?.matriculaPrefixes?.[level] || '';
+        
+        let code = '';
+        let attempts = 0;
+        do {
+          code = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+          attempts++;
+        } while (usedMatriculas.has(code) && attempts < 50);
+
+        usedMatriculas.add(code);
+
+        const studentRef = doc(db, 'students', student.id);
+        batch.update(studentRef, {
+          matricula: code,
+          updatedAt: serverTimestamp()
+        });
+        generatedCount++;
+      }
+
+      await batch.commit();
+      alert(`Se han reemplazado e inscrito con éxito ${generatedCount} matrículas para todos los alumnos.`);
+    } catch (error) {
+      console.error("Error al reemplazar matrículas masivas:", error);
+      alert("Hubo un error al reemplazar las matrículas masivas.");
+    }
+  };
+
   const filteredStudents = students.filter(s => {
     const matchesSearch = `${s.name} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.curp?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -362,15 +511,36 @@ export default function Students() {
             </span>
           </h1>
         </div>
-        {hasPermission('students', 'create') && (
-          <button
-            onClick={() => handleOpenModal()}
-            className="bg-slate-950 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-900 transition-all active:scale-95"
-          >
-            <UserPlus size={14} />
-            Nuevo Registro
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {hasPermission('students', 'edit') && (
+            <>
+              <button
+                onClick={handleBulkGenerateMatriculas}
+                className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
+              >
+                <Sparkles size={14} className="text-indigo-600 animate-pulse" />
+                Matrículas (Solo Faltantes)
+              </button>
+              
+              <button
+                onClick={handleBulkReplaceMatriculas}
+                className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-rose-100 transition-all active:scale-95 cursor-pointer animate-pulse"
+              >
+                <Sparkles size={14} className="text-rose-600" />
+                Reemplazar y Regenerar
+              </button>
+            </>
+          )}
+          {hasPermission('students', 'create') && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="bg-slate-950 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-900 transition-all active:scale-95 cursor-pointer"
+            >
+              <UserPlus size={14} />
+              Nuevo Registro
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters - Minimal Utility */}
@@ -464,6 +634,7 @@ export default function Students() {
               <tr className="bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-[0.1em] border-b border-slate-200">
                 <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Apellidos</th>
                 <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Nombre(s)</th>
+                <th className="px-4 py-3 border-r border-slate-100 mono-label uppercase whitespace-nowrap">Matrícula</th>
                 <th className="px-4 py-3 border-r border-slate-100 mono-label uppercase whitespace-nowrap">CURP</th>
                 <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap">Nivel</th>
                 <th className="px-4 py-3 border-r border-slate-100 italic whitespace-nowrap text-center">Grado</th>
@@ -488,6 +659,9 @@ export default function Students() {
                       </td>
                       <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800 group-hover:text-white">
                         {student.name}
+                      </td>
+                      <td className="px-4 py-2 border-r border-slate-100 font-mono text-[9px] font-bold text-slate-700 whitespace-nowrap group-hover:border-slate-800 group-hover:text-slate-200">
+                        {student.matricula || '-'}
                       </td>
                       <td className="px-4 py-2 border-r border-slate-100 font-mono text-[9px] whitespace-nowrap group-hover:border-slate-800 group-hover:text-slate-300">
                         {student.curp || '-'}
@@ -571,22 +745,84 @@ export default function Students() {
                             </button>
                           )}
                           {hasPermission('students', 'viewHistory') && (
-                            <button 
-                              onClick={() => handleOpenHistory(student)}
-                              className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all"
-                              title="Historial"
-                            >
-                              <History size={14} />
-                            </button>
+                            <>
+                              <button 
+                                onClick={() => handleDownloadCredential(student)}
+                                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
+                                title="Credencial PDF"
+                              >
+                                <IdCard size={14} />
+                              </button>
+                              <button 
+                                onClick={() => handleOpenHistory(student)}
+                                className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all"
+                                title="Historial"
+                              >
+                                <History size={14} />
+                              </button>
+                            </>
                           )}
                           {hasPermission('students', 'edit') && (
-                            <button 
-                              onClick={() => handleOpenModal(student)}
-                              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
-                              title="Editar"
-                            >
-                              <Edit2 size={14} />
-                            </button>
+                            <>
+                              <div className="relative inline-block">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    document.getElementById(`direct-photo-upload-${student.id}`)?.click();
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
+                                  title="Subir/Cambiar fotografía"
+                                >
+                                  <ImageIcon size={14} />
+                                </button>
+                                <input 
+                                  id={`direct-photo-upload-${student.id}`}
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={async (e) => {
+                                    e.stopPropagation();
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    if (!settings?.imgbbApiKey) {
+                                      alert("No se ha configurado la API Key de ImgBB en Ajustes.");
+                                      return;
+                                    }
+                                    
+                                    try {
+                                      const fd = new FormData();
+                                      fd.append('image', file);
+                                      const res = await fetch(`https://api.imgbb.com/1/upload?key=${settings.imgbbApiKey}`, {
+                                        method: 'POST',
+                                        body: fd
+                                      });
+                                      if (!res.ok) throw new Error("Error en la respuesta del servidor ImgBB");
+                                      const resData = await res.json();
+                                      if (resData.success && resData.data?.url) {
+                                        await updateDoc(doc(db, 'students', student.id), {
+                                          photoUrl: resData.data.url,
+                                          updatedAt: serverTimestamp()
+                                        });
+                                        alert("Fotografía actualizada con éxito.");
+                                      } else {
+                                        throw new Error(resData.error?.message || "Error al subir la imagen");
+                                      }
+                                    } catch (err: any) {
+                                      console.error("Error subiendo foto:", err);
+                                      alert(`Error al subir fotografía: ${err.message || err}`);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <button 
+                                onClick={() => handleOpenModal(student)}
+                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
+                                title="Editar"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                            </>
                           )}
                           {hasPermission('students', 'delete') && (
                             <button 
@@ -604,7 +840,7 @@ export default function Students() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={11} className="px-6 py-12 text-center text-slate-400 text-sm">
                     No se encontraron alumnos con los filtros seleccionados.
                   </td>
                 </tr>
@@ -665,6 +901,76 @@ export default function Students() {
                     </div>
                     
                     <div className="space-y-3">
+                      {/* Carga de Fotografía de Alumno */}
+                      <div className="flex flex-col items-center justify-center p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Fotografía del Alumno</span>
+                        <div className="relative group w-20 h-24 bg-slate-200 rounded-lg overflow-hidden border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-all">
+                          {formData.photoUrl ? (
+                            <img src={formData.photoUrl} alt="Foto Alumno" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-2 text-slate-400 group-hover:text-blue-500 text-center">
+                              <ImageIcon size={20} className="mb-1" />
+                              <span className="text-[8px] font-bold uppercase">Sin Foto</span>
+                            </div>
+                          )}
+                          
+                          <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all text-white text-[8px] font-black uppercase tracking-tight">
+                            {formData.photoUrl ? 'Cambiar' : 'Subir'}
+                          </div>
+                          
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (!settings?.imgbbApiKey) {
+                                alert("No se ha configurado la API Key de ImgBB en Ajustes.");
+                                return;
+                              }
+                              
+                              setUploadingPhoto(true);
+                              try {
+                                const fd = new FormData();
+                                fd.append('image', file);
+                                const res = await fetch(`https://api.imgbb.com/1/upload?key=${settings.imgbbApiKey}`, {
+                                  method: 'POST',
+                                  body: fd
+                                });
+                                if (!res.ok) throw new Error("Error en la respuesta del servidor ImgBB");
+                                const resData = await res.json();
+                                if (resData.success && resData.data?.url) {
+                                  setFormData(prev => ({ ...prev, photoUrl: resData.data.url }));
+                                } else {
+                                  throw new Error(resData.error?.message || "Error al subir la imagen");
+                                }
+                              } catch (err: any) {
+                                console.error("Error subiendo foto:", err);
+                                alert(`Error al subir fotografía: ${err.message || err}`);
+                              } finally {
+                                setUploadingPhoto(false);
+                              }
+                            }}
+                          />
+                          
+                          {uploadingPhoto && (
+                            <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                        {formData.photoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, photoUrl: '' }))}
+                            className="text-[8px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest hover:underline"
+                          >
+                            Eliminar Foto
+                          </button>
+                        )}
+                      </div>
+
                       <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Nombre(s) *</label>
                         <input
@@ -758,14 +1064,37 @@ export default function Students() {
                         <select
                           required
                           value={formData.level}
-                          onChange={(e) => setFormData({...formData, level: e.target.value})}
+                          onChange={(e) => {
+                            const newLevel = e.target.value;
+                            setFormData(prev => {
+                              const oldLevel = prev.level;
+                              const oldPrefix = settings?.matriculaPrefixes?.[oldLevel] || '';
+                              const isAutoGenerated = !prev.matricula || (oldPrefix && prev.matricula.startsWith(oldPrefix));
+                              
+                              let nextMatricula = prev.matricula;
+                              if (isAutoGenerated && !editingStudent) {
+                                nextMatricula = generateMatriculaCode(newLevel);
+                              }
+                              return { ...prev, level: newLevel, matricula: nextMatricula };
+                            });
+                          }}
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold transition-all"
                         >
                           <option value="">Seleccionar...</option>
-                          {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria']).map(level => (
+                          {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
                             <option key={level} value={level}>{level}</option>
                           ))}
                         </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Matrícula</label>
+                        <input
+                          value={formData.matricula || ''}
+                          onChange={(e) => setFormData({...formData, matricula: e.target.value})}
+                          placeholder="Autogenerada..."
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>

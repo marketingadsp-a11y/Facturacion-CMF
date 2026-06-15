@@ -228,6 +228,7 @@ export default function Payments() {
 
       const paymentData = {
         studentId: formData.studentId,
+        cycleId: settings?.currentCycleId || null,
         amount: total,
         concept: finalConcept,
         paymentMethod: formData.paymentMethod,

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
-import { Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle } from '../types';
+import { Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
 import { 
   Users, 
   BookOpen, 
@@ -24,6 +24,18 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { subscribeToSchedules, subscribeToSubstitutions } from '../services/scheduleService';
+
+const DEFAULT_TIME_PERIODS = [
+  { label: '1er Periodo', time: '07:30 - 08:20', isBreak: false },
+  { label: '2do Periodo', time: '08:20 - 09:10', isBreak: false },
+  { label: '3er Periodo', time: '09:10 - 10:00', isBreak: false },
+  { label: 'Receso', time: '10:00 - 10:30', isBreak: true },
+  { label: '4to Periodo', time: '10:30 - 11:20', isBreak: false },
+  { label: '5to Periodo', time: '11:20 - 12:10', isBreak: false },
+  { label: '6to Periodo', time: '12:10 - 13:00', isBreak: false },
+  { label: '7mo Periodo', time: '13:00 - 13:50', isBreak: false },
+];
 
 export default function TeacherPortal() {
   const { userProfile, hasPermission } = usePermissions();
@@ -32,9 +44,11 @@ export default function TeacherPortal() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'attendance' | 'grading'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'horario'>('attendance');
   const [selectedBimestre, setSelectedBimestre] = useState<Bimestre>(1);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
+  const [substitutions, setSubstitutions] = useState<TeacherSubstitution[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isLocking, setIsLocking] = useState(false);
@@ -46,6 +60,60 @@ export default function TeacherPortal() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const [currentCycleId, setCurrentCycleId] = useState('');
+  const [selectedLevelSchema, setSelectedLevelSchema] = useState('');
+
+  // Dynamic activePeriods for layout
+  const activePeriods = useMemo(() => {
+    if (settings?.levelPeriods?.[selectedLevelSchema] && settings.levelPeriods[selectedLevelSchema].length > 0) {
+      return settings.levelPeriods[selectedLevelSchema];
+    }
+    return DEFAULT_TIME_PERIODS;
+  }, [settings, selectedLevelSchema]);
+
+  // Helper to map and lookup slots
+  const getCellSlot = (dayId: number, periodIndex: number) => {
+    return mySchedules.find(s => {
+      if (s.day !== dayId) return false;
+      if (s.periodIndex === periodIndex) return true;
+      // Fallback for old class-only indexing when using the default time periods
+      const isDefault = activePeriods === DEFAULT_TIME_PERIODS;
+      if (isDefault) {
+        const mappedIndex = s.periodIndex < 3 ? s.periodIndex : s.periodIndex + 1;
+        return mappedIndex === periodIndex;
+      }
+      return false;
+    });
+  };
+
+  // Listen to schedules for current cycle
+  useEffect(() => {
+    if (!currentCycleId) return;
+    const unsub = subscribeToSchedules(currentCycleId, (slots) => {
+      setSchedules(slots);
+    });
+    return unsub;
+  }, [currentCycleId]);
+
+  // Listen to today's substitutions
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const unsub = subscribeToSubstitutions(todayStr, (subs) => {
+      setSubstitutions(subs);
+    });
+    return unsub;
+  }, []);
+
+  // Filter teacher's own schedules
+  const mySchedules = useMemo(() => {
+    if (!userProfile) return [];
+    return schedules.filter(s => s.teacherId === userProfile.id);
+  }, [schedules, userProfile]);
+
+  // Substitutions assigned to the teacher today
+  const mySubstitutionsToday = useMemo(() => {
+    if (!userProfile) return [];
+    return substitutions.filter(sub => sub.substituteTeacherId === userProfile.id);
+  }, [substitutions, userProfile]);
 
   // Fetch settings for cycle
   useEffect(() => {
@@ -54,15 +122,21 @@ export default function TeacherPortal() {
         const data = snap.data() as AppSettings;
         setSettings(data);
         setCurrentCycleId(data.currentCycleId || '');
+        // Initialize schema selection
+        if (userProfile?.assignedLevel) {
+          setSelectedLevelSchema(userProfile.assignedLevel);
+        } else if (data.academicLevels && data.academicLevels.length > 0) {
+          setSelectedLevelSchema(data.academicLevels[0]);
+        }
       }
     });
     return unsub;
-  }, []);
+  }, [userProfile]);
 
   // Fetch subjects
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'subjects'), (snap) => {
-      setSubjects(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject)));
+      setSubjects(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Subject)));
     });
     return unsub;
   }, []);
@@ -91,7 +165,7 @@ export default function TeacherPortal() {
     }
 
     const unsubStudents = onSnapshot(q, (snap) => {
-      setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
+      setStudents(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Student)));
       setLoading(false);
     });
 
@@ -459,6 +533,34 @@ export default function TeacherPortal() {
         </motion.div>
       )}
 
+      {/* Substitution Alerts banner */}
+      {mySubstitutionsToday.length > 0 && (
+        <div className="bg-rose-50 border border-rose-200 p-5 rounded-3xl flex items-start gap-3 text-rose-800 shadow-sm animate-pulse mb-6">
+          <AlertCircle className="shrink-0 mt-0.5 animate-bounce" size={20} />
+          <div>
+            <h3 className="font-black text-xs uppercase tracking-wider">📌 Tienes una Suplencia Hoy</h3>
+            <p className="text-[10px] font-medium leading-relaxed mt-1">
+              Se te ha asignado cubrir las siguientes clases debido a ausencias de docentes:
+            </p>
+            <div className="mt-2 space-y-1">
+              {mySubstitutionsToday.map(sub => {
+                const periodTimes = [
+                  '07:30 - 08:20', '08:20 - 09:10', '09:10 - 10:00', '10:00 - 10:30', 
+                  '10:30 - 11:20', '11:20 - 12:10', '12:10 - 13:00', '13:00 - 13:50'
+                ];
+                const periodLabel = sub.periodIndex < 3 ? `Periodo ${sub.periodIndex + 1}` : `Periodo ${sub.periodIndex + 2}`;
+                const timeStr = sub.periodIndex < 3 ? periodTimes[sub.periodIndex] : periodTimes[sub.periodIndex + 1];
+                return (
+                  <span key={sub.id} className="text-[9px] font-black bg-white/70 border border-rose-100 rounded px-2.5 py-1 inline-block mr-2 mt-1 shadow-sm">
+                    {periodLabel} ({timeStr}) - Cubrir a: {sub.absentTeacherName}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs - Technical Strip */}
       <div className="flex gap-1.5 p-1 bg-slate-100 rounded-md w-fit">
         <button
@@ -478,6 +580,15 @@ export default function TeacherPortal() {
           )}
         >
           <ClipboardList size={14} /> Calificaciones
+        </button>
+        <button
+          onClick={() => setActiveTab('horario')}
+          className={cn(
+            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+            activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+          )}
+        >
+          <Calendar size={14} /> Mi Horario
         </button>
       </div>
 
@@ -646,7 +757,7 @@ export default function TeacherPortal() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'attendance' ? (
         <div className="space-y-4">
           {/* Attendance Controls - Compact */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -761,7 +872,101 @@ export default function TeacherPortal() {
             )}
           </div>
         </div>
-      )}
+      ) : activeTab === 'horario' ? (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-6">
+          <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Mi Horario Semanal</h2>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                Itinerario de clases asignadas en el ciclo activo
+              </p>
+            </div>
+
+            {/* Level Scheme Selector */}
+            {settings?.academicLevels && settings.academicLevels.length > 0 && (
+              <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Esquema:</span>
+                <div className="flex gap-1">
+                  {settings.academicLevels.map(level => (
+                    <button
+                      key={level}
+                      onClick={() => setSelectedLevelSchema(level)}
+                      className={cn(
+                        "px-3 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all",
+                        selectedLevelSchema === level
+                          ? "bg-slate-900 text-white shadow-sm"
+                          : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                      )}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left min-w-[700px] table-fixed">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/50">
+                  <th className="w-[120px] px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider">Periodo / Hora</th>
+                  {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'].map(dayName => (
+                    <th key={dayName} className="px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider text-center">
+                      {dayName}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activePeriods.map((period, pIdx) => {
+                  if (period.isBreak) {
+                    return (
+                      <tr key={`break-${pIdx}`} className="bg-slate-50 text-center border-y border-slate-100">
+                        <td className="px-4 py-2 text-[9px] font-black uppercase text-slate-400">{period.time}</td>
+                        <td colSpan={5} className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-slate-400 italic text-center">
+                          ☕ {period.label} ☕
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={pIdx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/10">
+                      <td className="px-4 py-4 font-sans border-r border-slate-50">
+                        <p className="text-[10px] font-black text-slate-900 leading-none">{period.label}</p>
+                        <p className="text-[8px] text-slate-400 font-bold mt-1">{period.time}</p>
+                      </td>
+                      {[1, 2, 3, 4, 5].map(dayId => {
+                        const slot = getCellSlot(dayId, pIdx);
+                        return (
+                          <td key={dayId} className="px-2 py-2 border-r border-slate-50 last:border-0 h-20 text-center align-middle">
+                            {slot ? (
+                              <div className="p-2 bg-indigo-50/50 border border-indigo-100 text-indigo-900 rounded-xl h-full flex flex-col justify-center items-center animate-in fade-in duration-300">
+                                <span className="text-[9px] font-black uppercase tracking-tight text-indigo-700">{slot.subjectName}</span>
+                                <span className="text-[8px] font-bold text-slate-500 mt-1">
+                                  {slot.level} {slot.grade}°{slot.group}
+                                </span>
+                                {slot.classroom && (
+                                  <span className="text-[7px] text-slate-400 font-bold uppercase mt-1.5 bg-white border border-slate-100 px-1.5 py-0.5 rounded shadow-sm">
+                                    📍 {slot.classroom}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[8px] text-slate-300 uppercase tracking-widest font-black">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

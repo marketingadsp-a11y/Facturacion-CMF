@@ -23,12 +23,15 @@ export interface Student {
   zipCode?: string;
   taxSystem?: string;
   registrationCode?: string; // 5-digit code for parent registration
+  photoUrl?: string;
+  matricula?: string;
   createdAt: Timestamp;
 }
 
 export interface Payment {
   id: string;
   studentId: string;
+  cycleId?: string;
   amount: number;
   concept: string;
   paymentMethod: string;
@@ -190,11 +193,14 @@ export interface AppUser {
   id: string;
   email: string;
   name: string;
+  phone?: string;
   role: UserRole;
   permissions: AppPermissions;
   assignedLevel?: string;
   assignedGrade?: string;
   assignedGroup?: string;
+  maxHoursPerWeek?: number;
+  maxHoursPerDay?: number;
   // Granular restrictions for Control Escolar or other roles
   restrictedLevels?: string[];
   restrictedGrades?: string[];
@@ -296,6 +302,11 @@ export interface AppSettings {
   resendApiKey?: string;
   mailFrom?: string;
   levelCCT?: Record<string, string>;
+  credentialTerms?: string;
+  imgbbApiKey?: string;
+  matriculaPrefixes?: Record<string, string>;
+  levelPeriods?: Record<string, { label: string; time: string; isBreak?: boolean }[]>;
+  studentAttendanceTrackExit?: boolean;
 }
 
 export interface Subject {
@@ -375,3 +386,34 @@ export interface TimeLog {
   type: 'Entrada' | 'Salida';
   timestamp: Timestamp;
 }
+
+export interface ScheduleSlot {
+  id?: string;
+  cycleId: string;
+  level: string; // Preescolar, Primaria, Secundaria, etc.
+  grade: string; // 1ro, 2do, etc.
+  group: string; // A, B, etc.
+  day: number; // 1 = Lunes, 2 = Martes, 3 = Miércoles, 4 = Jueves, 5 = Viernes
+  periodIndex: number; // 0-indexed (e.g. 0 to 6 for 7 periods)
+  subjectId: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  classroom?: string;
+  updatedAt?: Timestamp;
+}
+
+export interface TeacherSubstitution {
+  id?: string;
+  date: string; // YYYY-MM-DD
+  day: number;
+  periodIndex: number;
+  absentTeacherId: string;
+  absentTeacherName: string;
+  substituteTeacherId: string;
+  substituteTeacherName: string;
+  reason?: string;
+  status: 'Pendiente' | 'Confirmada' | 'Realizada';
+  createdAt: Timestamp;
+}
+

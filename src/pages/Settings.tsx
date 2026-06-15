@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs, getDoc, writeBatch, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement, BimestreLock } from '../types';
@@ -66,7 +66,10 @@ export default function Settings() {
     receptionReasons: ['Información', 'Inscripción', 'Pago', 'Otro'],
     receptionAreas: ['Dirección', 'Administración', 'Control Escolar', 'Finanzas'],
     registrationInstructions: '1. Ingrese a la plataforma oficial de padres de familia.\n2. Seleccione la opción "Registrarse" o "Vincular Alumno".\n3. Ingrese su correo electrónico personal y cree una contraseña segura.\n4. Cuando se le solicite, ingrese el CÓDIGO DE REGISTRO que aparece arriba.\n5. Una vez validado, podrá consultar calificaciones, estados de cuenta y avisos institucionales.',
-    pdfFooter: 'GENERADO POR EL SISTEMA DE GESTIÓN ESCOLAR'
+    pdfFooter: 'GENERADO POR EL SISTEMA DE GESTIÓN ESCOLAR',
+    credentialTerms: '',
+    imgbbApiKey: '',
+    matriculaPrefixes: {}
   });
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +80,65 @@ export default function Settings() {
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [userRoleFilter, setUserRoleFilter] = useState<'Todos' | UserRole>('Todos');
+
+  const [selectedScheduleLevel, setSelectedScheduleLevel] = useState<string>('');
+
+  const DEFAULT_TIME_PERIODS = useMemo(() => [
+    { label: '1er Periodo', time: '07:30 - 08:20', isBreak: false },
+    { label: '2do Periodo', time: '08:20 - 09:10', isBreak: false },
+    { label: '3er Periodo', time: '09:10 - 10:00', isBreak: false },
+    { label: 'Receso', time: '10:00 - 10:30', isBreak: true },
+    { label: '4to Periodo', time: '10:30 - 11:20', isBreak: false },
+    { label: '5to Periodo', time: '11:20 - 12:10', isBreak: false },
+    { label: '6to Periodo', time: '12:10 - 13:00', isBreak: false },
+    { label: '7mo Periodo', time: '13:00 - 13:50', isBreak: false },
+  ], []);
+
+  useEffect(() => {
+    if (settings.academicLevels && settings.academicLevels.length > 0 && !selectedScheduleLevel) {
+      setSelectedScheduleLevel(settings.academicLevels[0]);
+    }
+  }, [settings.academicLevels, selectedScheduleLevel]);
+
+  const currentPeriods = useMemo(() => {
+    if (!selectedScheduleLevel) return [];
+    return settings.levelPeriods?.[selectedScheduleLevel] || DEFAULT_TIME_PERIODS.map(p => ({ ...p }));
+  }, [settings.levelPeriods, selectedScheduleLevel, DEFAULT_TIME_PERIODS]);
+
+  const handleUpdatePeriods = (newPeriods: any[]) => {
+    const updatedLevelPeriods = { ...(settings.levelPeriods || {}) };
+    updatedLevelPeriods[selectedScheduleLevel] = newPeriods;
+    setSettings({ ...settings, levelPeriods: updatedLevelPeriods });
+  };
+
+  const handlePeriodChange = (idx: number, field: string, value: any) => {
+    const newPeriods = [...currentPeriods];
+    newPeriods[idx] = { ...newPeriods[idx], [field]: value };
+    handleUpdatePeriods(newPeriods);
+  };
+
+  const handleMovePeriod = (idx: number, direction: 'up' | 'down') => {
+    const newPeriods = [...currentPeriods];
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= newPeriods.length) return;
+    const temp = newPeriods[idx];
+    newPeriods[idx] = newPeriods[targetIdx];
+    newPeriods[targetIdx] = temp;
+    handleUpdatePeriods(newPeriods);
+  };
+
+  const handleDeletePeriod = (idx: number) => {
+    const newPeriods = currentPeriods.filter((_, i) => i !== idx);
+    handleUpdatePeriods(newPeriods);
+  };
+
+  const handleAddPeriod = () => {
+    const newPeriods = [...currentPeriods];
+    const classCount = newPeriods.filter(p => !p.isBreak).length;
+    const newLabel = `${classCount + 1}o Periodo`;
+    newPeriods.push({ label: newLabel, time: '08:00 - 08:50', isBreak: false });
+    handleUpdatePeriods(newPeriods);
+  };
 
   const { hasPermission, userProfile } = usePermissions();
 
@@ -218,15 +280,15 @@ export default function Settings() {
     });
 
     const unsubCycles = onSnapshot(query(collection(db, 'cycles'), orderBy('createdAt', 'desc')), (snap) => {
-      setCycles(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolCycle)));
+      setCycles(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as SchoolCycle)));
     });
 
     const unsubUsers = onSnapshot(query(collection(db, 'users'), orderBy('createdAt', 'desc')), (snap) => {
-      setAppUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppUser)));
+      setAppUsers(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AppUser)));
     });
 
     const unsubLocks = onSnapshot(query(collection(db, 'bimestreLocks'), orderBy('lockedAt', 'desc')), (snap) => {
-      setGradeLocks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BimestreLock)));
+      setGradeLocks(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as BimestreLock)));
     });
 
     return () => { unsubSettings(); unsubCycles(); unsubUsers(); unsubLocks(); };
@@ -561,6 +623,17 @@ export default function Settings() {
                       value={settings.pdfFooter || ''}
                       onChange={(e) => setSettings({...settings, pdfFooter: e.target.value})}
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                    />
+                  </div>
+
+                  <div className="pt-6 border-t border-slate-50">
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Términos / Información Importante en Credencial de Estudiantes</label>
+                    <textarea
+                      value={settings.credentialTerms || ''}
+                      onChange={(e) => setSettings({...settings, credentialTerms: e.target.value})}
+                      placeholder="Ej: Esta credencial es de uso estrictamente personal e intransferible..."
+                      rows={3}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white resize-none text-xs leading-relaxed"
                     />
                   </div>
                 </div>
@@ -962,6 +1035,29 @@ export default function Settings() {
                         </div>
                       </div>
                    </div>
+
+                   {/* ImgBB */}
+                   <div className="pt-12 border-t border-slate-100 space-y-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white">
+                          <ImageIcon size={16} />
+                        </div>
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest ml-2">ImgBB Image Hosting Gateway</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">ImgBB API Key</label>
+                          <input
+                            type="password"
+                            value={settings.imgbbApiKey || ''}
+                            onChange={(e) => setSettings({...settings, imgbbApiKey: e.target.value})}
+                            placeholder="Ingresa tu API Key de imgbb..."
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"
+                          />
+                          <p className="text-[9px] text-slate-400 mt-2 font-medium">Se utilizará para subir fotografías de alumnos y otros recursos multimedia.</p>
+                        </div>
+                      </div>
+                   </div>
                 </div>
               </div>
             </div>
@@ -1114,6 +1210,177 @@ export default function Settings() {
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/* Card: Prefijos de Matrícula por Nivel */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Prefijos de Matrícula</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Base de matrícula por cada nivel educativo</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {settings.academicLevels?.map((level) => (
+                      <div key={level}>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">{level}</label>
+                        <input
+                          placeholder="Ej: PRM- o SEC-..."
+                          value={settings.matriculaPrefixes?.[level] || ''}
+                          onChange={(e) => {
+                            const newPrefixes = { ...(settings.matriculaPrefixes || {}) };
+                            newPrefixes[level] = e.target.value;
+                            setSettings({ ...settings, matriculaPrefixes: newPrefixes });
+                          }}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                    ))}
+                    {(!settings.academicLevels || settings.academicLevels.length === 0) && (
+                      <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <AlertCircle className="mx-auto text-slate-300 mb-2" size={32} />
+                        <p className="text-sm font-bold text-slate-400">Primero configura los Niveles Educativos arriba.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card: Configuración de Periodos y Recesos por Nivel */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <Clock size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Periodos y Recesos por Nivel</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Configura las horas de clase y recesos específicos</p>
+                    </div>
+                  </div>
+                  {/* Selector de Nivel */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nivel:</label>
+                    <select
+                      value={selectedScheduleLevel}
+                      onChange={(e) => setSelectedScheduleLevel(e.target.value)}
+                      className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                    >
+                      {settings.academicLevels?.map((level) => (
+                        <option key={level} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="p-8">
+                  {selectedScheduleLevel ? (
+                    <div className="space-y-6">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/50">
+                              <th className="px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider w-12 text-center">#</th>
+                              <th className="px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider">Etiqueta / Nombre</th>
+                              <th className="px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider">Rango de Horario</th>
+                              <th className="px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider w-32 text-center">Tipo</th>
+                              <th className="px-4 py-3 text-[10px] font-black uppercase text-slate-500 tracking-wider w-40 text-center">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {currentPeriods.map((period: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3.5 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
+                                <td className="px-4 py-3.5">
+                                  <input
+                                    type="text"
+                                    value={period.label}
+                                    onChange={(e) => handlePeriodChange(idx, 'label', e.target.value)}
+                                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
+                                  />
+                                </td>
+                                <td className="px-4 py-3.5">
+                                  <input
+                                    type="text"
+                                    value={period.time}
+                                    placeholder="ej. 07:30 - 08:20"
+                                    onChange={(e) => handlePeriodChange(idx, 'time', e.target.value)}
+                                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
+                                  />
+                                </td>
+                                <td className="px-4 py-3.5 text-center">
+                                  <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!period.isBreak}
+                                      onChange={(e) => handlePeriodChange(idx, 'isBreak', e.target.checked)}
+                                      className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                                    />
+                                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight">Receso</span>
+                                  </label>
+                                </td>
+                                <td className="px-4 py-3.5">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      onClick={() => handleMovePeriod(idx, 'up')}
+                                      className="p-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded disabled:opacity-30 disabled:hover:bg-slate-100 disabled:hover:text-slate-400 transition-colors"
+                                      title="Subir"
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={idx === currentPeriods.length - 1}
+                                      onClick={() => handleMovePeriod(idx, 'down')}
+                                      className="p-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded disabled:opacity-30 disabled:hover:bg-slate-100 disabled:hover:text-slate-400 transition-colors"
+                                      title="Bajar"
+                                    >
+                                      ↓
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletePeriod(idx)}
+                                      className="p-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 rounded text-slate-500 transition-colors"
+                                      title="Eliminar"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      <div className="flex justify-between items-center pt-2">
+                        <button
+                          type="button"
+                          onClick={handleAddPeriod}
+                          className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                        >
+                          + Agregar Periodo / Receso
+                        </button>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                          * Los cambios se guardarán al pulsar "Guardar Configuración" al final de la página.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      <AlertCircle className="mx-auto text-slate-300 mb-2" size={32} />
+                      <p className="text-sm font-bold text-slate-400">Primero configura los Niveles Educativos arriba.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1374,11 +1641,33 @@ export default function Settings() {
                                 </button>
                                 <button 
                                   onClick={async () => {
-                                    if (window.confirm('¿Eliminar acceso a este usuario?')) {
+                                    if (window.confirm(`¿Eliminar acceso al usuario ${user.name}? Se quitarán todas sus lecciones y clases asignadas en los horarios.`)) {
                                       try {
-                                        await deleteDoc(doc(db, 'users', user.id));
+                                        const batch = writeBatch(db);
+                                        
+                                        // Delete user doc and biometric profile
+                                        batch.delete(doc(db, 'users', user.id));
+                                        batch.delete(doc(db, 'employees', user.id));
+                                        
+                                        // If it was a teacher, sweep their schedule contracts
+                                        const contractsSnap = await getDocs(
+                                          query(collection(db, 'schedule_contracts'), where('teacherId', '==', user.id))
+                                        );
+                                        contractsSnap.forEach(d => {
+                                          batch.delete(doc(db, 'schedule_contracts', d.id));
+                                        });
+
+                                        // Sweep their grid slots
+                                        const schedulesSnap = await getDocs(
+                                          query(collection(db, 'schedules'), where('teacherId', '==', user.id))
+                                        );
+                                        schedulesSnap.forEach(d => {
+                                          batch.delete(doc(db, 'schedules', d.id));
+                                        });
+
+                                        await batch.commit();
                                       } catch (error) {
-                                        console.error("Error deleting user:", error);
+                                        console.error("Error deleting user and schedules:", error);
                                       }
                                     }
                                   }}
@@ -1586,6 +1875,34 @@ export default function Settings() {
                           ))}
                         </select>
                       </div>
+                      <div className="md:col-span-3 mt-2 border-t border-blue-100/50 pt-3">
+                        <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Límites de Jornada Académica (Docente)</p>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Máximas por Día</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="24"
+                          placeholder="Sin límite"
+                          value={userFormData.maxHoursPerDay || ''}
+                          onChange={(e) => setUserFormData({...userFormData, maxHoursPerDay: e.target.value ? Number(e.target.value) : undefined})}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Máximas por Semana</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="168"
+                          placeholder="Sin límite"
+                          value={userFormData.maxHoursPerWeek || ''}
+                          onChange={(e) => setUserFormData({...userFormData, maxHoursPerWeek: e.target.value ? Number(e.target.value) : undefined})}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                        />
+                      </div>
+                      <div className="hidden md:block"></div>
                     </div>
                   )}
 
@@ -1785,7 +2102,36 @@ export default function Settings() {
                           createdAt: editingUser ? editingUser.createdAt : serverTimestamp(),
                           updatedAt: serverTimestamp()
                         });
-                        
+
+                        // Automatically sync with biometric employees list
+                        if (userFormData.role === 'Docente') {
+                          const empRef = doc(db, 'employees', uid);
+                          const empSnap = await getDoc(empRef);
+                          const empData: any = {
+                            id: uid,
+                            name: userFormData.name,
+                            position: 'Docente',
+                            updatedAt: serverTimestamp()
+                          };
+                          
+                          if (!empSnap.exists()) {
+                            empData.faceDescriptor = [];
+                            empData.createdAt = serverTimestamp();
+                          }
+                          await setDoc(empRef, empData, { merge: true });
+                        } else {
+                          // If they were a teacher but their position/role changed, update the employee position
+                          const empRef = doc(db, 'employees', uid);
+                          const empSnap = await getDoc(empRef);
+                          if (empSnap.exists()) {
+                            await setDoc(empRef, {
+                              name: userFormData.name,
+                              position: userFormData.role || 'Personal',
+                              updatedAt: serverTimestamp()
+                            }, { merge: true });
+                          }
+                        }
+
                         setIsUserModalOpen(false);
                       } catch (error: any) {
                         console.error("Error saving user:", error);
