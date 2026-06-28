@@ -655,7 +655,21 @@ export default function Students() {
                       className="group hover:bg-slate-950 hover:text-white transition-all cursor-default text-[10px]"
                     >
                       <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800 text-slate-900 group-hover:text-white">
-                        {student.lastName} {student.motherLastName || ''}
+                        <div className="flex items-center gap-2">
+                          {student.photoUrl ? (
+                            <img 
+                              src={student.photoUrl} 
+                              alt="Avatar" 
+                              className="w-5 h-5 rounded-full object-cover border border-slate-200"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-slate-100 group-hover:bg-slate-800 flex items-center justify-center font-black text-slate-500 text-[8px] group-hover:text-slate-400 border border-slate-200 group-hover:border-slate-700 shrink-0">
+                              {student.name.charAt(0)}{student.lastName.charAt(0)}
+                            </div>
+                          )}
+                          <span>{student.lastName} {student.motherLastName || ''}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-2 border-r border-slate-100 font-bold uppercase whitespace-nowrap group-hover:border-slate-800 group-hover:text-white">
                         {student.name}

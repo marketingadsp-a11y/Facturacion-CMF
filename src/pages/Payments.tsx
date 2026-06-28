@@ -592,9 +592,18 @@ export default function Payments() {
                 className="bg-white p-3 rounded-md border border-slate-200 shadow-sm hover:border-slate-900 transition-all group flex flex-col justify-between"
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-9 h-9 bg-slate-50 border border-slate-100 rounded flex items-center justify-center text-slate-400 font-black text-sm shrink-0">
-                    {student.name[0]}
-                  </div>
+                  {student.photoUrl ? (
+                    <img 
+                      src={student.photoUrl} 
+                      alt="Avatar" 
+                      className="w-9 h-9 rounded object-cover border border-slate-200 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 bg-slate-50 border border-slate-100 rounded flex items-center justify-center text-slate-400 font-black text-sm shrink-0">
+                      {student.name[0]}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <h4 className="text-[11px] font-black text-slate-900 tracking-tight uppercase truncate">{student.name} {student.lastName}</h4>
                     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
@@ -686,10 +695,24 @@ export default function Payments() {
                             setIsStudentDropdownOpen(false);
                             setSelectedMonths([]);
                           }}
-                          className="w-full p-2 text-left hover:bg-slate-50 rounded transition-colors mb-0.5 last:mb-0"
+                          className="w-full p-2 text-left hover:bg-slate-50 rounded transition-colors mb-0.5 last:mb-0 flex items-center gap-2"
                         >
-                          <p className="font-black text-slate-900 text-[11px] uppercase truncate">{s.name} {s.lastName}</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight mt-0.5">{s.grade}{s.group} • {s.level}</p>
+                          {s.photoUrl ? (
+                            <img 
+                              src={s.photoUrl} 
+                              alt="Avatar" 
+                              className="w-6 h-6 rounded object-cover border border-slate-200 shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-slate-400 font-black text-[9px] border border-slate-200 shrink-0">
+                              {s.name[0]}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-black text-slate-900 text-[11px] uppercase truncate">{s.name} {s.lastName}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight mt-0.5">{s.grade}{s.group} • {s.level}</p>
+                          </div>
                         </button>
                       ))}
                     </div>

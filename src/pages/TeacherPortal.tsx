@@ -661,9 +661,18 @@ export default function TeacherPortal() {
                       <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
                         <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[1px_0_4px_rgba(0,0,0,0.03)] backdrop-blur-sm group-hover:bg-slate-50/80">
                           <div className="flex items-center gap-3">
-                            <div className="w-7 h-7 rounded bg-slate-950 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0">
-                              {student.name.charAt(0)}
-                            </div>
+                            {student.photoUrl ? (
+                              <img 
+                                src={student.photoUrl} 
+                                alt="Avatar" 
+                                className="w-7 h-7 rounded object-cover border border-slate-200 shadow-sm shrink-0"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-7 h-7 rounded bg-slate-950 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0">
+                                {student.name.charAt(0)}
+                              </div>
+                            )}
                             <div className="min-w-0">
                               <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.lastName}</p>
                               <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{student.name}</p>
@@ -804,9 +813,18 @@ export default function TeacherPortal() {
                         </td>
                         <td className="px-6 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded bg-slate-100 text-slate-600 flex items-center justify-center font-black text-[10px] uppercase shadow-sm">
-                              {student.lastName.charAt(0)}
-                            </div>
+                            {student.photoUrl ? (
+                              <img 
+                                src={student.photoUrl} 
+                                alt="Avatar" 
+                                className="w-8 h-8 rounded object-cover border border-slate-200 shadow-sm shrink-0"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded bg-slate-100 text-slate-600 flex items-center justify-center font-black text-[10px] uppercase shadow-sm shrink-0">
+                                {student.lastName.charAt(0)}
+                              </div>
+                            )}
                             <div className="min-w-0">
                               <p className="text-[10px] font-black text-slate-900 tracking-tight uppercase leading-none">
                                 {student.lastName} {student.name}

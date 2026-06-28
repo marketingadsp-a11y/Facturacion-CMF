@@ -189,7 +189,8 @@ export default function AcademicControl() {
       grade: student.grade,
       group: student.group,
       email: student.email,
-      phone: student.phone
+      phone: student.phone,
+      matricula: student.matricula || ''
     });
   };
 
@@ -545,6 +546,7 @@ export default function AcademicControl() {
                   <tr className="bg-slate-950 text-slate-400 text-[8px] font-black uppercase tracking-[0.2em] border-b border-slate-800">
                     <th className="px-4 py-3 border-r border-slate-800 text-center w-px whitespace-nowrap">No.</th>
                     <th className="px-4 py-3 border-r border-slate-800 italic w-px whitespace-nowrap">Expediente Alumno</th>
+                    <th className="px-4 py-3 border-r border-slate-800 text-center italic">Matrícula</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center italic">ID / CURP</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center">Nivel</th>
                     <th className="px-4 py-3 border-r border-slate-800 text-center bg-slate-900">Gado/Gpo</th>
@@ -592,13 +594,25 @@ export default function AcademicControl() {
                           </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 w-px whitespace-nowrap">
                             <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded bg-slate-100 group-hover:bg-slate-800 flex items-center justify-center font-black text-slate-500 text-[8px] group-hover:text-slate-400 border border-slate-200 group-hover:border-slate-700 shrink-0">
-                                {student.name.charAt(0)}{student.lastName.charAt(0)}
-                              </div>
+                              {student.photoUrl ? (
+                                <img 
+                                  src={student.photoUrl} 
+                                  alt="Avatar" 
+                                  className="w-6 h-6 rounded object-cover border border-slate-200 group-hover:border-slate-700 shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-6 h-6 rounded bg-slate-100 group-hover:bg-slate-800 flex items-center justify-center font-black text-slate-500 text-[8px] group-hover:text-slate-400 border border-slate-200 group-hover:border-slate-700 shrink-0">
+                                  {student.name.charAt(0)}{student.lastName.charAt(0)}
+                                </div>
+                              )}
                               <div>
                                  <span className="font-bold uppercase tracking-tight leading-none whitespace-nowrap">{student.lastName} {student.name}</span>
                               </div>
                             </div>
+                          </td>
+                          <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center font-mono group-hover:text-amber-400 whitespace-nowrap">
+                            {student.matricula || 'N/A'}
                           </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center font-mono group-hover:text-amber-400 whitespace-nowrap">
                             {student.curp || 'N/A'}
@@ -1031,6 +1045,12 @@ export default function AcademicControl() {
                   </select>
                 </div>
               </div>
+
+              <FormInput 
+                label="Matrícula" 
+                value={studentFormData.matricula || ''} 
+                onChange={(e: any) => setStudentFormData({...studentFormData, matricula: e.target.value})} 
+              />
 
               <FormInput 
                 label="CURP" 

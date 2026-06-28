@@ -43,7 +43,6 @@ function getDb() {
 }
 
 const app = express();
-const PORT = 3000;
 
 app.use(express.json());
 
@@ -403,11 +402,15 @@ app.all('/api/*', (req, res) => {
 });
 
 // Vite middleware for development
-async function setupVite() {
+async function setupVite(port: number) {
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import('vite');
+    const hmrPort = 24678 + (port - 3000);
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR !== 'true' ? { port: hmrPort } : false
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -423,12 +426,30 @@ async function setupVite() {
   }
 }
 
-setupVite();
+if (process.env.VERCEL) {
+  setupVite(3000);
+}
 
 if (!process.env.VERCEL) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  const startPort = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  
+  function startServer(port: number) {
+    const server = app.listen(port, '0.0.0.0', async () => {
+      console.log(`Server running on http://localhost:${port}`);
+      await setupVite(port);
+    });
+    
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.log(`Port ${port} is in use, trying ${port + 1}...`);
+        startServer(port + 1);
+      } else {
+        console.error('Server error:', err);
+      }
+    });
+  }
+  
+  startServer(startPort);
 }
 
 export default app;

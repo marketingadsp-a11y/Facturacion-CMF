@@ -389,13 +389,27 @@ export default function Reception() {
                 debtors.map((debtor: any) => (
                     <div key={debtor.id} className="p-4 hover:bg-slate-50 transition-all group">
                       <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <p className="text-[11px] font-black text-slate-950 uppercase leading-none mb-1">
-                            {debtor.lastName}, {debtor.name}
-                          </p>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                            {debtor.level} · <span className="text-slate-600 italic font-bold">{debtor.grade}{debtor.group}</span>
-                          </p>
+                        <div className="flex items-center gap-2">
+                          {debtor.photoUrl ? (
+                            <img 
+                              src={debtor.photoUrl} 
+                              alt="Avatar" 
+                              className="w-7 h-7 rounded object-cover border border-slate-200 shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded bg-slate-100 flex items-center justify-center text-slate-400 font-black text-[9px] uppercase border border-slate-200 shrink-0">
+                              {debtor.name[0]}
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-[11px] font-black text-slate-950 uppercase leading-none mb-1">
+                              {debtor.lastName}, {debtor.name}
+                            </p>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                              {debtor.level} · <span className="text-slate-600 italic font-bold">{debtor.grade}{debtor.group}</span>
+                            </p>
+                          </div>
                         </div>
                         <span className="text-[11px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-100">
                           ${debtor.debtAmount.toLocaleString()}
