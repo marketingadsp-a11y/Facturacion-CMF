@@ -88,6 +88,13 @@ export default function ParentDashboard() {
   const [selectedStudentForSchedule, setSelectedStudentForSchedule] = useState<Student | null>(null);
   const [mobileActiveDay, setMobileActiveDay] = useState<number>(1);
 
+  const isStudentFeatureEnabled = (st: Student, featureKey: string) => {
+    if (!settings?.parentPortalFeatures) return true;
+    const enabledFeatures = settings.parentPortalFeatures?.[st.level];
+    if (!enabledFeatures) return true;
+    return enabledFeatures.includes(featureKey);
+  };
+
   // Dynamic activePeriods for selected child
   const activePeriods = useMemo(() => {
     const levelToUse = selectedStudentForSchedule?.level || '';
@@ -96,6 +103,11 @@ export default function ParentDashboard() {
     }
     return DEFAULT_TIME_PERIODS;
   }, [settings, selectedStudentForSchedule]);
+
+  const allowedFacturasPayments = useMemo(() => {
+    const allowedStudentIds = students.filter(s => isStudentFeatureEnabled(s, 'facturas')).map(s => s.id);
+    return payments.filter(p => allowedStudentIds.includes(p.studentId));
+  }, [students, payments, settings]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -224,10 +236,13 @@ export default function ParentDashboard() {
 
   // Set default selected student for schedule when students load
   useEffect(() => {
-    if (students.length > 0 && !selectedStudentForSchedule) {
-      setSelectedStudentForSchedule(students[0]);
+    if (students.length > 0) {
+      const allowedStudents = students.filter(st => isStudentFeatureEnabled(st, 'horarios'));
+      if (allowedStudents.length > 0 && (!selectedStudentForSchedule || !allowedStudents.some(s => s.id === selectedStudentForSchedule.id))) {
+        setSelectedStudentForSchedule(allowedStudents[0]);
+      }
     }
-  }, [students, selectedStudentForSchedule]);
+  }, [students, selectedStudentForSchedule, settings]);
 
   // Subscribe to schedules and today's substitutions
   useEffect(() => {
@@ -669,30 +684,30 @@ export default function ParentDashboard() {
                   transition={{ delay: 0.1 }}
                   className={cn(
                     "p-6 rounded-2xl border shadow-sm flex flex-col justify-between transition-all group",
-                    students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
+                    students.some(s => calculateStudentDebts(s, payments, currentCycle, settings, cycles).hasOverdueDebt)
                       ? "bg-rose-600 border-rose-500 text-white shadow-rose-100"
                       : "bg-white border-slate-100 shadow-slate-200/40 hover:border-emerald-100"
                   )}
                 >
                   <div className={cn(
                     "w-10 h-10 rounded-xl flex items-center justify-center mb-6",
-                    students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
+                    students.some(s => calculateStudentDebts(s, payments, currentCycle, settings, cycles).hasOverdueDebt)
                       ? "bg-white/20 text-white border border-white/30 backdrop-blur-md"
                       : "bg-emerald-50 text-emerald-600 border border-emerald-100"
                   )}>
-                    {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) 
+                    {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings, cycles).hasOverdueDebt) 
                       ? <AlertTriangle size={20} strokeWidth={2.5} /> 
                       : <CheckCircle2 size={20} strokeWidth={2.5} />}
                   </div>
                   <div>
                     <p className={cn(
                       "text-[10px] uppercase font-black tracking-widest mb-1",
-                      students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt)
+                      students.some(s => calculateStudentDebts(s, payments, currentCycle, settings, cycles).hasOverdueDebt)
                         ? "text-rose-100"
                         : "text-slate-400"
                     )}>Estado de Cuenta</p>
                     <p className="text-xl font-black tabular-nums leading-tight tracking-tighter">
-                      {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings).hasOverdueDebt) 
+                      {students.some(s => calculateStudentDebts(s, payments, currentCycle, settings, cycles).hasOverdueDebt) 
                         ? "Adeudo Pendiente" 
                         : "Al Corriente"}
                     </p>
@@ -723,7 +738,7 @@ export default function ParentDashboard() {
                 <section>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {students.map((student, idx) => {
-                      const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
+                      const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings, cycles);
                       const hasOverdue = debtStatus.hasOverdueDebt;
                       
                       return (
@@ -928,13 +943,13 @@ export default function ParentDashboard() {
             </div>
           ) : activeTab === 'grades' ? (
             <div className="space-y-8">
-              {students.length === 0 ? (
+              {students.filter(student => isStudentFeatureEnabled(student, 'grades')).length === 0 ? (
                 <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center">
-                  <p className="text-slate-400 font-medium">No hay alumnos vinculados.</p>
+                  <p className="text-slate-400 font-medium">Esta función no está habilitada para el nivel académico de tus hijos.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-8">
-                  {students.map((student, sIdx) => {
+                  {students.filter(student => isStudentFeatureEnabled(student, 'grades')).map((student, sIdx) => {
                     const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
                     const studentLevelSubjects = subjects.filter(sub => sub.level === student.level);
                     const academicSubjectNames = studentLevelSubjects
@@ -1070,216 +1085,228 @@ export default function ParentDashboard() {
               )}
             </div>
           ) : activeTab === 'facturas' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-              <div className="lg:col-span-2 space-y-10">
-                <section>
-                  <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-                    {/* Desktop Table View */}
-                    <div className="hidden md:block overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50/50 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-100">
-                            <th className="px-8 py-5">Fecha</th>
-                            <th className="px-8 py-5">Nombre</th>
-                            <th className="px-8 py-5">Concepto</th>
-                            <th className="px-8 py-5">Importe</th>
-                            <th className="px-8 py-5">Estatus</th>
-                            <th className="px-8 py-5 text-right">Acción</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {payments.map((payment) => {
-                            const student = students.find(s => s.id === payment.studentId);
-                            return (
-                            <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors group">
-                              <td className="px-8 py-6 text-xs font-bold text-slate-500">
-                                {payment.date?.toDate ? format(payment.date.toDate(), 'dd/MM/yyyy') : '-'}
-                              </td>
-                              <td className="px-8 py-6">
-                                <p className="text-xs font-black text-slate-900 group-hover:text-blue-600 transition-colors">
-                                  {student?.name || 'Alumno'}
-                                </p>
-                              </td>
-                              <td className="px-8 py-6 text-xs font-medium text-slate-500">{payment.concept}</td>
-                              <td className="px-8 py-6">
-                                <p className="text-xs font-black text-slate-900 tabular-nums">{formatCurrency(payment.amount)}</p>
-                              </td>
-                              <td className="px-8 py-6">
-                                <span className={cn(
-                                  "px-3 py-1 rounded-lg font-black text-[9px] uppercase tracking-widest border",
-                                  payment.status === 'Pagado' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                                  payment.status === 'Cancelado' ? "bg-rose-50 text-rose-700 border-rose-100" :
-                                  "bg-amber-50 text-amber-700 border-amber-100"
-                                )}>
-                                  {payment.status}
-                                </span>
-                              </td>
-                              <td className="px-8 py-6 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  {payment.status === 'Pendiente' && !payment.conektaOrderId && (
-                                    <button
-                                      onClick={() => handlePayment(payment)}
-                                      disabled={payingId === payment.id}
-                                      className="flex items-center gap-2 px-4 py-2 bg-slate-950 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95 disabled:opacity-50"
-                                    >
-                                      {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
-                                      Pagar
-                                    </button>
-                                  )}
-                                  {payment.status === 'Pendiente' && payment.conektaOrderId && (
-                                    <button
-                                      onClick={() => handleVerifyPayment(payment)}
-                                      disabled={payingId === payment.id}
-                                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
-                                    >
-                                      {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                      Verificar
-                                    </button>
-                                  )}
-                                  {payment.invoiceId ? (
-                                    <button 
-                                      onClick={() => handleDownloadInvoice(payment.invoiceId!)}
-                                      className="flex items-center gap-2 px-4 py-2 bg-white text-slate-900 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
-                                      title="Descargar Factura PDF"
-                                    >
-                                      <Download size={14} />
-                                      PDF
-                                    </button>
-                                  ) : payment.status === 'Pagado' ? (
-                                    <button 
-                                      onClick={() => handleGenerateInvoice(payment)}
-                                      disabled={payingId === payment.id}
-                                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
-                                      title="Generar Factura"
-                                    >
-                                      {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                                      Facturar
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </td>
+            students.filter(s => isStudentFeatureEnabled(s, 'facturas')).length === 0 ? (
+              <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center w-full">
+                <p className="text-slate-400 font-medium">Esta función no está habilitada para el nivel académico de tus hijos.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                <div className="lg:col-span-2 space-y-10">
+                  <section>
+                    <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+                      {/* Desktop Table View */}
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50/50 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-100">
+                              <th className="px-8 py-5">Fecha</th>
+                              <th className="px-8 py-5">Nombre</th>
+                              <th className="px-8 py-5">Concepto</th>
+                              <th className="px-8 py-5">Importe</th>
+                              <th className="px-8 py-5">Estatus</th>
+                              <th className="px-8 py-5 text-right">Acción</th>
                             </tr>
-                          )})}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Mobile Card View */}
-                    <div className="md:hidden divide-y divide-slate-100">
-                      {payments.map((payment) => (
-                        <div key={payment.id} className="p-4 space-y-3">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="text-sm font-bold text-slate-900">
-                                {students.find(s => s.id === payment.studentId)?.name || 'Desconocido'}
-                              </p>
-                              <p className="text-[10px] text-slate-500">
-                                {payment.date?.toDate ? format(payment.date.toDate(), 'dd MMM yyyy', { locale: es }) : '-'}
-                              </p>
-                            </div>
-                            <p className="text-sm font-black text-slate-900">{formatCurrency(payment.amount)}</p>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <p className="text-xs text-slate-600">{payment.concept}</p>
-                            <div className="flex items-center gap-2">
-                              {payment.status === 'Pendiente' && !payment.conektaOrderId && (
-                                <button
-                                  onClick={() => handlePayment(payment)}
-                                  disabled={payingId === payment.id}
-                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
-                                >
-                                  {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
-                                  Pagar
-                                </button>
-                              )}
-                              {payment.status === 'Pendiente' && payment.conektaOrderId && (
-                                <button
-                                  onClick={() => handleVerifyPayment(payment)}
-                                  disabled={payingId === payment.id}
-                                  className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
-                                >
-                                  {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                  Verificar
-                                </button>
-                              )}
-                              {payment.invoiceId ? (
-                                <button 
-                                  onClick={() => handleDownloadInvoice(payment.invoiceId!)}
-                                  className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg"
-                                >
-                                  <Download size={12} /> PDF
-                                </button>
-                              ) : payment.status === 'Pagado' ? (
-                                <button 
-                                  onClick={() => handleGenerateInvoice(payment)}
-                                  disabled={payingId === payment.id}
-                                  className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg disabled:opacity-50"
-                                >
-                                  {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                                  Generar Factura
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {payments.length === 0 && (
-                      <div className="px-6 py-12 text-center text-slate-500 italic text-sm">
-                        No se han registrado pagos todavía.
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {allowedFacturasPayments.map((payment) => {
+                              const student = students.find(s => s.id === payment.studentId);
+                              return (
+                              <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors group">
+                                <td className="px-8 py-6 text-xs font-bold text-slate-500">
+                                  {payment.date?.toDate ? format(payment.date.toDate(), 'dd/MM/yyyy') : '-'}
+                                </td>
+                                <td className="px-8 py-6">
+                                  <p className="text-xs font-black text-slate-900 group-hover:text-blue-600 transition-colors">
+                                    {student?.name || 'Alumno'}
+                                  </p>
+                                </td>
+                                <td className="px-8 py-6 text-xs font-medium text-slate-500">{payment.concept}</td>
+                                <td className="px-8 py-6">
+                                  <p className="text-xs font-black text-slate-900 tabular-nums">{formatCurrency(payment.amount)}</p>
+                                </td>
+                                <td className="px-8 py-6">
+                                  <span className={cn(
+                                    "px-3 py-1 rounded-lg font-black text-[9px] uppercase tracking-widest border",
+                                    payment.status === 'Pagado' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                                    payment.status === 'Cancelado' ? "bg-rose-50 text-rose-700 border-rose-100" :
+                                    "bg-amber-50 text-amber-700 border-amber-100"
+                                  )}>
+                                    {payment.status}
+                                  </span>
+                                </td>
+                                <td className="px-8 py-6 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    {payment.status === 'Pendiente' && !payment.conektaOrderId && (
+                                      <button
+                                        onClick={() => handlePayment(payment)}
+                                        disabled={payingId === payment.id}
+                                        className="flex items-center gap-2 px-4 py-2 bg-slate-950 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                                      >
+                                        {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
+                                        Pagar
+                                      </button>
+                                    )}
+                                    {payment.status === 'Pendiente' && payment.conektaOrderId && (
+                                      <button
+                                        onClick={() => handleVerifyPayment(payment)}
+                                        disabled={payingId === payment.id}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                                      >
+                                        {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                        Verificar
+                                      </button>
+                                    )}
+                                    {payment.invoiceId ? (
+                                      <button 
+                                        onClick={() => handleDownloadInvoice(payment.invoiceId!)}
+                                        className="flex items-center gap-2 px-4 py-2 bg-white text-slate-900 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                                        title="Descargar Factura PDF"
+                                      >
+                                        <Download size={14} />
+                                        PDF
+                                      </button>
+                                    ) : payment.status === 'Pagado' ? (
+                                      <button 
+                                        onClick={() => handleGenerateInvoice(payment)}
+                                        disabled={payingId === payment.id}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                                        title="Generar Factura"
+                                      >
+                                        {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                        Facturar
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </td>
+                              </tr>
+                            )})}
+                          </tbody>
+                        </table>
                       </div>
-                    )}
-                  </div>
-                </section>
-              </div>
-
-              <div className="space-y-6">
-                <div className="bg-blue-600 p-8 rounded-[2rem] text-white shadow-xl shadow-blue-100 relative overflow-hidden">
-                  <div className="relative z-10">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white/20 rounded-xl">
-                          <CreditCard size={20} />
+ 
+                      {/* Mobile Card View */}
+                      <div className="md:hidden divide-y divide-slate-100">
+                        {allowedFacturasPayments.map((payment) => (
+                          <div key={payment.id} className="p-4 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">
+                                  {students.find(s => s.id === payment.studentId)?.name || 'Desconocido'}
+                                </p>
+                                <p className="text-[10px] text-slate-500">
+                                  {payment.date?.toDate ? format(payment.date.toDate(), 'dd MMM yyyy', { locale: es }) : '-'}
+                                </p>
+                              </div>
+                              <p className="text-sm font-black text-slate-900">{formatCurrency(payment.amount)}</p>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <p className="text-xs text-slate-600">{payment.concept}</p>
+                              <div className="flex items-center gap-2">
+                                {payment.status === 'Pendiente' && !payment.conektaOrderId && (
+                                  <button
+                                    onClick={() => handlePayment(payment)}
+                                    disabled={payingId === payment.id}
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                                  >
+                                    {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
+                                    Pagar
+                                  </button>
+                                )}
+                                {payment.status === 'Pendiente' && payment.conektaOrderId && (
+                                  <button
+                                    onClick={() => handleVerifyPayment(payment)}
+                                    disabled={payingId === payment.id}
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                                  >
+                                    {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                    Verificar
+                                  </button>
+                                )}
+                                {payment.invoiceId ? (
+                                  <button 
+                                    onClick={() => handleDownloadInvoice(payment.invoiceId!)}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg"
+                                  >
+                                    <Download size={12} /> PDF
+                                  </button>
+                                ) : payment.status === 'Pagado' ? (
+                                  <button 
+                                    onClick={() => handleGenerateInvoice(payment)}
+                                    disabled={payingId === payment.id}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg disabled:opacity-50"
+                                  >
+                                    {payingId === payment.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                    Generar Factura
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+ 
+                      {allowedFacturasPayments.length === 0 && (
+                        <div className="px-6 py-12 text-center text-slate-500 italic text-sm">
+                          No se han registrado pagos todavía.
                         </div>
-                        <div>
-                          <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">Métodos Aceptados</p>
-                          <p className="text-sm font-medium">{settings?.paymentMethods.join(', ') || 'Efectivo, Transferencia'}</p>
+                      )}
+                    </div>
+                  </section>
+                </div>
+ 
+                <div className="space-y-6">
+                  <div className="bg-blue-600 p-8 rounded-[2rem] text-white shadow-xl shadow-blue-100 relative overflow-hidden">
+                    <div className="relative z-10">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white/20 rounded-xl">
+                            <CreditCard size={20} />
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">Métodos Aceptados</p>
+                            <p className="text-sm font-medium">{settings?.paymentMethods.join(', ') || 'Efectivo, Transferencia'}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
+                    <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
                   </div>
-                  <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
                 </div>
               </div>
-            </div>
+            )
           ) : activeTab === 'horarios' ? (
-            <div className="space-y-6">
-              {/* Selector de Hijo */}
-              {students.length > 1 && (
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-sm font-black text-slate-800 tracking-tight uppercase">Horario de Clases</h2>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Selecciona el alumno para ver su calendario.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {students.map((st) => (
-                      <button
-                        key={st.id}
-                        onClick={() => setSelectedStudentForSchedule(st)}
-                        className={cn(
-                          "px-4 py-2 rounded-xl text-xs font-bold transition-all border",
-                          selectedStudentForSchedule?.id === st.id
-                            ? "bg-slate-900 border-slate-900 text-white shadow-md"
-                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        {st.name}
-                      </button>
-                    ))}
-                  </div>
+            <div className="space-y-6 animate-in fade-in duration-300">
+              {students.filter(st => isStudentFeatureEnabled(st, 'horarios')).length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center">
+                  <p className="text-slate-400 font-medium">Esta función no está habilitada para el nivel académico de tus hijos.</p>
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* Selector de Hijo */}
+                  {students.filter(st => isStudentFeatureEnabled(st, 'horarios')).length > 1 && (
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <h2 className="text-sm font-black text-slate-800 tracking-tight uppercase">Horario de Clases</h2>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Selecciona el alumno para ver su calendario.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {students.filter(st => isStudentFeatureEnabled(st, 'horarios')).map((st) => (
+                          <button
+                            key={st.id}
+                            onClick={() => setSelectedStudentForSchedule(st)}
+                            className={cn(
+                              "px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                              selectedStudentForSchedule?.id === st.id
+                                ? "bg-slate-900 border-slate-900 text-white shadow-md"
+                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            {st.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
               {selectedStudentForSchedule && (
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1472,11 +1499,18 @@ export default function ParentDashboard() {
                   </div>
                 </div>
               )}
-            </div>
+            </>
+          )}
+        </div>
           ) : (
-            <section>
-              <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden mb-12">
-                <form onSubmit={handleSaveBillingData} className="p-10 space-y-10">
+            <section className="animate-in fade-in duration-300">
+              {students.filter(s => isStudentFeatureEnabled(s, 'billing')).length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center w-full">
+                  <p className="text-slate-400 font-medium">Esta función no está habilitada para el nivel académico de tus hijos.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden mb-12">
+                  <form onSubmit={handleSaveBillingData} className="p-10 space-y-10">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">RFC del Contribuyente</label>
@@ -1562,6 +1596,7 @@ export default function ParentDashboard() {
                   </div>
                 </form>
               </div>
+              )}
             </section>
           )}
         </div>

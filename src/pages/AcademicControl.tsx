@@ -3,7 +3,7 @@ import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -13,7 +13,7 @@ import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import OfficialListPDF from '../components/OfficialListPDF';
 import { calculateStudentDebts } from '../lib/paymentUtils';
-import { calculateCURP, STATES } from '../lib/studentUtils';
+import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
@@ -45,6 +45,14 @@ export default function AcademicControl() {
   const [selectedLevel, setSelectedLevel] = useState('');
   const [selectedGrade, setSelectedGrade] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('');
+
+  // Migration and Cycles States
+  const [filterCycleId, setFilterCycleId] = useState('');
+  const [isMigrateModalOpen, setIsMigrateModalOpen] = useState(false);
+  const [migrationSourceCycle, setMigrationSourceCycle] = useState('');
+  const [migrationTargetCycle, setMigrationTargetCycle] = useState('');
+  const [migrationSelectedStudents, setMigrationSelectedStudents] = useState<string[]>([]);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   const currentCycle = cycles.find(c => c.id === settings?.currentCycleId);
 
@@ -104,6 +112,77 @@ export default function AcademicControl() {
       unsubSubjects();
     };
   }, []);
+
+  useEffect(() => {
+    if (settings?.currentCycleId && !filterCycleId) {
+      setFilterCycleId(settings.currentCycleId);
+    }
+  }, [settings?.currentCycleId]);
+
+  const handleExecuteMigration = async () => {
+    if (!migrationSourceCycle || !migrationTargetCycle || migrationSelectedStudents.length === 0) return;
+    if (migrationSourceCycle === migrationTargetCycle) {
+      alert("El ciclo de origen y destino no pueden ser el mismo.");
+      return;
+    }
+    
+    setIsMigrating(true);
+    try {
+      const batch = updateDoc(doc(db, 'settings', 'general'), {}).constructor.name === 'Function' ? null : collection(db, 'students'); // dummy to trigger transaction or writeBatch
+      const writeBatchRef = await import('firebase/firestore').then(m => m.writeBatch);
+      const batchInstance = writeBatchRef(db);
+      
+      for (const studentId of migrationSelectedStudents) {
+        const student = students.find(s => s.id === studentId);
+        if (!student) continue;
+        
+        const histLevel = student.cycleId === migrationSourceCycle ? student.level : (student.gradeHistory?.[migrationSourceCycle]?.level || student.level);
+        const histGrade = student.cycleId === migrationSourceCycle ? student.grade : (student.gradeHistory?.[migrationSourceCycle]?.grade || student.grade);
+        const histGroup = student.cycleId === migrationSourceCycle ? student.group : (student.gradeHistory?.[migrationSourceCycle]?.group || student.group);
+        
+        const { grade: nextGrade, level: nextLevel } = getNextGradeAndLevel(histGrade, histLevel);
+        const nextGroup = histGroup || '';
+        
+        const currentCycles = student.cycles || (student.cycleId ? [student.cycleId] : []);
+        const newCycles = currentCycles.includes(migrationTargetCycle)
+          ? currentCycles
+          : [...currentCycles, migrationTargetCycle];
+          
+        const currentHistory = student.gradeHistory || {};
+        const newHistory = {
+          ...currentHistory,
+          [migrationSourceCycle]: {
+            level: histLevel,
+            grade: histGrade,
+            group: histGroup || ''
+          }
+        };
+        
+        const studentRef = doc(db, 'students', student.id);
+        batchInstance.update(studentRef, {
+          cycleId: migrationTargetCycle,
+          cycles: newCycles,
+          gradeHistory: newHistory,
+          level: nextLevel,
+          grade: nextGrade,
+          group: nextGroup,
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      await batchInstance.commit();
+      alert(`Migración completada con éxito. Se migraron ${migrationSelectedStudents.length} alumnos.`);
+      setIsMigrateModalOpen(false);
+      setMigrationSourceCycle('');
+      setMigrationTargetCycle('');
+      setMigrationSelectedStudents([]);
+    } catch (error) {
+      console.error("Error migrating students:", error);
+      alert("Hubo un error al ejecutar la migración.");
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   const handleCopyLink = () => {
     const slug = settings?.enrollmentSlug || 'enroll';
@@ -263,6 +342,7 @@ export default function AcademicControl() {
     const matchesLevel = !filterLevel || s.level === filterLevel;
     const matchesGrade = !filterGrade || s.grade === filterGrade;
     const matchesGroup = !filterGroup || s.group === filterGroup;
+    const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
 
     // Granular permissions for Control Escolar
     if (userProfile?.role === 'Control Escolar') {
@@ -275,7 +355,11 @@ export default function AcademicControl() {
       if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
     }
 
-    return matchesSearch && matchesLevel && matchesGrade && matchesGroup;
+    return matchesSearch && matchesLevel && matchesGrade && matchesGroup && matchesCycle;
+  }).sort((a, b) => {
+    const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
+    const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
+    return nameA.localeCompare(nameB);
   });
 
   return (
@@ -489,6 +573,24 @@ export default function AcademicControl() {
               >
                 <Filter size={12} /> Cambiar Grupo
               </button>
+              <button
+                onClick={() => setIsMigrateModalOpen(true)}
+                className="bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
+              >
+                <Calendar size={12} className="text-blue-500" /> Migrar Alumnos
+              </button>
+
+              <select
+                value={filterCycleId}
+                onChange={(e) => setFilterCycleId(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:border-slate-900"
+              >
+                <option value="">TODOS LOS CICLOS</option>
+                {cycles.map(cycle => (
+                  <option key={cycle.id} value={cycle.id}>{cycle.name}</option>
+                ))}
+              </select>
+
               <select
                 value={filterLevel}
                 onChange={(e) => setFilterLevel(e.target.value)}
@@ -522,13 +624,14 @@ export default function AcademicControl() {
                 ))}
               </select>
 
-              {(filterLevel || filterGrade || filterGroup || searchTerm) && (
+              {(filterLevel || filterGrade || filterGroup || searchTerm || (filterCycleId !== (settings?.currentCycleId || ''))) && (
                 <button
                   onClick={() => {
                     setFilterLevel('');
                     setFilterGrade('');
                     setFilterGroup('');
                     setSearchTerm('');
+                    setFilterCycleId(settings?.currentCycleId || '');
                   }}
                   className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
                 >
@@ -559,7 +662,11 @@ export default function AcademicControl() {
                 <tbody className="divide-y divide-slate-100 text-[10px]">
                   {filteredStudents.length > 0 ? (
                     filteredStudents.map((student) => {
-                      const debtStatus = calculateStudentDebts(student, payments, currentCycle || null, settings);
+                      const debtStatus = calculateStudentDebts(student, payments, currentCycle || null, settings, cycles);
+                      const history = (filterCycleId && student.cycleId !== filterCycleId) ? student.gradeHistory?.[filterCycleId] : null;
+                      const displayLevel = history?.level || student.level;
+                      const displayGrade = history?.grade || student.grade;
+                      const displayGroup = history?.group || student.group || '-';
                       
                       const studentGrades = grades.filter(g => g.studentId === student.id && (!currentCycle || g.cycleId === currentCycle.id));
                       const academicSubjectNames = subjects
@@ -618,10 +725,10 @@ export default function AcademicControl() {
                             {student.curp || 'N/A'}
                           </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center">
-                            <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">{student.level}</span>
+                            <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">{displayLevel}</span>
                           </td>
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center bg-slate-50 group-hover:bg-slate-900">
-                             <span className="text-[11px] font-black tracking-tighter italic">{student.grade} - {student.group}</span>
+                             <span className="text-[11px] font-black tracking-tighter italic">{displayGrade} - {displayGroup}</span>
                           </td>
                           
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center">
@@ -1232,6 +1339,140 @@ export default function AcademicControl() {
           </motion.div>
         </div>
       )}
+
+      {/* Modal de Migración de Ciclo */}
+      <AnimatePresence>
+        {isMigrateModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-xl w-full flex flex-col max-h-[85vh]"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2 text-left">
+                  <Calendar size={18} className="text-blue-500" />
+                  Migrar Alumnos de Ciclo Escolar
+                </h3>
+                <button onClick={() => {
+                  setIsMigrateModalOpen(false);
+                  setMigrationSourceCycle('');
+                  setMigrationTargetCycle('');
+                  setMigrationSelectedStudents([]);
+                }} className="text-slate-400 hover:text-slate-600 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="py-4 space-y-4 flex-1 overflow-y-auto text-left">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ciclo de Origen *</label>
+                    <select
+                      value={migrationSourceCycle}
+                      onChange={(e) => {
+                        setMigrationSourceCycle(e.target.value);
+                        setMigrationSelectedStudents([]);
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                    >
+                      <option value="">Seleccionar...</option>
+                      {cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ciclo de Destino *</label>
+                    <select
+                      value={migrationTargetCycle}
+                      onChange={(e) => setMigrationTargetCycle(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                    >
+                      <option value="">Seleccionar...</option>
+                      {cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {migrationSourceCycle && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Alumnos en Ciclo Origen ({students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).length})
+                      </span>
+                      <button
+                        onClick={() => {
+                          const srcStudents = students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId));
+                          if (migrationSelectedStudents.length === srcStudents.length) {
+                            setMigrationSelectedStudents([]);
+                          } else {
+                            setMigrationSelectedStudents(srcStudents.map(s => s.id));
+                          }
+                        }}
+                        className="text-[9px] font-black text-blue-600 uppercase hover:underline"
+                      >
+                        {migrationSelectedStudents.length === students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
+                      </button>
+                    </div>
+
+                    <div className="border border-slate-100 rounded-xl max-h-[250px] overflow-y-auto divide-y divide-slate-50 p-2 bg-slate-50">
+                      {students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).map(student => {
+                        const history = student.cycleId !== migrationSourceCycle ? student.gradeHistory?.[migrationSourceCycle] : null;
+                        const level = history?.level || student.level;
+                        const grade = history?.grade || student.grade;
+                        const group = history?.group || student.group || '';
+                        
+                        return (
+                          <label key={student.id} className="flex items-center gap-3 py-1.5 px-2 hover:bg-white rounded-md cursor-pointer text-xs">
+                            <input
+                              type="checkbox"
+                              checked={migrationSelectedStudents.includes(student.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setMigrationSelectedStudents(prev => [...prev, student.id]);
+                                } else {
+                                  setMigrationSelectedStudents(prev => prev.filter(id => id !== student.id));
+                                }
+                              }}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-slate-800 truncate uppercase">{student.lastName} {student.name}</p>
+                              <p className="text-[9px] font-black text-slate-400 uppercase">{level} - {grade} {group}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setIsMigrateModalOpen(false);
+                    setMigrationSourceCycle('');
+                    setMigrationTargetCycle('');
+                    setMigrationSelectedStudents([]);
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                  disabled={isMigrating}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleExecuteMigration}
+                  disabled={isMigrating || !migrationSourceCycle || !migrationTargetCycle || migrationSelectedStudents.length === 0}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 transition-all shadow-lg shadow-blue-100 flex items-center gap-2"
+                >
+                  {isMigrating ? 'Migrando...' : `Migrar (${migrationSelectedStudents.length})`}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

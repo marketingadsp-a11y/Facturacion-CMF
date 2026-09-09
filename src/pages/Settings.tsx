@@ -74,7 +74,7 @@ export default function Settings() {
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger' | 'parentPortal'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [gradeLocks, setGradeLocks] = useState<BimestreLock[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -440,6 +440,15 @@ export default function Settings() {
               <span className="text-sm font-bold">Bloqueos</span>
             </button>
           )}
+          {hasPermission('settings', 'editGeneral') && (
+            <button 
+              onClick={() => setActiveTab('parentPortal')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'parentPortal' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <Users size={18} className={activeTab === 'parentPortal' ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-500'} />
+              <span className="text-sm font-bold">Portal de Padres</span>
+            </button>
+          )}
           {userProfile?.role === 'Superadministrador' && (
             <button 
               onClick={() => setActiveTab('danger')}
@@ -453,6 +462,95 @@ export default function Settings() {
 
         {/* Content Area */}
         <div className="lg:col-span-9">
+          {activeTab === 'parentPortal' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 text-left">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-lg">
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Portal de Padres por Niveles</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Activar/desactivar funciones según el nivel académico</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  {(settings?.academicLevels || ["Preescolar", "Primaria", "Secundaria", "Preparatoria"]).map((level) => {
+                    const enabledFeatures = settings?.parentPortalFeatures?.[level] || ["grades", "horarios", "avisos", "facturas", "billing"];
+                    
+                    const handleToggleFeature = async (featureKey: string) => {
+                      if (!settings) return;
+                      const currentFeatures = settings.parentPortalFeatures || {};
+                      const levelFeatures = currentFeatures[level] || ["grades", "horarios", "avisos", "facturas", "billing"];
+                      
+                      let newLevelFeatures: string[];
+                      if (levelFeatures.includes(featureKey)) {
+                        newLevelFeatures = levelFeatures.filter(f => f !== featureKey);
+                      } else {
+                        newLevelFeatures = [...levelFeatures, featureKey];
+                      }
+                      
+                      const newFeatures = {
+                        ...currentFeatures,
+                        [level]: newLevelFeatures
+                      };
+                      
+                      try {
+                        await setDoc(doc(db, 'settings', 'general'), {
+                          ...settings,
+                          parentPortalFeatures: newFeatures
+                        });
+                        setSettings(prev => prev ? { ...prev, parentPortalFeatures: newFeatures } : null);
+                        setSaved(true);
+                        setTimeout(() => setSaved(false), 3000);
+                      } catch (error) {
+                        console.error("Error saving parent portal features:", error);
+                        alert("Hubo un error al guardar los ajustes.");
+                      }
+                    };
+
+                    return (
+                      <div key={level} className="border border-slate-100 rounded-2xl p-6 bg-slate-50/30 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                          <h3 className="font-bold text-sm text-slate-900 uppercase tracking-tight italic">{level}</h3>
+                          <span className="text-[9px] font-black text-slate-400 bg-white border border-slate-100 px-2 py-0.5 rounded uppercase">
+                            {enabledFeatures.length} Activas
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {[
+                            { key: 'grades', label: 'Calificaciones (Boletas)' },
+                            { key: 'horarios', label: 'Horarios Escolares' },
+                            { key: 'avisos', label: 'Avisos y Circulares' },
+                            { key: 'facturas', label: 'Facturas de Pagos' },
+                            { key: 'billing', label: 'Datos de Facturación (RFC)' }
+                          ].map(feature => {
+                            const isChecked = enabledFeatures.includes(feature.key);
+                            return (
+                              <label key={feature.key} className="flex items-center gap-3 py-2 px-3 hover:bg-white rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleFeature(feature.key)}
+                                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                                />
+                                <span className="text-xs font-bold text-slate-700">{feature.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'general' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
               {/* Card: Colegio */}

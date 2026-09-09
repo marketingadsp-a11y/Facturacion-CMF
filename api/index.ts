@@ -14,7 +14,7 @@ let firebaseConfig: any = {};
 try {
   const rootConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
   const apiConfigPath = path.join(__dirname, '..', 'firebase-applet-config.json');
-  
+
   if (fs.existsSync(rootConfigPath)) {
     firebaseConfig = JSON.parse(fs.readFileSync(rootConfigPath, 'utf8'));
   } else if (fs.existsSync(apiConfigPath)) {
@@ -49,7 +49,7 @@ app.use(express.json());
 // Facturapi Proxy Endpoint
 app.post('/api/facturapi/invoice', async (req, res) => {
   let { apiKey, invoiceData } = req.body;
-  
+
   if (!apiKey) {
     let firestoreError = '';
     try {
@@ -67,7 +67,7 @@ app.post('/api/facturapi/invoice', async (req, res) => {
     }
 
     if (!apiKey) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: `La clave API de Facturapi no está configurada. ${firestoreError}`,
         debug: { hasConfig: !!firebaseConfig.projectId, projectId: firebaseConfig.projectId }
       });
@@ -146,14 +146,14 @@ app.get('/api/facturapi/invoice/:id/pdf', async (req, res) => {
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
+
     console.log(`[PDF Proxy] PDF obtenido con éxito. Tamaño: ${buffer.length} bytes`);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=factura-${id}.pdf`);
     res.setHeader('Content-Length', buffer.length.toString());
     res.setHeader('Cache-Control', 'no-cache');
-    
+
     return res.send(buffer);
   } catch (error: any) {
     console.error('[PDF Proxy] Error crítico:', error);
@@ -164,7 +164,7 @@ app.get('/api/facturapi/invoice/:id/pdf', async (req, res) => {
 // Conekta Checkout Endpoint
 app.post('/api/conekta/checkout', async (req, res) => {
   const { studentName, amount, concept, email, phone, origin } = req.body;
-  
+
   let privateKey = process.env.CONEKTA_PRIVATE_KEY;
 
   if (!privateKey) {
@@ -184,7 +184,7 @@ app.post('/api/conekta/checkout', async (req, res) => {
     }
 
     if (!privateKey) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: `La clave privada de Conekta no está configurada. ${firestoreError}`,
         debug: { hasConfig: !!firebaseConfig.projectId, projectId: firebaseConfig.projectId }
       });
@@ -242,9 +242,9 @@ app.post('/api/conekta/checkout', async (req, res) => {
       throw new Error(data.details?.[0]?.message || data.message || 'Error al crear la orden en Conekta');
     }
 
-    res.json({ 
+    res.json({
       checkout_url: data.checkout?.url,
-      order_id: data.id 
+      order_id: data.id
     });
   } catch (error: any) {
     console.error('Conekta Error:', error);
@@ -255,7 +255,7 @@ app.post('/api/conekta/checkout', async (req, res) => {
 // Conekta Verify Endpoint
 app.get('/api/conekta/verify/:orderId', async (req, res) => {
   const { orderId } = req.params;
-  
+
   let privateKey = process.env.CONEKTA_PRIVATE_KEY;
 
   if (!privateKey) {
@@ -275,7 +275,7 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
     }
 
     if (!privateKey) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: `La clave privada de Conekta no está configurada. ${firestoreError}`,
         debug: { hasConfig: !!firebaseConfig.projectId, projectId: firebaseConfig.projectId }
       });
@@ -296,7 +296,7 @@ app.get('/api/conekta/verify/:orderId', async (req, res) => {
       throw new Error(data.message || 'Error al consultar la orden en Conekta');
     }
 
-    res.json({ 
+    res.json({
       status: data.payment_status, // 'paid', 'pending_payment', etc.
       amount: data.amount / 100
     });
@@ -361,6 +361,54 @@ app.post('/api/mail/welcome', async (req, res) => {
   }
 });
 
+// Teacher Credential Public API Endpoint
+app.get('/api/teacher-credential/:teacherId', async (req, res) => {
+  const { teacherId } = req.params;
+  if (!teacherId) {
+    return res.status(400).json({ error: 'ID de docente requerido' });
+  }
+
+  try {
+    const db = getDb();
+    const userSnap = await getClientDoc(clientDoc(db, 'users', teacherId));
+    if (!userSnap.exists()) {
+      return res.status(404).json({ error: 'Docente no encontrado' });
+    }
+
+    const userData = userSnap.data();
+    let schoolName = 'Colegio México Franciscano';
+    let logoUrl = '';
+    try {
+      const settingsSnap = await getClientDoc(clientDoc(db, 'settings', 'general'));
+      if (settingsSnap.exists()) {
+        const sData = settingsSnap.data();
+        if (sData.schoolName) schoolName = sData.schoolName;
+        if (sData.logoUrl) logoUrl = sData.logoUrl;
+      }
+    } catch (e) {
+      console.warn('Error fetching settings for teacher credential:', e);
+    }
+
+    return res.json({
+      id: userSnap.id,
+      name: userData.name || '',
+      employeeNumber: userData.employeeNumber || '',
+      assignedLevel: userData.assignedLevel || '',
+      assignedGrade: userData.assignedGrade || '',
+      assignedGroup: userData.assignedGroup || '',
+      photoUrl: userData.photoUrl || '',
+      email: userData.email || '',
+      role: userData.role || 'Docente',
+      schoolName,
+      logoUrl,
+      valid: true
+    });
+  } catch (error: any) {
+    console.error('Teacher credential endpoint error:', error);
+    return res.status(500).json({ error: 'Error al consultar la credencial del docente' });
+  }
+});
+
 // Image Proxy Endpoint for School Logo and other public assets in PDFs
 app.get('/api/proxy/image', async (req, res) => {
   const imageUrl = req.query.url as string;
@@ -407,7 +455,7 @@ async function setupVite(port: number) {
     const { createServer: createViteServer } = await import('vite');
     const hmrPort = 24678 + (port - 3000);
     const vite = await createViteServer({
-      server: { 
+      server: {
         middlewareMode: true,
         hmr: process.env.DISABLE_HMR !== 'true' ? { port: hmrPort } : false
       },
@@ -432,13 +480,13 @@ if (process.env.VERCEL) {
 
 if (!process.env.VERCEL) {
   const startPort = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-  
+
   function startServer(port: number) {
     const server = app.listen(port, '0.0.0.0', async () => {
       console.log(`Server running on http://localhost:${port}`);
       await setupVite(port);
     });
-    
+
     server.on('error', (err: any) => {
       if (err.code === 'EADDRINUSE') {
         console.log(`Port ${port} is in use, trying ${port + 1}...`);
@@ -448,7 +496,7 @@ if (!process.env.VERCEL) {
       }
     });
   }
-  
+
   startServer(startPort);
 }
 

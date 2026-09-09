@@ -25,6 +25,9 @@ export interface Student {
   registrationCode?: string; // 5-digit code for parent registration
   photoUrl?: string;
   matricula?: string;
+  cycleId?: string;
+  cycles?: string[];
+  gradeHistory?: Record<string, { level: string; grade: string; group?: string }>;
   createdAt: Timestamp;
 }
 
@@ -199,6 +202,8 @@ export interface AppUser {
   assignedLevel?: string;
   assignedGrade?: string;
   assignedGroup?: string;
+  employeeNumber?: string;
+  photoUrl?: string;
   maxHoursPerWeek?: number;
   maxHoursPerDay?: number;
   // Granular restrictions for Control Escolar or other roles
@@ -277,6 +282,7 @@ export interface AppSettings {
   lateFeeAmount: number;
   lateFeeType: 'fixed' | 'percentage';
   rolePermissions?: Record<UserRole, AppPermissions>;
+  parentPortalFeatures?: Record<string, string[]>;
   enrollmentSlug?: string;
   academicLevels?: string[]; // e.g., ["Preescolar", "Primaria"]
   academicGrades?: string[];  // e.g., ["1ro", "2do"]

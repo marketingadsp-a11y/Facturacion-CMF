@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
-import { Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
+import { AppUser, Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
 import { 
   Users, 
+  User,
   BookOpen, 
   Save, 
   CheckCircle2, 
@@ -20,11 +21,32 @@ import {
   Unlock,
   Check,
   UserX,
-  Clock as ClockIcon
+  Clock as ClockIcon,
+  CreditCard,
+  Download,
+  Copy,
+  ExternalLink,
+  Share2,
+  Upload,
+  Camera,
+  Image as ImageIcon,
+  Sparkles,
+  Edit3,
+  Trash2,
+  ShieldCheck,
+  UserCheck,
+  School,
+  IdCard,
+  QrCode,
+  FileBadge
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { subscribeToSchedules, subscribeToSubstitutions } from '../services/scheduleService';
+import { pdf } from '@react-pdf/renderer';
+import { QRCodeSVG } from 'qrcode.react';
+import { toast } from 'react-toastify';
+import TeacherCredentialPDF from '../components/TeacherCredentialPDF';
 
 const DEFAULT_TIME_PERIODS = [
   { label: '1er Periodo', time: '07:30 - 08:20', isBreak: false },
@@ -44,7 +66,22 @@ export default function TeacherPortal() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'horario'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'horario' | 'credencial'>('attendance');
+  const [teachers, setTeachers] = useState<AppUser[]>([]);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
+  const [isEditingCredential, setIsEditingCredential] = useState(false);
+  const [isSavingCredential, setIsSavingCredential] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const [credFormData, setCredFormData] = useState({
+    name: '',
+    employeeNumber: '',
+    assignedLevel: '',
+    photoUrl: ''
+  });
+
   const [selectedBimestre, setSelectedBimestre] = useState<Bimestre>(1);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
@@ -342,7 +379,230 @@ export default function TeacherPortal() {
   const filteredStudents = students.filter(s => {
     const fullName = `${s.name} ${s.lastName}`.toLowerCase();
     return fullName.includes(searchTerm.toLowerCase()) || s.curp?.toLowerCase().includes(searchTerm.toLowerCase());
+  }).sort((a, b) => {
+    const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
+    const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
+    return nameA.localeCompare(nameB);
   });
+
+  // Listen to teachers for admin selection
+  useEffect(() => {
+    if (userProfile?.role !== 'Docente') {
+      const unsub = onSnapshot(query(collection(db, 'users'), where('role', '==', 'Docente')), (snap) => {
+        const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as AppUser));
+        setTeachers(list);
+        if (list.length > 0 && !selectedTeacherId) {
+          setSelectedTeacherId(list[0].id);
+        }
+      });
+      return unsub;
+    }
+  }, [userProfile?.role]);
+
+  // The active teacher whose credential is being viewed/edited
+  const credentialTeacher = useMemo(() => {
+    if (userProfile?.role === 'Docente') return userProfile;
+    if (selectedTeacherId) {
+      const found = teachers.find(t => t.id === selectedTeacherId);
+      if (found) return found;
+    }
+    return userProfile;
+  }, [userProfile, selectedTeacherId, teachers]);
+
+  // Sync form data with active teacher
+  useEffect(() => {
+    if (credentialTeacher) {
+      setCredFormData({
+        name: credentialTeacher.name || '',
+        employeeNumber: credentialTeacher.employeeNumber || '',
+        assignedLevel: credentialTeacher.assignedLevel || '',
+        photoUrl: credentialTeacher.photoUrl || ''
+      });
+    }
+  }, [credentialTeacher?.id, credentialTeacher?.photoUrl, credentialTeacher?.employeeNumber, credentialTeacher?.assignedLevel, credentialTeacher?.name]);
+
+  // Check if required data is missing
+  const hasMissingCredentialData = useMemo(() => {
+    if (!credentialTeacher) return true;
+    return !credFormData.photoUrl || !credFormData.employeeNumber || !credFormData.assignedLevel || !credFormData.name;
+  }, [credentialTeacher, credFormData]);
+
+  const virtualCredentialUrl = credentialTeacher?.id 
+    ? `${window.location.origin}/credencial-docente/${credentialTeacher.id}` 
+    : '';
+
+  // Photo upload handler
+  const handlePhotoUpload = async (file: File) => {
+    setUploadingPhoto(true);
+    try {
+      if (settings?.imgbbApiKey) {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${settings.imgbbApiKey}`, {
+          method: 'POST',
+          body: fd
+        });
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.success && resData.data?.url) {
+            setCredFormData(prev => ({ ...prev, photoUrl: resData.data.url }));
+            toast.success('Fotografía subida exitosamente.');
+            setUploadingPhoto(false);
+            return;
+          }
+        }
+      }
+
+      // Compression to Base64 (max 500x600, JPEG 0.85)
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 500;
+          const MAX_HEIGHT = 600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setCredFormData(prev => ({ ...prev, photoUrl: dataUrl }));
+          toast.success('Fotografía cargada correctamente.');
+          setUploadingPhoto(false);
+        };
+        img.onerror = () => {
+          toast.error('Error al procesar la imagen.');
+          setUploadingPhoto(false);
+        };
+        img.src = readerEvent.target?.result as string;
+      };
+      reader.onerror = () => {
+        toast.error('Error al leer el archivo.');
+        setUploadingPhoto(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.error('Error al subir foto:', err);
+      toast.error('Error al procesar la imagen.');
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleSaveCredential = async () => {
+    if (!credentialTeacher?.id) return;
+    if (!credFormData.name.trim()) {
+      toast.error('El nombre del docente es obligatorio.');
+      return;
+    }
+    if (!credFormData.employeeNumber.trim()) {
+      toast.error('El número de empleado es obligatorio.');
+      return;
+    }
+    if (!credFormData.assignedLevel.trim()) {
+      toast.error('El nivel que imparte es obligatorio.');
+      return;
+    }
+    if (!credFormData.photoUrl) {
+      toast.error('La fotografía del docente es obligatoria para la credencial.');
+      return;
+    }
+
+    setIsSavingCredential(true);
+    try {
+      await setDoc(doc(db, 'users', credentialTeacher.id), {
+        name: credFormData.name.trim(),
+        employeeNumber: credFormData.employeeNumber.trim(),
+        assignedLevel: credFormData.assignedLevel.trim(),
+        photoUrl: credFormData.photoUrl,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      toast.success('¡Datos de la credencial guardados exitosamente!');
+      setIsEditingCredential(false);
+    } catch (err: any) {
+      console.error('Error al guardar credencial:', err);
+      toast.error(`Error al guardar: ${err.message || err}`);
+    } finally {
+      setIsSavingCredential(false);
+    }
+  };
+
+  const handleDownloadTeacherPdf = async () => {
+    if (!credentialTeacher) return;
+    setIsDownloadingPdf(true);
+    try {
+      const teacherToPrint: AppUser = {
+        ...credentialTeacher,
+        name: credFormData.name || credentialTeacher.name,
+        employeeNumber: credFormData.employeeNumber || credentialTeacher.employeeNumber,
+        assignedLevel: credFormData.assignedLevel || credentialTeacher.assignedLevel,
+        photoUrl: credFormData.photoUrl || credentialTeacher.photoUrl
+      };
+
+      const blob = await pdf(
+        <TeacherCredentialPDF 
+          teacher={teacherToPrint} 
+          settings={settings} 
+          virtualCredentialUrl={virtualCredentialUrl} 
+        />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Credencial_Docente_${teacherToPrint.name.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Credencial PDF descargada exitosamente.');
+    } catch (err: any) {
+      console.error('Error generando credencial PDF:', err);
+      toast.error('Hubo un error al generar la credencial en PDF.');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleCopyVirtualLink = () => {
+    if (!virtualCredentialUrl) return;
+    navigator.clipboard.writeText(virtualCredentialUrl);
+    setCopiedLink(true);
+    toast.success('Enlace de credencial virtual copiado al portapapeles.');
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleShareVirtualLink = async () => {
+    if (!virtualCredentialUrl || !credentialTeacher) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Credencial Docente - ${credentialTeacher.name}`,
+          text: `Credencial Digital Oficial de ${credentialTeacher.name} en ${settings?.schoolName || 'Colegio México Franciscano'}`,
+          url: virtualCredentialUrl
+        });
+      } catch (e) {
+        // User dismissed
+      }
+    } else {
+      handleCopyVirtualLink();
+    }
+  };
 
   if (loading) {
     return (
@@ -352,13 +612,59 @@ export default function TeacherPortal() {
     );
   }
 
-  if (userProfile?.role === 'Docente' && (!userProfile.assignedLevel || !userProfile.assignedGrade)) {
+  if (userProfile?.role === 'Docente' && (!userProfile.assignedLevel || !userProfile.assignedGrade) && activeTab !== 'credencial') {
     return (
-      <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl flex items-center gap-4 text-amber-800">
-        <AlertCircle className="shrink-0" size={32} />
-        <div>
-          <h2 className="font-bold text-lg">Configuración de Grupo Pendiente</h2>
-          <p className="text-sm">Tu cuenta de docente aún no tiene un nivel, grado o grupo asignado. Pide al administrador que lo configure en los ajustes de usuario.</p>
+      <div className="space-y-6 pb-12">
+        <div className="flex gap-1.5 p-1 bg-slate-100 rounded-md w-fit">
+          <button
+            onClick={() => setActiveTab('attendance')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <Calendar size={14} /> Asistencia
+          </button>
+          <button
+            onClick={() => setActiveTab('grading')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <ClipboardList size={14} /> Calificaciones
+          </button>
+          <button
+            onClick={() => setActiveTab('horario')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <Calendar size={14} /> Mi Horario
+          </button>
+          <button
+            onClick={() => setActiveTab('credencial')}
+            className="px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 text-slate-400 hover:text-slate-600"
+          >
+            <CreditCard size={14} /> Credencial
+          </button>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-amber-800">
+          <div className="flex items-center gap-4">
+            <AlertCircle className="shrink-0 text-amber-600" size={32} />
+            <div>
+              <h2 className="font-bold text-base">Configuración de Grupo Pendiente para Asistencia y Calificaciones</h2>
+              <p className="text-xs text-amber-700 mt-0.5">Tu cuenta aún no tiene un grado o grupo asignado para control escolar. Sin embargo, ya puedes configurar tu Credencial Oficial y fotografía en la pestaña Credencial.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('credencial')}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 shadow-sm"
+          >
+            Ir a Mi Credencial
+          </button>
         </div>
       </div>
     );
@@ -589,6 +895,15 @@ export default function TeacherPortal() {
           )}
         >
           <Calendar size={14} /> Mi Horario
+        </button>
+        <button
+          onClick={() => setActiveTab('credencial')}
+          className={cn(
+            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+            activeTab === 'credencial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+          )}
+        >
+          <CreditCard size={14} /> Credencial
         </button>
       </div>
 
@@ -983,6 +1298,516 @@ export default function TeacherPortal() {
               </tbody>
             </table>
           </div>
+        </div>
+      ) : activeTab === 'credencial' ? (
+        <div className="space-y-6">
+          {/* Admin Teacher Selector */}
+          {userProfile?.role !== 'Docente' && teachers.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Gestión de Credenciales Docentes</h2>
+                <p className="text-[11px] text-slate-400 font-medium">Selecciona el docente para consultar, completar datos o emitir su credencial.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Profesor:</span>
+                <select
+                  value={selectedTeacherId || credentialTeacher?.id}
+                  onChange={(e) => {
+                    setSelectedTeacherId(e.target.value);
+                    setIsEditingCredential(false);
+                  }}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-blue-600 shadow-sm"
+                >
+                  {teachers.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} {t.employeeNumber ? `(${t.employeeNumber})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* If Missing Data OR In Edit Mode: Show Missing Data & Photo Request Form */}
+          {(hasMissingCredentialData || isEditingCredential) ? (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6 sm:p-8 space-y-6">
+              {/* Header and status alert */}
+              <div>
+                <div className="flex items-center justify-between gap-4 flex-wrap pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                      <IdCard size={22} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                        {hasMissingCredentialData ? 'Completa los Datos de la Credencial' : 'Editar Datos de Credencial'}
+                      </h2>
+                      <p className="text-xs text-slate-500 font-medium">
+                        {hasMissingCredentialData 
+                          ? 'Se requieren los siguientes datos y fotografía para emitir tu credencial oficial (PDF y Virtual).' 
+                          : 'Actualiza tu fotografía o información que aparecerá en la credencial física y virtual.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!hasMissingCredentialData && (
+                    <button
+                      onClick={() => setIsEditingCredential(false)}
+                      className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                    >
+                      Cancelar y Ver Credencial
+                    </button>
+                  )}
+                </div>
+
+                {/* Status indicators */}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                    credFormData.photoUrl ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+                  )}>
+                    {credFormData.photoUrl ? <Check size={12} /> : <AlertCircle size={12} />}
+                    {credFormData.photoUrl ? 'Fotografía Lista' : 'Falta Fotografía'}
+                  </span>
+
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                    credFormData.employeeNumber ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+                  )}>
+                    {credFormData.employeeNumber ? <Check size={12} /> : <AlertCircle size={12} />}
+                    {credFormData.employeeNumber ? `No. Empleado: ${credFormData.employeeNumber}` : 'Falta No. Empleado'}
+                  </span>
+
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                    credFormData.assignedLevel ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+                  )}>
+                    {credFormData.assignedLevel ? <Check size={12} /> : <AlertCircle size={12} />}
+                    {credFormData.assignedLevel ? `Nivel: ${credFormData.assignedLevel}` : 'Falta Nivel'}
+                  </span>
+
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                    credFormData.name ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+                  )}>
+                    {credFormData.name ? <Check size={12} /> : <AlertCircle size={12} />}
+                    {credFormData.name ? 'Nombre Completo Listo' : 'Falta Nombre'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Form Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-2">
+                {/* Photo Column */}
+                <div className="md:col-span-4 flex flex-col items-center justify-start p-6 bg-slate-50 border border-slate-200 rounded-3xl space-y-4">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                    Fotografía del Docente *
+                  </span>
+
+                  <div className="relative group w-36 h-44 bg-white rounded-2xl overflow-hidden border-2 border-dashed border-slate-300 shadow-sm flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-all">
+                    {credFormData.photoUrl ? (
+                      <img 
+                        src={credFormData.photoUrl} 
+                        alt="Foto Docente" 
+                        className="w-full h-full object-cover" 
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-4 text-slate-400 group-hover:text-blue-500 text-center">
+                        <Camera size={28} className="mb-2 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">Subir Foto</span>
+                        <span className="text-[8px] text-slate-400 mt-1">JPG o PNG</span>
+                      </div>
+                    )}
+
+                    <div className="absolute inset-0 bg-slate-950/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all text-white text-[9px] font-black uppercase tracking-wider gap-1">
+                      <Upload size={18} />
+                      {credFormData.photoUrl ? 'Cambiar Foto' : 'Seleccionar'}
+                    </div>
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      disabled={uploadingPhoto}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handlePhotoUpload(file);
+                      }}
+                    />
+                  </div>
+
+                  {uploadingPhoto && (
+                    <div className="flex items-center gap-2 text-blue-600 text-xs font-bold">
+                      <div className="w-3.5 h-3.5 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
+                      Procesando fotografía...
+                    </div>
+                  )}
+
+                  {credFormData.photoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setCredFormData(prev => ({ ...prev, photoUrl: '' }))}
+                      className="text-[10px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 flex items-center gap-1 transition-colors"
+                    >
+                      <Trash2 size={12} /> Quitar Foto
+                    </button>
+                  )}
+
+                  {/* Manual URL input fallback */}
+                  <div className="w-full pt-2 border-t border-slate-200">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                      O pegar URL de imagen:
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={credFormData.photoUrl.startsWith('data:') ? '' : credFormData.photoUrl}
+                      onChange={(e) => setCredFormData(prev => ({ ...prev, photoUrl: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Details Column */}
+                <div className="md:col-span-8 space-y-4">
+                  {/* Name */}
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5">
+                      Nombre Completo del Docente *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Lic. Juan Carlos Pérez López"
+                      value={credFormData.name}
+                      onChange={(e) => setCredFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+
+                  {/* Employee Number */}
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5">
+                      Número de Empleado / Clave Institucional *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: EMP-042, DOC-105..."
+                      value={credFormData.employeeNumber}
+                      onChange={(e) => setCredFormData(prev => ({ ...prev, employeeNumber: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Este número se reflejará en la credencial impresa y virtual.</p>
+                  </div>
+
+                  {/* Educational Level */}
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5">
+                      Nivel en el que es Docente *
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <select
+                        value={['Preescolar', 'Primaria', 'Secundaria', 'Preparatoria', 'Bachillerato', 'General'].includes(credFormData.assignedLevel) ? credFormData.assignedLevel : (credFormData.assignedLevel ? 'custom' : '')}
+                        onChange={(e) => {
+                          if (e.target.value !== 'custom') {
+                            setCredFormData(prev => ({ ...prev, assignedLevel: e.target.value }));
+                          }
+                        }}
+                        className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      >
+                        <option value="">Selecciona Nivel...</option>
+                        {settings?.academicLevels?.map(l => (
+                          <option key={l} value={l}>{l}</option>
+                        ))}
+                        {!settings?.academicLevels?.length && (
+                          <>
+                            <option value="Preescolar">Preescolar</option>
+                            <option value="Primaria">Primaria</option>
+                            <option value="Secundaria">Secundaria</option>
+                            <option value="Preparatoria">Preparatoria</option>
+                            <option value="Bachillerato">Bachillerato</option>
+                            <option value="General">Docente General</option>
+                          </>
+                        )}
+                        <option value="custom">Otro (Escribir manualmente)</option>
+                      </select>
+
+                      <input
+                        type="text"
+                        placeholder="O escribe el nivel..."
+                        value={credFormData.assignedLevel}
+                        onChange={(e) => setCredFormData(prev => ({ ...prev, assignedLevel: e.target.value }))}
+                        className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Save button */}
+                  <div className="pt-4 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      disabled={isSavingCredential}
+                      onClick={handleSaveCredential}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isSavingCredential ? (
+                        <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <Save size={14} />
+                      )}
+                      <span>{isSavingCredential ? 'Guardando...' : 'Guardar Datos y Activar Credencial'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Complete Credential View: Interactive Preview, Virtual Link & PDF Download */
+            <div className="space-y-6">
+              {/* Action Toolbar */}
+              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                    <ShieldCheck size={22} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                        Credencial Oficial Activa
+                      </h2>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase">
+                        Vigente
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      Credencial digital y física lista para descarga e inspección en línea.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setIsEditingCredential(true)}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                  >
+                    <Edit3 size={13} /> Editar Datos / Foto
+                  </button>
+
+                  <button
+                    onClick={handleCopyVirtualLink}
+                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm"
+                  >
+                    {copiedLink ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    {copiedLink ? '¡Enlace Copiado!' : 'Copiar Link'}
+                  </button>
+
+                  <button
+                    onClick={handleDownloadTeacherPdf}
+                    disabled={isDownloadingPdf}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isDownloadingPdf ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    <span>{isDownloadingPdf ? 'Generando...' : 'Descargar PDF'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Grid: Visual Cards & Virtual Info */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Column 1: Physical PVC Card Preview (Front and Back) */}
+                <div className="lg:col-span-7 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+                  <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                        Vista Previa de Credencial (Formato Tarjeta PVC)
+                      </h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                        Impresión estándar CR-80 de alta definición
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-6 py-2">
+                    {/* FRONT CARD PREVIEW */}
+                    <div className="w-[190px] h-[300px] bg-white rounded-2xl shadow-xl border border-slate-300 relative overflow-hidden flex flex-col items-center p-3 text-center shrink-0">
+                      {/* Top dark banner */}
+                      <div className="absolute top-0 left-0 right-0 h-20 bg-slate-900 rounded-b-2xl" />
+                      <div className="absolute top-[76px] left-4 right-4 h-1 bg-blue-500 rounded-full" />
+                      
+                      {/* Header in banner */}
+                      <div className="relative z-10 w-full mb-2 flex flex-col items-center">
+                        {settings?.logoUrl ? (
+                          <img src={settings.logoUrl} alt="Logo" className="h-7 w-auto object-contain max-w-[100px] mb-0.5" />
+                        ) : (
+                          <span className="text-[9px] font-black uppercase text-white tracking-wide truncate max-w-[170px]">
+                            {settings?.schoolName || 'Institución Educativa'}
+                          </span>
+                        )}
+                        <span className="text-[7px] font-black text-blue-300 uppercase tracking-widest">
+                          Credencial de Docente
+                        </span>
+                      </div>
+
+                      {/* Photo */}
+                      <div className="relative z-10 w-20 h-24 bg-slate-100 rounded-xl border-2 border-white shadow-md overflow-hidden mb-2">
+                        {credFormData.photoUrl ? (
+                          <img src={credFormData.photoUrl} alt="Docente" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-300">
+                            <User size={32} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Info */}
+                      <div className="relative z-10 w-full flex flex-col items-center mt-1">
+                        <span className="text-xs font-black text-slate-900 uppercase tracking-tight leading-tight line-clamp-2">
+                          {credFormData.name || credentialTeacher?.name}
+                        </span>
+
+                        <div className="mt-1.5 px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-md">
+                          <span className="text-[8px] font-black text-blue-700 uppercase tracking-wider">
+                            Docente • {credFormData.assignedLevel || 'General'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-center">
+                          <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest block">No. Empleado</span>
+                          <span className="text-xs font-black font-mono text-slate-900">
+                            {credFormData.employeeNumber || 'S/N'}
+                          </span>
+                        </div>
+
+                        <span className="mt-auto text-[7px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Personal Activo
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* BACK CARD PREVIEW */}
+                    <div className="w-[190px] h-[300px] bg-slate-50 rounded-2xl shadow-xl border border-slate-300 p-4 flex flex-col items-center justify-between text-center shrink-0">
+                      <div className="w-full border-b border-slate-200 pb-1">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-slate-800">
+                          Validación Digital
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                        <QRCodeSVG value={virtualCredentialUrl} size={90} />
+                      </div>
+
+                      <p className="text-[6.5px] text-slate-500 leading-relaxed px-1">
+                        Esta credencial oficial acredita al portador como docente activo. Escanee el código QR para validar su vigencia en línea.
+                      </p>
+
+                      <div className="w-full space-y-3">
+                        <div className="border-t border-slate-900 pt-0.5">
+                          <span className="text-[6px] font-bold text-slate-700 uppercase tracking-wider block">Firma del Docente</span>
+                        </div>
+                        <div className="border-t border-slate-900 pt-0.5">
+                          <span className="text-[6px] font-bold text-slate-700 uppercase tracking-wider block">Dirección General</span>
+                        </div>
+                      </div>
+
+                      <span className="text-[6.5px] font-bold text-slate-400 uppercase truncate max-w-[170px]">
+                        {settings?.schoolName || 'Institución Educativa'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 2: Virtual Credential Online Link & QR Code */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Virtual Credential Link Card */}
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <FileBadge size={18} className="text-slate-700" />
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                          Credencial Virtual Oficial
+                        </h3>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-black uppercase tracking-wider">
+                        En Línea
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Esta credencial cuenta con una versión digital pública para verificación de autenticidad en tiempo real. Cualquier persona o autoridad escolar puede consultar la vigencia desde cualquier dispositivo o navegador.
+                    </p>
+
+                    {/* URL box */}
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Enlace Oficial de Verificación:</span>
+                      <div className="flex items-center gap-1.5 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <input
+                          readOnly
+                          value={virtualCredentialUrl}
+                          className="bg-transparent text-xs font-mono text-slate-800 w-full outline-none select-all truncate font-medium"
+                        />
+                        <button
+                          onClick={handleCopyVirtualLink}
+                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider shrink-0 transition-all flex items-center gap-1 shadow-xs"
+                        >
+                          {copiedLink ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                          <span>{copiedLink ? 'Copiado' : 'Copiar'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <a
+                        href={virtualCredentialUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border border-slate-200 shadow-xs"
+                      >
+                        <ExternalLink size={13} /> Abrir Credencial Virtual
+                      </a>
+
+                      <button
+                        onClick={handleShareVirtualLink}
+                        className="px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border border-slate-200 shadow-xs"
+                        title="Compartir"
+                      >
+                        <Share2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* QR Code Validation Card */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center text-center space-y-3">
+                    <div className="w-full flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                        <QrCode size={14} className="text-slate-700" /> Código QR de Verificación
+                      </span>
+                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full uppercase border border-emerald-200">
+                        Vigente
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                      <QRCodeSVG 
+                        value={virtualCredentialUrl} 
+                        size={140} 
+                        level="H" 
+                        includeMargin={false}
+                      />
+                    </div>
+
+                    <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
+                      Escanee este código QR con la cámara de cualquier teléfono para abrir y certificar la credencial virtual oficial.
+                    </p>
+
+                    <div className="text-[9px] text-slate-400 font-mono">
+                      FOLIO: CMF-DOC-{credentialTeacher?.id?.substring(0, 8).toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
     </div>

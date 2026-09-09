@@ -9,7 +9,8 @@ import {
 } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from './firebase';
-import { doc, getDoc, onSnapshot, getDocFromServer, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, getDocFromServer, setDoc, serverTimestamp, query, collection, where } from 'firebase/firestore';
+import { AppSettings } from './types';
 import { usePermissions, PermissionsProvider } from './hooks/usePermissions';
 import { 
   LayoutDashboard, 
@@ -64,6 +65,7 @@ import PrintBoleta from './pages/PrintBoleta';
 import PublicVisitRegistration from './pages/PublicVisitRegistration';
 import NotFound from './pages/NotFound';
 import Horarios from './pages/Horarios';
+import TeacherVirtualCredential from './pages/TeacherVirtualCredential';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -75,12 +77,15 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [parentStudents, setParentStudents] = useState<any[]>([]);
   
   useEffect(() => {
     // Fetch settings for logo and name
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
+        const data = snap.data() as AppSettings;
+        setAppSettings(data);
         setLogoUrl(data.logoUrl || '');
         if (data.schoolName) {
           setSchoolName(data.schoolName);
@@ -109,9 +114,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                 expenses: { view: true, create: true, edit: true, delete: true },
                 settings: { view: true, editGeneral: true, editCycles: true, editRules: true, manageUsers: true },
                 announcements: { view: true, manage: true },
-                controlEscolar: { view: true, manage: true },
-                grading: { view: true, manage: true },
-                timeClock: { view: true, manage: true }
+                parents: { view: true, manage: true },
+                controlEscolar: { view: true },
+                timeClock: { view: true }
               },
               createdAt: serverTimestamp()
             });
@@ -127,6 +132,16 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   }, [user?.uid, loading, !!userProfile]);
   
   const isParent = userProfile?.role === 'Padre';
+
+  useEffect(() => {
+    if (isParent && userProfile?.email) {
+      const q = query(collection(db, 'students'), where('parentEmail', '==', userProfile.email.toLowerCase()));
+      const unsub = onSnapshot(q, (snap) => {
+        setParentStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      return unsub;
+    }
+  }, [isParent, userProfile?.email]);
 
   const navItems = isParent ? [
     { name: 'Mis Hijos', path: '/', icon: Users, section: 'dashboard', action: 'view' },
@@ -149,6 +164,24 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/ajustes', icon: SlidersHorizontal, section: 'settings', action: 'view' },
   ];
+
+  const isFeatureEnabledForParent = (featureKey: string) => {
+    if (!appSettings?.parentPortalFeatures) return true;
+    if (parentStudents.length === 0) return true;
+    return parentStudents.some(s => {
+      const levelFeatures = appSettings.parentPortalFeatures?.[s.level];
+      if (!levelFeatures) return true;
+      return levelFeatures.includes(featureKey);
+    });
+  };
+
+  const filteredNavItems = isParent ? navItems.filter(item => {
+    if (item.path.includes('tab=')) {
+      const tabKey = item.path.split('=')[1];
+      return isFeatureEnabledForParent(tabKey);
+    }
+    return true;
+  }) : navItems;
 
   const handleLogout = () => auth.signOut();
 
@@ -225,10 +258,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
         </header>
       )}
 
-      {/* Parent Bottom Navigation Bar */}
       {isParent && (
         <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md px-2 py-2 rounded-2xl shadow-2xl flex items-center gap-1 z-50 border border-white/10">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const isActive = (location.pathname === item.path && !location.search) || (item.path.includes('tab=') && location.search.includes(item.path.split('=')[1]));
             return (
               <Link
@@ -516,6 +548,7 @@ const AppContent = () => {
       <Route path="/visita" element={<PublicVisitRegistration />} />
       <Route path="/checador" element={<ChecadorKiosk />} />
       <Route path="/checador-kiosko-alumnos" element={<ChecadorKioskoAlumnos />} />
+      <Route path="/credencial-docente/:teacherId" element={<TeacherVirtualCredential />} />
       <Route path={`/${enrollmentSlug}`} element={<EnrollmentForm />} />
       {/* Compatibility routes */}
       {enrollmentSlug !== 'inscripcion' && <Route path="/inscripcion" element={<EnrollmentForm />} />}

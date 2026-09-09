@@ -27,7 +27,8 @@ export function calculateStudentDebts(
   student: Student,
   payments: Payment[],
   currentCycle: SchoolCycle | null,
-  settings: AppSettings | null
+  settings: AppSettings | null,
+  allCycles: SchoolCycle[] = []
 ): StudentDebtStatus {
   if (!currentCycle) {
     return { studentId: student.id, hasDebt: false, hasOverdueDebt: false, debts: [], totalDebt: 0, nextTuition: null };
@@ -41,67 +42,94 @@ export function calculateStudentDebts(
   
   const debts: Debt[] = [];
   let nextTuition: Debt | null = null;
-  
-  const years = currentCycle.name.split('-').map(y => parseInt(y.trim()));
-  const startYear = years[0] || currentYear;
-  const endYear = years[1] || currentYear + 1;
 
-  // We want to sort the billable months chronologically
-  const chronologicalMonths = currentCycle.billableMonths.map(monthIndex => {
-    const year = monthIndex >= 7 ? startYear : endYear;
-    return { monthIndex, year };
-  }).sort((a, b) => {
-    if (a.year !== b.year) return a.year - b.year;
-    return a.monthIndex - b.monthIndex;
+  // Find previous cycles
+  const getCycleStartYear = (cycle: SchoolCycle) => {
+    const years = cycle.name.split('-').map(y => parseInt(y.trim()));
+    return years[0] || 0;
+  };
+  
+  const currentCycleStartYear = getCycleStartYear(currentCycle);
+  const previousCycles = allCycles.filter(c => {
+    if (c.id === currentCycle.id) return false;
+    return getCycleStartYear(c) < currentCycleStartYear;
   });
 
-  chronologicalMonths.forEach(({ monthIndex, year }) => {
-    // Only consider months on or after enrollment date
-    if (student.enrollmentYear !== undefined && student.enrollmentMonth !== undefined) {
-      if (year < student.enrollmentYear || (year === student.enrollmentYear && monthIndex < student.enrollmentMonth)) {
-        return;
-      }
-    }
+  // Helper to compute debts for a given cycle
+  const computeDebtsForCycle = (cycle: SchoolCycle, isPreviousCycle: boolean) => {
+    const cycleDebts: Debt[] = [];
+    const years = cycle.name.split('-').map(y => parseInt(y.trim()));
+    const startYear = years[0] || currentYear;
+    const endYear = years[1] || currentYear + 1;
 
-    const isPastOrCurrent = (year < currentYear) || (year === currentYear && monthIndex <= currentMonth);
-    const conceptToFind = `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year}`;
-    
-    const hasPayment = studentPayments.some(p => {
-      // In online checkouts, we mark it missing if it's not paid AND not a pending online checkout, but to keep it simple, we consider "Pendiente" as well so they don't double pay
-      const pDate = p.date.toDate();
-      const dateMatches = pDate.getMonth() === monthIndex && pDate.getFullYear() === year;
-      const conceptMatches = p.concept.toUpperCase().includes(MONTH_NAMES[monthIndex].toUpperCase()) && p.concept.includes(year.toString());
-      return dateMatches || conceptMatches;
+    const chronologicalMonths = cycle.billableMonths.map(monthIndex => {
+      const year = monthIndex >= 7 ? startYear : endYear;
+      return { monthIndex, year };
+    }).sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.monthIndex - b.monthIndex;
     });
 
-    if (!hasPayment) {
-      if (isPastOrCurrent) {
-        // It's a debt
-        const isCurrentMonth = year === currentYear && monthIndex === currentMonth;
-        const dueDay = settings?.dueDay || 10;
-        const isOverdue = !isCurrentMonth || now.getDate() > dueDay;
-
-        debts.push({
-          month: monthIndex,
-          year: year,
-          amount: currentCycle.tuitionAmount,
-          concept: conceptToFind,
-          isOverdue: isOverdue
-        });
-      } else if (!nextTuition) {
-        // It's the first unpaid *future* month
-        nextTuition = {
-          month: monthIndex,
-          year: year,
-          amount: currentCycle.tuitionAmount,
-          concept: conceptToFind,
-          isOverdue: false
-        };
+    chronologicalMonths.forEach(({ monthIndex, year }) => {
+      // Only consider months on or after enrollment date
+      if (student.enrollmentYear !== undefined && student.enrollmentMonth !== undefined) {
+        if (year < student.enrollmentYear || (year === student.enrollmentYear && monthIndex < student.enrollmentMonth)) {
+          return;
+        }
       }
-    }
+
+      const isPastOrCurrent = isPreviousCycle || (year < currentYear) || (year === currentYear && monthIndex <= currentMonth);
+      const conceptPrefix = isPreviousCycle 
+        ? `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year} (Ciclo ${cycle.name})`
+        : `COLEGIATURA ${MONTH_NAMES[monthIndex].toUpperCase()} ${year}`;
+
+      const hasPayment = studentPayments.some(p => {
+        const pDate = p.date.toDate();
+        const dateMatches = pDate.getMonth() === monthIndex && pDate.getFullYear() === year;
+        const conceptMatches = p.concept.toUpperCase().includes(MONTH_NAMES[monthIndex].toUpperCase()) && p.concept.includes(year.toString());
+        return dateMatches || conceptMatches;
+      });
+
+      if (!hasPayment) {
+        if (isPastOrCurrent) {
+          const isOverdue = isPreviousCycle || (() => {
+            const isCurrentMonth = year === currentYear && monthIndex === currentMonth;
+            const dueDay = settings?.dueDay || 10;
+            return !isCurrentMonth || now.getDate() > dueDay;
+          })();
+
+          cycleDebts.push({
+            month: monthIndex,
+            year: year,
+            amount: cycle.tuitionAmount,
+            concept: conceptPrefix,
+            isOverdue: isOverdue
+          });
+        } else if (!isPreviousCycle && !nextTuition) {
+          nextTuition = {
+            month: monthIndex,
+            year: year,
+            amount: cycle.tuitionAmount,
+            concept: conceptPrefix,
+            isOverdue: false
+          };
+        }
+      }
+    });
+
+    return cycleDebts;
+  };
+
+  // 1. Calculate debts for previous cycles
+  previousCycles.forEach(prevCycle => {
+    const prevCycleDebts = computeDebtsForCycle(prevCycle, true);
+    debts.push(...prevCycleDebts);
   });
 
-  // Only return nextTuition if the parent doesn't have current debts. If they have debts, they should pay those first.
+  // 2. Calculate debts for current cycle
+  const currentCycleDebts = computeDebtsForCycle(currentCycle, false);
+  debts.push(...currentCycleDebts);
+
   const hasDebt = debts.length > 0;
 
   return {

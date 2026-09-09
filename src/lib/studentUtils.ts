@@ -108,3 +108,46 @@ export function calculateCURP(data: {
 
   return curpPrefix.toUpperCase();
 }
+
+export function getNextGradeAndLevel(currentGrade: string, currentLevel: string) {
+  const gradeClean = currentGrade.trim().toLowerCase();
+  const levelClean = currentLevel.trim().toLowerCase();
+  
+  if (levelClean.includes('preescolar')) {
+    if (gradeClean.includes('1')) return { grade: '2do', level: currentLevel };
+    if (gradeClean.includes('2')) return { grade: '3ro', level: currentLevel };
+    if (gradeClean.includes('3')) return { grade: '1ro', level: 'Primaria' };
+  }
+  
+  if (levelClean.includes('primaria')) {
+    if (gradeClean.includes('1')) return { grade: '2do', level: currentLevel };
+    if (gradeClean.includes('2')) return { grade: '3ro', level: currentLevel };
+    if (gradeClean.includes('3')) return { grade: '4to', level: currentLevel };
+    if (gradeClean.includes('4')) return { grade: '5to', level: currentLevel };
+    if (gradeClean.includes('5')) return { grade: '6to', level: currentLevel };
+    if (gradeClean.includes('6')) return { grade: '1ro', level: 'Secundaria' };
+  }
+  
+  if (levelClean.includes('secundaria')) {
+    if (gradeClean.includes('1')) return { grade: '2do', level: currentLevel };
+    if (gradeClean.includes('2')) return { grade: '3ro', level: currentLevel };
+    if (gradeClean.includes('3')) return { grade: '1ro', level: 'Bachillerato' };
+  }
+  
+  if (levelClean.includes('bachillerato') || levelClean.includes('preparatoria')) {
+    if (gradeClean.includes('1')) return { grade: '2do', level: currentLevel };
+    if (gradeClean.includes('2')) return { grade: '3ro', level: currentLevel };
+    if (gradeClean.includes('3')) return { grade: '3ro', level: currentLevel };
+  }
+  
+  // Fallback genérico para números
+  const match = currentGrade.match(/\d+/);
+  if (match) {
+    const currentNum = parseInt(match[0]);
+    const nextNum = currentNum + 1;
+    const suffixes: Record<number, string> = { 1: '1ro', 2: '2do', 3: '3ro', 4: '4to', 5: '5to', 6: '6to' };
+    return { grade: suffixes[nextNum] || `${nextNum}to`, level: currentLevel };
+  }
+  
+  return { grade: currentGrade, level: currentLevel };
+}

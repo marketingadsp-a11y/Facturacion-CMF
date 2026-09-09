@@ -161,7 +161,7 @@ export default function Reception() {
     const thresholdDay = settings.dueDay + 2;
 
     return students.map(student => {
-      const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings);
+      const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings, cycles);
       
       if (!debtStatus.hasDebt) return null;
 
