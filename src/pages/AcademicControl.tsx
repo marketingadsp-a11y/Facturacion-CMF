@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck } from 'lucide-react';
+import { cn, studentMatchesSearch } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,8 +12,10 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import OfficialListPDF from '../components/OfficialListPDF';
-import { calculateStudentDebts } from '../lib/paymentUtils';
+import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
+import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
+import { sendWelcomeEmail } from '../services/mailService';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
@@ -254,22 +256,62 @@ export default function AcademicControl() {
     }
   };
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+
+  const generateMatriculaCode = (level: string) => {
+    const prefix = settings?.matriculaPrefixes?.[level] || '';
+    let code = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+    let attempts = 0;
+    while (students.some(s => s.matricula === code) && attempts < 20) {
+      code = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+      attempts++;
+    }
+    return code;
+  };
+
+  const handleResendEmail = async (student: Student) => {
+    if (!settings || !student.parentEmail) return;
+    
+    setSendingEmailId(student.id);
+    try {
+      await sendWelcomeEmail(student, settings);
+      alert('Invitación enviada exitosamente.');
+    } catch (error) {
+      console.error('Error reenviando correo:', error);
+      alert('Hubo un error al reenviar el correo. Por favor intente más tarde.');
+    } finally {
+      setSendingEmailId(null);
+    }
+  };
+
   const handleEditStudent = (student: Student) => {
     setEditingStudent(student);
     setStudentFormData({
-      name: student.name,
-      lastName: student.lastName,
+      name: student.name || '',
+      lastName: student.lastName || '',
       motherLastName: student.motherLastName || '',
       birthDate: student.birthDate || '',
-      gender: student.gender || 'H',
-      birthState: student.birthState || 'MC',
-      curp: student.curp,
-      level: student.level,
-      grade: student.grade,
-      group: student.group,
-      email: student.email,
-      phone: student.phone,
-      matricula: student.matricula || ''
+      gender: (student.gender as 'H' | 'M') || 'H',
+      birthState: student.birthState || 'JC',
+      curp: student.curp || '',
+      email: student.email || '',
+      phone: student.phone || '',
+      parentEmail: student.parentEmail || '',
+      level: student.level || availableLevels[0] || 'Primaria',
+      grade: student.grade || '',
+      group: student.group || '',
+      rfc: student.rfc || '',
+      billingName: student.billingName || '',
+      billingAddress: student.billingAddress || '',
+      zipCode: student.zipCode || '',
+      taxSystem: student.taxSystem || '605',
+      registrationCode: student.registrationCode || '',
+      photoUrl: student.photoUrl || '',
+      matricula: student.matricula || '',
+      cycleId: student.cycleId || settings?.currentCycleId || '',
+      enrollmentMonth: student.enrollmentMonth,
+      enrollmentYear: student.enrollmentYear
     });
   };
 
@@ -291,8 +333,23 @@ export default function AcademicControl() {
     }
   }, [studentFormData.name, studentFormData.lastName, studentFormData.motherLastName, studentFormData.birthDate, studentFormData.gender, studentFormData.birthState, editingStudent]);
 
-  const handleSaveStudent = async () => {
+  const handleSaveStudent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!editingStudent) return;
+
+    // Check for matrícula conflict
+    const hasMatriculaConflict = studentFormData.matricula && students.some(s => 
+      s.matricula === studentFormData.matricula && s.id !== editingStudent.id
+    );
+
+    if (hasMatriculaConflict) {
+      const conflictingStudent = students.find(s => s.matricula === studentFormData.matricula);
+      alert(
+        `Conflicto de Matrícula:\n\nLa matrícula "${studentFormData.matricula}" ya está asignada a:\n${conflictingStudent?.lastName} ${conflictingStudent?.name} (${conflictingStudent?.level} ${conflictingStudent?.grade})\n\nPor favor asigne una matrícula única.`
+      );
+      return;
+    }
+
     setIsSavingStudent(true);
     try {
       await updateDoc(doc(db, 'students', editingStudent.id), {
@@ -317,43 +374,68 @@ export default function AcademicControl() {
     }
   };
 
-  const filteredEnrollments = enrollments.filter(e => {
-    const matchesSearch = `${e.studentName} ${e.studentLastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.folio?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = !filterStatus || e.status === filterStatus;
+  const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
+  const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
+  const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
 
-    // Granular permissions for Control Escolar on enrollments
-    if (userProfile?.role === 'Control Escolar') {
-      const restrictedLevels = (userProfile as any).restrictedLevels || [];
-      const restrictedGrades = (userProfile as any).restrictedGrades || [];
-      // Enrollments usually don't have group yet, so we don't check group here
-
-      if (restrictedLevels.length > 0 && !restrictedLevels.includes(e.level)) return false;
-      if (restrictedGrades.length > 0 && !restrictedGrades.includes(e.grade)) return false;
+  const availableLevels = useMemo(() => {
+    const all = settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+    if (restrictedLevels.length > 0) {
+      return all.filter(lvl => restrictedLevels.includes(lvl));
     }
+    return all;
+  }, [settings?.academicLevels, restrictedLevels]);
+
+  const availableGrades = useMemo(() => {
+    const all = settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+    if (restrictedGrades.length > 0) {
+      return all.filter(g => restrictedGrades.includes(g));
+    }
+    return all;
+  }, [settings?.academicGrades, restrictedGrades]);
+
+  const availableGroups = useMemo(() => {
+    const all = settings?.academicGroups || ['A', 'B', 'C', 'D'];
+    if (restrictedGroups.length > 0) {
+      return all.filter(grp => restrictedGroups.includes(grp));
+    }
+    return all;
+  }, [settings?.academicGroups, restrictedGroups]);
+
+  const filteredEnrollments = enrollments.filter(e => {
+    // Restricciones granulares asignadas al usuario
+    if (restrictedLevels.length > 0 && !restrictedLevels.includes(e.level)) return false;
+    if (restrictedGrades.length > 0 && !restrictedGrades.includes(e.grade)) return false;
+
+    const matchesSearch = studentMatchesSearch([
+      e.studentName,
+      e.studentLastName,
+      e.folio,
+      e.curp
+    ], searchTerm);
+    const matchesStatus = !filterStatus || e.status === filterStatus;
 
     return matchesSearch && matchesStatus;
   });
 
   const filteredStudents = students.filter(s => {
-    const fullName = `${s.name} ${s.lastName}`.toLowerCase();
-    const matchesSearch = fullName.includes(searchTerm.toLowerCase()) || 
-                         (s.curp && s.curp.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Restricciones granulares asignadas al usuario
+    if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+    if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+    if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+
+    const matchesSearch = studentMatchesSearch([
+      s.name,
+      s.lastName,
+      s.motherLastName,
+      s.curp,
+      s.matricula
+    ], searchTerm);
     const matchesLevel = !filterLevel || s.level === filterLevel;
     const matchesGrade = !filterGrade || s.grade === filterGrade;
     const matchesGroup = !filterGroup || s.group === filterGroup;
     const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
-
-    // Granular permissions for Control Escolar
-    if (userProfile?.role === 'Control Escolar') {
-      const restrictedLevels = (userProfile as any).restrictedLevels || [];
-      const restrictedGrades = (userProfile as any).restrictedGrades || [];
-      const restrictedGroups = (userProfile as any).restrictedGroups || [];
-
-      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
-      if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
-      if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
-    }
 
     return matchesSearch && matchesLevel && matchesGrade && matchesGroup && matchesCycle;
   }).sort((a, b) => {
@@ -451,7 +533,7 @@ export default function AcademicControl() {
         </div>
       </div>
 
-      {activeTab === 'enrollments' ? (
+      {activeTab === 'enrollments' && (
         <>
           {/* Filters for Enrollments - Technical Style */}
           <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
@@ -552,7 +634,9 @@ export default function AcademicControl() {
             </div>
           )}
         </>
-      ) : (
+      )}
+
+      {activeTab === 'studentList' && (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
           {/* Filters for Student List - High Density */}
           <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
@@ -597,7 +681,7 @@ export default function AcademicControl() {
                 className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:border-slate-900"
               >
                 <option value="">TODOS NIVELES</option>
-                {(settings?.academicLevels || []).map(level => (
+                {availableLevels.map(level => (
                   <option key={level} value={level}>{level}</option>
                 ))}
               </select>
@@ -608,7 +692,7 @@ export default function AcademicControl() {
                 className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:border-slate-900"
               >
                 <option value="">TODOS GRADOS</option>
-                {(settings?.academicGrades || []).map(grade => (
+                {availableGrades.map(grade => (
                   <option key={grade} value={grade}>{grade}</option>
                 ))}
               </select>
@@ -619,7 +703,7 @@ export default function AcademicControl() {
                 className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:border-slate-900"
               >
                 <option value="">TODOS GRUPOS</option>
-                {(settings?.academicGroups || ['A', 'B', 'C', 'D']).map(group => (
+                {availableGroups.map(group => (
                   <option key={group} value={group}>{group}</option>
                 ))}
               </select>
@@ -686,7 +770,9 @@ export default function AcademicControl() {
                         return numericGrades.reduce((a, b) => a + b, 0) / numericGrades.length;
                       };
 
-                      const capturedAvgs = [1, 2, 3, 4, 5].map(num => getBimestreAvg(num)).filter((v): v is number => v !== null);
+                      const evalConfig = getLevelEvaluationConfig(settings, student.level);
+                      const periodIndices = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1);
+                      const capturedAvgs = periodIndices.map(num => getBimestreAvg(num)).filter((v): v is number => v !== null);
                       const finalAvg = capturedAvgs.length > 0 
                         ? capturedAvgs.reduce((a, b) => a + b, 0) / capturedAvgs.length 
                         : null;
@@ -799,7 +885,7 @@ export default function AcademicControl() {
       )}
 
       {activeTab === 'subjects' && (
-        <SubjectsManagement subjects={subjects} settings={settings} />
+        <SubjectsManagement subjects={subjects} settings={settings} availableLevels={availableLevels} />
       )}
 
       {/* Select Group Modal */}
@@ -865,7 +951,7 @@ export default function AcademicControl() {
                         className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
                       >
                         <option value="">NIVEL</option>
-                        {(settings?.academicLevels || []).map(l => <option key={l} value={l}>{l}</option>)}
+                        {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
                       </select>
                     </div>
                     <div>
@@ -876,7 +962,7 @@ export default function AcademicControl() {
                         className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
                       >
                         <option value="">GRADO</option>
-                        {(settings?.academicGrades || []).map(g => <option key={g} value={g}>{g}</option>)}
+                        {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
                       </select>
                     </div>
                     <div>
@@ -887,7 +973,7 @@ export default function AcademicControl() {
                         className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
                       >
                         <option value="">GRUPO</option>
-                        {(settings?.academicGroups || ['A', 'B', 'C', 'D']).map(g => <option key={g} value={g}>{g}</option>)}
+                        {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
                       </select>
                     </div>
                   </div>
@@ -1030,162 +1116,421 @@ export default function AcademicControl() {
           </div>
         )}
       </AnimatePresence>
-      {editingStudent && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white w-full max-w-xl rounded-[2rem] shadow-2xl overflow-hidden"
-          >
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
-                  <Edit2 size={20} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Editar Información</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{editingStudent.lastName}, {editingStudent.name}</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setEditingStudent(null)}
-                className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-                disabled={isSavingStudent}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <FormInput 
-                  label="Nombre" 
-                  value={studentFormData.name} 
-                  onChange={(e: any) => setStudentFormData({...studentFormData, name: e.target.value})} 
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <FormInput 
-                    label="Paterno" 
-                    value={studentFormData.lastName} 
-                    onChange={(e: any) => setStudentFormData({...studentFormData, lastName: e.target.value})} 
-                  />
-                  <FormInput 
-                    label="Materno" 
-                    value={studentFormData.motherLastName} 
-                    onChange={(e: any) => setStudentFormData({...studentFormData, motherLastName: e.target.value})} 
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2 pb-2 bg-blue-50/30 p-4 rounded-2xl border border-blue-100/50">
-                     <div className="col-span-2 flex items-center gap-2 mb-1">
-                        <Sparkles size={12} className="text-blue-500" />
-                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Generación de CURP</span>
-                     </div>
-                     <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Fecha de Nacimiento *</label>
+      {/* Edit Student Modal */}
+      <AnimatePresence>
+        {editingStudent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingStudent(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="relative bg-white w-full max-w-5xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] border border-slate-200"
+            >
+              {/* Header Compacto */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center text-white shadow-md">
+                    <UserPlus size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight leading-none uppercase">
+                      Editar Registro
+                    </h2>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">
+                      Control Escolar • Ciclo {currentCycle?.name || 'Actual'}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setEditingStudent(null)} 
+                  className="p-1.5 hover:bg-slate-100 rounded-md transition-all text-slate-400 hover:text-slate-900"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              
+              <form id="student-edit-form" onSubmit={handleSaveStudent} className="flex-1 overflow-y-auto p-6 bg-white">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Bloque 1: Identidad */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                       <User size={14} className="text-blue-600" />
+                       <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.1em]">Identidad</span>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {/* Carga de Fotografía de Alumno */}
+                      <div className="flex flex-col items-center justify-center p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Fotografía del Alumno</span>
+                        <div className="relative group w-20 h-24 bg-slate-200 rounded-lg overflow-hidden border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-all">
+                          {studentFormData.photoUrl ? (
+                            <img src={studentFormData.photoUrl} alt="Foto Alumno" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-2 text-slate-400 group-hover:text-blue-500 text-center">
+                              <ImageIcon size={20} className="mb-1" />
+                              <span className="text-[8px] font-bold uppercase">Sin Foto</span>
+                            </div>
+                          )}
+                          
+                          <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all text-white text-[8px] font-black uppercase tracking-tight">
+                            {studentFormData.photoUrl ? 'Cambiar' : 'Subir'}
+                          </div>
+                          
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (!settings?.imgbbApiKey) {
+                                alert("No se ha configurado la API Key de ImgBB en Ajustes.");
+                                return;
+                              }
+                              
+                              setUploadingPhoto(true);
+                              try {
+                                const fd = new FormData();
+                                fd.append('image', file);
+                                const res = await fetch(`https://api.imgbb.com/1/upload?key=${settings.imgbbApiKey}`, {
+                                  method: 'POST',
+                                  body: fd
+                                });
+                                if (!res.ok) throw new Error("Error en la respuesta del servidor ImgBB");
+                                const resData = await res.json();
+                                if (resData.success && resData.data?.url) {
+                                  setStudentFormData(prev => ({ ...prev, photoUrl: resData.data.url }));
+                                } else {
+                                  throw new Error(resData.error?.message || "Error al subir la imagen");
+                                }
+                              } catch (err: any) {
+                                console.error("Error subiendo foto:", err);
+                                alert(`Error al subir fotografía: ${err.message || err}`);
+                              } finally {
+                                setUploadingPhoto(false);
+                              }
+                            }}
+                          />
+                          
+                          {uploadingPhoto && (
+                            <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                        {studentFormData.photoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setStudentFormData(prev => ({ ...prev, photoUrl: '' }))}
+                            className="text-[8px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest hover:underline"
+                          >
+                            Eliminar Foto
+                          </button>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Nombre(s) *</label>
                         <input
-                           type="date"
-                           required
-                           value={studentFormData.birthDate}
-                           onChange={(e) => setStudentFormData({...studentFormData, birthDate: e.target.value})}
-                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                          required
+                          value={studentFormData.name || ''}
+                          onChange={(e) => setStudentFormData({...studentFormData, name: e.target.value})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
                         />
-                     </div>
-                     <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Género *</label>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Paterno *</label>
+                          <input
+                            required
+                            value={studentFormData.lastName || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, lastName: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Materno</label>
+                          <input
+                            value={studentFormData.motherLastName || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, motherLastName: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                           <div>
+                              <label className="block text-[9px] font-bold text-blue-800 uppercase mb-1">Nacimiento</label>
+                              <input
+                                 type="date"
+                                 required
+                                 value={studentFormData.birthDate || ''}
+                                 onChange={(e) => setStudentFormData({...studentFormData, birthDate: e.target.value})}
+                                 className="w-full px-2 py-1.5 bg-white border border-blue-200 rounded text-[10px] font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                              />
+                           </div>
+                           <div>
+                              <label className="block text-[9px] font-bold text-blue-800 uppercase mb-1">Género</label>
+                              <select
+                                 required
+                                 value={studentFormData.gender || 'H'}
+                                 onChange={(e) => setStudentFormData({...studentFormData, gender: e.target.value as 'H' | 'M'})}
+                                 className="w-full px-2 py-1.5 bg-white border border-blue-200 rounded text-[10px] font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                              >
+                                 <option value="H">Hombre</option>
+                                 <option value="M">Mujer</option>
+                              </select>
+                           </div>
+                        </div>
+                        <div>
+                           <label className="block text-[9px] font-bold text-blue-800 uppercase mb-1">Estado de Nacimiento</label>
+                           <select
+                              required
+                              value={studentFormData.birthState || 'JC'}
+                              onChange={(e) => setStudentFormData({...studentFormData, birthState: e.target.value})}
+                              className="w-full px-2 py-1.5 bg-white border border-blue-200 rounded text-[10px] font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                           >
+                              {STATES.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1 flex items-center justify-between">
+                            CURP CALCULADA
+                            <Sparkles size={10} className="text-blue-400" />
+                          </label>
+                          <input
+                            value={studentFormData.curp || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, curp: e.target.value.toUpperCase()})}
+                            className="w-full px-3 py-2 bg-white border border-blue-300 rounded focus:border-blue-600 outline-none uppercase font-mono font-black text-[11px] text-blue-800 text-center tracking-wider"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloque 2: Académico & Finanzas */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                       <BookOpen size={14} className="text-indigo-600" />
+                       <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.1em]">Academia y Pagos</span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Ciclo Escolar *</label>
                         <select
-                           required
-                           value={studentFormData.gender}
-                           onChange={(e) => setStudentFormData({...studentFormData, gender: e.target.value as 'H' | 'M'})}
-                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                          required
+                          value={studentFormData.cycleId || ''}
+                          onChange={(e) => setStudentFormData({...studentFormData, cycleId: e.target.value})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold transition-all"
                         >
-                           <option value="H">Hombre</option>
-                           <option value="M">Mujer</option>
+                          <option value="">Seleccionar...</option>
+                          {cycles.map(cycle => (
+                            <option key={cycle.id} value={cycle.id}>{cycle.name}</option>
+                          ))}
                         </select>
-                     </div>
-                     <div className="col-span-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Estado de Nacimiento *</label>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Nivel Educativo *</label>
                         <select
-                           required
-                           value={studentFormData.birthState}
-                           onChange={(e) => setStudentFormData({...studentFormData, birthState: e.target.value})}
-                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                          required
+                          value={studentFormData.level || ''}
+                          onChange={(e) => {
+                            const newLevel = e.target.value;
+                            setStudentFormData(prev => {
+                              const oldLevel = prev.level || '';
+                              const oldPrefix = settings?.matriculaPrefixes?.[oldLevel] || '';
+                              const isAutoGenerated = !prev.matricula || (oldPrefix && prev.matricula.startsWith(oldPrefix));
+                              
+                              let nextMatricula = prev.matricula;
+                              if (isAutoGenerated) {
+                                nextMatricula = generateMatriculaCode(newLevel);
+                              }
+                              return { ...prev, level: newLevel, matricula: nextMatricula };
+                            });
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold transition-all"
                         >
-                           {STATES.map(s => (
-                              <option key={s.code} value={s.code}>{s.name}</option>
-                           ))}
+                          <option value="">Seleccionar...</option>
+                          {availableLevels.map(level => (
+                            <option key={level} value={level}>{level}</option>
+                          ))}
                         </select>
-                     </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Matrícula</label>
+                        <input
+                          value={studentFormData.matricula || ''}
+                          onChange={(e) => setStudentFormData({...studentFormData, matricula: e.target.value})}
+                          placeholder="Autogenerada..."
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold uppercase transition-all"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Grado *</label>
+                          <select
+                            required
+                            value={studentFormData.grade || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, grade: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-xs font-bold"
+                          >
+                            <option value="">Grado</option>
+                            {availableGrades.map(grade => (
+                              <option key={grade} value={grade}>{grade}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Grupo</label>
+                          <select
+                            value={studentFormData.group || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, group: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-xs font-bold"
+                          >
+                            <option value="">Grupo</option>
+                            {availableGroups.map(group => (
+                              <option key={group} value={group}>{group}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Configuración de Cobro */}
+                      <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <ReceiptText size={12} className="text-emerald-600" />
+                          <span className="text-[9px] font-black text-emerald-800 uppercase">Inicio de Cobros</span>
+                        </div>
+                        <p className="text-[10px] text-emerald-700 font-bold italic text-center">
+                          Inscrito: {studentFormData.enrollmentMonth !== undefined ? MONTH_NAMES[studentFormData.enrollmentMonth] : '-'} {studentFormData.enrollmentYear || ''}
+                        </p>
+                      </div>
+
+                      <div>
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Código de Registro *</label>
+                         <input
+                            required
+                            maxLength={5}
+                            value={studentFormData.registrationCode || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, registrationCode: e.target.value.replace(/\D/g, '')})}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-950 rounded-lg text-white font-mono font-black text-center text-lg tracking-[0.2em] shadow-inner"
+                         />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloque 3: Contacto y SAT */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                       <Mail size={14} className="text-slate-600" />
+                       <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.1em]">Contacto y Fiscal</span>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[10px] font-black text-blue-600 uppercase ml-1">Correo Acceso Padres *</label>
+                          {editingStudent && studentFormData.parentEmail && (
+                            <button
+                              type="button"
+                              onClick={() => handleResendEmail(editingStudent)}
+                              disabled={sendingEmailId === editingStudent.id}
+                              className="flex items-center gap-1 text-[9px] font-black text-blue-600 hover:text-blue-800 uppercase transition-all"
+                            >
+                              {sendingEmailId === editingStudent.id ? (
+                                <div className="w-2 h-2 border border-blue-600 border-t-white rounded-full animate-spin" />
+                              ) : (
+                                <Mail size={10} />
+                              )}
+                              Reenviar Invitación
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="email"
+                          required
+                          value={studentFormData.parentEmail || ''}
+                          onChange={(e) => setStudentFormData({...studentFormData, parentEmail: e.target.value})}
+                          className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg focus:bg-white focus:border-blue-600 outline-none text-xs font-bold"
+                          placeholder="obligatorio para el portal"
+                        />
+                      </div>
+                      
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <ShieldCheck size={12} className="text-slate-400" />
+                          <span className="text-[9px] font-black text-slate-500 uppercase italic">Facturación CFDI 4.0</span>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">RFC</label>
+                          <input
+                            value={studentFormData.rfc || ''}
+                            onChange={(e) => setStudentFormData({...studentFormData, rfc: e.target.value.toUpperCase()})}
+                            className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs font-bold uppercase outline-none focus:border-slate-900"
+                            placeholder="XAXX010101000"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Régimen Fiscal</label>
+                          <select
+                            value={studentFormData.taxSystem || '605'}
+                            onChange={(e) => setStudentFormData({...studentFormData, taxSystem: e.target.value})}
+                            className="w-full px-3 py-1.5 border border-slate-200 rounded text-[10px] font-bold outline-none focus:border-slate-900"
+                          >
+                            <option value="605">605 - Sueldos y Salarios</option>
+                            <option value="601">601 - General Personas Morales</option>
+                            <option value="616">616 - Sin obligaciones</option>
+                            <option value="626">626 - RESICO</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </form>
+
+              {/* Botonera de Acción */}
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">
+                  * Todos los campos identitarios son obligatorios para el sistema.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingStudent(null)}
+                    className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 hover:text-slate-900 transition-all"
+                    disabled={isSavingStudent}
+                  >
+                    Descartar
+                  </button>
+                  <button
+                    type="submit"
+                    form="student-edit-form"
+                    disabled={isSavingStudent}
+                    className="px-6 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-lg shadow-slate-200 flex items-center gap-2"
+                  >
+                    {isSavingStudent ? <Clock size={12} className="animate-spin" /> : <Edit2 size={12} />}
+                    {isSavingStudent ? 'Actualizando...' : 'Actualizar'}
+                  </button>
+                </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Nivel</label>
-                  <select
-                    value={studentFormData.level}
-                    onChange={(e) => setStudentFormData({...studentFormData, level: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                  >
-                    {(settings?.academicLevels || []).map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Grado</label>
-                  <select
-                    value={studentFormData.grade}
-                    onChange={(e) => setStudentFormData({...studentFormData, grade: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                  >
-                    {(settings?.academicGrades || []).map(g => <option key={g} value={g}>{g}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Grupo</label>
-                  <select
-                    value={studentFormData.group}
-                    onChange={(e) => setStudentFormData({...studentFormData, group: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                  >
-                    <option value="">Ninguno</option>
-                    {(settings?.academicGroups || []).map(g => <option key={g} value={g}>{g}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <FormInput 
-                label="Matrícula" 
-                value={studentFormData.matricula || ''} 
-                onChange={(e: any) => setStudentFormData({...studentFormData, matricula: e.target.value})} 
-              />
-
-              <FormInput 
-                label="CURP" 
-                value={studentFormData.curp} 
-                onChange={(e: any) => setStudentFormData({...studentFormData, curp: e.target.value.toUpperCase()})} 
-              />
-            </div>
-
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              <button
-                onClick={() => setEditingStudent(null)}
-                className="px-6 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-all"
-                disabled={isSavingStudent}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveStudent}
-                disabled={isSavingStudent}
-                className="px-8 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center gap-2"
-              >
-                {isSavingStudent ? <Clock className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                {isSavingStudent ? 'Guardando...' : 'Guardar Cambios'}
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Details Modal */}
       {selectedEnrollment && (
@@ -1394,29 +1739,35 @@ export default function AcademicControl() {
                   </div>
                 </div>
 
-                {migrationSourceCycle && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        Alumnos en Ciclo Origen ({students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).length})
-                      </span>
-                      <button
-                        onClick={() => {
-                          const srcStudents = students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId));
-                          if (migrationSelectedStudents.length === srcStudents.length) {
-                            setMigrationSelectedStudents([]);
-                          } else {
-                            setMigrationSelectedStudents(srcStudents.map(s => s.id));
-                          }
-                        }}
-                        className="text-[9px] font-black text-blue-600 uppercase hover:underline"
-                      >
-                        {migrationSelectedStudents.length === students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
-                      </button>
-                    </div>
+                {migrationSourceCycle && (() => {
+                  const srcStudents = students.filter(s => {
+                    if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+                    if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+                    if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+                    return s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId);
+                  });
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          Alumnos en Ciclo Origen ({srcStudents.length})
+                        </span>
+                        <button
+                          onClick={() => {
+                            if (migrationSelectedStudents.length === srcStudents.length) {
+                              setMigrationSelectedStudents([]);
+                            } else {
+                              setMigrationSelectedStudents(srcStudents.map(s => s.id));
+                            }
+                          }}
+                          className="text-[9px] font-black text-blue-600 uppercase hover:underline"
+                        >
+                          {migrationSelectedStudents.length === srcStudents.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
+                        </button>
+                      </div>
 
-                    <div className="border border-slate-100 rounded-xl max-h-[250px] overflow-y-auto divide-y divide-slate-50 p-2 bg-slate-50">
-                      {students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).map(student => {
+                      <div className="border border-slate-100 rounded-xl max-h-[250px] overflow-y-auto divide-y divide-slate-50 p-2 bg-slate-50">
+                        {srcStudents.map(student => {
                         const history = student.cycleId !== migrationSourceCycle ? student.gradeHistory?.[migrationSourceCycle] : null;
                         const level = history?.level || student.level;
                         const grade = history?.grade || student.grade;
@@ -1445,7 +1796,8 @@ export default function AcademicControl() {
                       })}
                     </div>
                   </div>
-                )}
+                );
+              })()}
               </div>
 
               <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
@@ -1505,11 +1857,25 @@ function DetailItem({ label, value, span = 1 }: { label: string; value?: string 
   );
 }
 
-function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; settings: AppSettings | null }) {
+function SubjectsManagement({ subjects, settings, availableLevels }: { subjects: Subject[]; settings: AppSettings | null; availableLevels?: string[] }) {
   const [newSubject, setNewSubject] = useState({ name: '', level: '', category: 'Académica' as const });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const levels = settings?.academicLevels || [];
+  const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
+  const [isCopying, setIsCopying] = useState(false);
+  const levels = (availableLevels && availableLevels.length > 0) ? availableLevels : (settings?.academicLevels || []);
+
+  const CATEGORIES = [
+    { key: 'Académica', label: 'Académica', color: 'blue', icon: '📘' },
+    { key: 'Autonomía Curricular', label: 'Autonomía Curricular', color: 'amber', icon: '🎨' },
+    { key: 'Desarrollo Personal', label: 'Desarrollo Personal', color: 'indigo', icon: '🧠' },
+  ];
+
+  const getCategoryColor = (cat: string) => {
+    if (cat === 'Autonomía Curricular') return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', header: 'bg-amber-50/80 border-amber-100', headerText: 'text-amber-600' };
+    if (cat === 'Desarrollo Personal' || cat === 'Aspectos Formativos') return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', header: 'bg-indigo-50/80 border-indigo-100', headerText: 'text-indigo-600' };
+    return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', header: 'bg-blue-50/80 border-blue-100', headerText: 'text-blue-600' };
+  };
 
   const handleCreateSubject = async () => {
     if (!newSubject.name || !newSubject.level) {
@@ -1565,10 +1931,59 @@ function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; setti
     }
   };
 
+  const handleCopyFromLevel = async (targetLevel: string, sourceLevel: string) => {
+    const sourceSubjects = subjects.filter(s => s.level === sourceLevel);
+    if (sourceSubjects.length === 0) {
+      alert(`No hay materias en ${sourceLevel} para copiar.`);
+      return;
+    }
+    const targetSubjectNames = subjects
+      .filter(s => s.level === targetLevel)
+      .map(s => `${s.name}__${s.category || 'Académica'}`);
+
+    const toCreate = sourceSubjects.filter(
+      s => !targetSubjectNames.includes(`${s.name}__${s.category || 'Académica'}`)
+    );
+
+    if (toCreate.length === 0) {
+      alert(`Todas las materias de ${sourceLevel} ya existen en ${targetLevel}.`);
+      setCopyingLevel(null);
+      return;
+    }
+
+    if (!window.confirm(`Se copiarán ${toCreate.length} materia(s) de ${sourceLevel} a ${targetLevel}. ¿Continuar?`)) {
+      setCopyingLevel(null);
+      return;
+    }
+
+    setIsCopying(true);
+    try {
+      for (const subj of toCreate) {
+        await addDoc(collection(db, 'subjects'), {
+          name: subj.name,
+          level: targetLevel,
+          category: subj.category || 'Académica',
+          createdAt: serverTimestamp()
+        });
+      }
+      setCopyingLevel(null);
+    } catch (error) {
+      console.error("Error copying subjects:", error);
+      alert("Error al copiar materias");
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
   const subjectsByLevel = levels.reduce((acc, level) => {
     acc[level] = subjects.filter(s => s.level === level);
     return acc;
   }, {} as Record<string, Subject[]>);
+
+  const normalizeCategory = (cat?: string) => {
+    if (cat === 'Aspectos Formativos') return 'Desarrollo Personal';
+    return cat || 'Académica';
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1603,8 +2018,8 @@ function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; setti
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
             >
               <option value="Académica">Académica (Base)</option>
-              <option value="Extracurricular">Extracurricular / Taller</option>
-              <option value="Aspectos Formativos">Aspectos Formativos / Conducta</option>
+              <option value="Autonomía Curricular">Autonomía Curricular</option>
+              <option value="Desarrollo Personal">Desarrollo Personal / Conducta</option>
             </select>
           </div>
           <button
@@ -1620,70 +2035,124 @@ function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; setti
 
       {/* List by Level */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {levels.map(level => (
-          <div key={level} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-            <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                <BookOpen size={14} className="text-blue-500" /> {level}
-              </h3>
-              <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200 uppercase">
-                {subjectsByLevel[level]?.length || 0} Materias
-              </span>
-            </div>
-            <div className="p-2 flex-1 md:min-h-[200px]">
-              <div className="divide-y divide-slate-50">
-                {subjectsByLevel[level]?.length > 0 ? (
-                  subjectsByLevel[level].map(subj => (
-                    <div key={subj.id} className="p-3 flex items-center justify-between group hover:bg-slate-50 rounded-lg transition-all">
-                      {editingSubject?.id === subj.id ? (
-                        <div className="flex-1 flex gap-2">
-                          <input 
-                            autoFocus
-                            value={editingSubject.name}
-                            onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
-                            className="flex-1 bg-white border border-blue-200 rounded px-2 py-1 text-sm font-bold outline-none"
-                          />
-                          <select
-                            value={editingSubject.category}
-                            onChange={(e) => setEditingSubject({ ...editingSubject, category: e.target.value as any })}
-                            className="bg-white border border-blue-200 rounded px-1 py-1 text-[8px] font-black uppercase"
-                          >
-                            <option value="Académica">Aca.</option>
-                            <option value="Extracurricular">Ext.</option>
-                            <option value="Aspectos Formativos">Asp.</option>
-                          </select>
-                          <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
-                          <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic">{subj.name}</span>
-                            <span className={cn(
-                              "text-[7px] font-black uppercase tracking-widest px-1 py-0.5 rounded w-fit mt-0.5",
-                              subj.category === 'Extracurricular' ? "bg-indigo-50 text-indigo-500" : "bg-blue-50 text-blue-500"
-                            )} shadow-sm>
-                              {subj.category || 'Académica'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => setEditingSubject(subj)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                            >
-                              <Edit2 size={12} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteSubject(subj.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </>
-                      )}
+        {levels.map(level => {
+          const levelSubjects = subjectsByLevel[level] || [];
+          const otherLevels = levels.filter(l => l !== level && (subjectsByLevel[l]?.length || 0) > 0);
+
+          return (
+            <div key={level} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="p-4 bg-slate-50 border-b border-slate-100">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <BookOpen size={14} className="text-blue-500" /> {level}
+                  </h3>
+                  <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200 uppercase">
+                    {levelSubjects.length} Materias
+                  </span>
+                </div>
+                {/* Copy from Level */}
+                <div className="flex items-center gap-2">
+                  {copyingLevel === level ? (
+                    <div className="flex items-center gap-2 w-full">
+                      <select
+                        autoFocus
+                        className="flex-1 bg-white border border-blue-300 rounded-lg px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:ring-2 focus:ring-blue-200"
+                        defaultValue=""
+                        onChange={(e) => {
+                          if (e.target.value) handleCopyFromLevel(level, e.target.value);
+                        }}
+                      >
+                        <option value="" disabled>Copiar materias de...</option>
+                        {otherLevels.map(l => (
+                          <option key={l} value={l}>{l} ({subjectsByLevel[l]?.length || 0} materias)</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setCopyingLevel(null)}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded transition-all"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
-                  ))
+                  ) : (
+                    <button
+                      onClick={() => setCopyingLevel(level)}
+                      disabled={isCopying || otherLevels.length === 0}
+                      className="text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-blue-50 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Copy size={11} /> Copiar de otro nivel
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-2 flex-1 md:min-h-[200px] space-y-1">
+                {levelSubjects.length > 0 ? (
+                  CATEGORIES.map(cat => {
+                    const catSubjects = levelSubjects.filter(s => normalizeCategory(s.category) === cat.key);
+                    if (catSubjects.length === 0) return null;
+                    const colors = getCategoryColor(cat.key);
+
+                    return (
+                      <div key={cat.key} className="mb-2">
+                        {/* Category Header */}
+                        <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg border mb-1", colors.header)}>
+                          <span className={cn("text-[9px] font-black uppercase tracking-[0.15em]", colors.headerText)}>
+                            {cat.label}
+                          </span>
+                          <span className={cn("text-[8px] font-bold ml-auto px-1.5 py-0.5 rounded-full", colors.bg, colors.text)}>
+                            {catSubjects.length}
+                          </span>
+                        </div>
+                        {/* Category Subjects */}
+                        <div className="divide-y divide-slate-50">
+                          {catSubjects.map(subj => (
+                            <div key={subj.id} className="px-3 py-2 flex items-center justify-between group hover:bg-slate-50 rounded-lg transition-all">
+                              {editingSubject?.id === subj.id ? (
+                                <div className="flex-1 flex gap-2">
+                                  <input 
+                                    autoFocus
+                                    value={editingSubject.name}
+                                    onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
+                                    className="flex-1 bg-white border border-blue-200 rounded px-2 py-1 text-sm font-bold outline-none"
+                                  />
+                                  <select
+                                    value={normalizeCategory(editingSubject.category)}
+                                    onChange={(e) => setEditingSubject({ ...editingSubject, category: e.target.value as any })}
+                                    className="bg-white border border-blue-200 rounded px-1 py-1 text-[8px] font-black uppercase"
+                                  >
+                                    <option value="Académica">Aca.</option>
+                                    <option value="Autonomía Curricular">Aut. Curr.</option>
+                                    <option value="Desarrollo Personal">Des. Personal</option>
+                                  </select>
+                                  <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
+                                  <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>
+                                </div>
+                              ) : (
+                                <>
+                                  <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic">{subj.name}</span>
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                      onClick={() => setEditingSubject(subj)}
+                                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                    >
+                                      <Edit2 size={12} />
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDeleteSubject(subj.id)}
+                                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="py-12 text-center">
                     <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Sin materias asignadas</p>
@@ -1691,8 +2160,8 @@ function SubjectsManagement({ subjects, settings }: { subjects: Subject[]; setti
                 )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

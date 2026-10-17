@@ -9,7 +9,7 @@ import {
   CheckCircle2, Loader2, Calendar, History, Check, ChevronDown,
   MessageSquare, Bell, Send, User, ExternalLink, Wallet, X as XIcon
 } from 'lucide-react';
-import { formatCurrency, cn } from '../lib/utils';
+import { formatCurrency, cn, studentMatchesSearch } from '../lib/utils';
 import { format, getDate, getMonth, getYear, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
@@ -22,7 +22,7 @@ const MONTHS = [
 
 export default function Payments() {
   const location = useLocation();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, userProfile } = usePermissions();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -34,6 +34,11 @@ export default function Payments() {
   const [activeTab, setActiveTab] = useState<'historial' | 'recordatorios'>('historial');
   const [dateStart, setDateStart] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [dateEnd, setDateEnd] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+
+  const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
+  const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
+  const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
 
   // ... (previous useEffects and logic)
 
@@ -63,10 +68,19 @@ export default function Payments() {
   const [studentSearch, setStudentSearch] = useState('');
   const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
 
-  const filteredStudents = students.filter(s => 
-    `${s.name} ${s.lastName}`.toLowerCase().includes(studentSearch.toLowerCase()) ||
-    s.curp?.toLowerCase().includes(studentSearch.toLowerCase())
-  );
+  const filteredStudents = students.filter(s => {
+    if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+    if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+    if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+
+    return studentMatchesSearch([
+      s.name,
+      s.lastName,
+      s.motherLastName,
+      s.curp,
+      s.matricula
+    ], studentSearch);
+  });
 
   const getPaidMonthsForStudent = (studentId: string) => {
     if (!currentCycle || !studentId) return [];
@@ -748,6 +762,12 @@ export default function Payments() {
                       <div className="space-y-4 animate-in fade-in duration-300">
                         {currentCycle ? (
                           <>
+                            {Number(currentCycle.tuitionAmount) <= 0 && (
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[10px] font-bold flex items-start gap-2">
+                                <AlertCircle size={14} className="shrink-0 mt-0.5 text-amber-600" />
+                                <span>El ciclo escolar actual ({currentCycle.name}) tiene su colegiatura configurada en $0.00 (sin cobro de colegiaturas programadas). Para registrar pagos use &quot;Gastos Varios&quot;.</span>
+                              </div>
+                            )}
                             <div className="space-y-2">
                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Periodos Electivos ({currentCycle.name})</label>
                               <div className="grid grid-cols-4 gap-1.5">

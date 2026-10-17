@@ -1,6 +1,7 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
+import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
 
 const styles = StyleSheet.create({
   page: {
@@ -184,20 +185,24 @@ interface ReportCardPDFProps {
 }
 
 export default function ReportCardPDF({ student, grades, subjects, settings, cycle }: ReportCardPDFProps) {
+  const evalConfig = getLevelEvaluationConfig(settings, student.level);
+  const periodCount = evalConfig.periodCount;
+  const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
+
   const proxiedLogo = settings?.logoUrl && settings.logoUrl.length > 0 
     ? `/api/proxy/image?url=${encodeURIComponent(settings.logoUrl)}`
     : null;
 
   const academicSubjects = subjects
-    .filter(s => s.category !== 'Extracurricular' && s.category !== 'Aspectos Formativos')
+    .filter(s => s.category !== 'Autonomía Curricular' && s.category !== 'Aspectos Formativos' && s.category !== 'Desarrollo Personal')
     .map(s => s.name);
 
   const curricularSubjects = subjects
-    .filter(s => s.category === 'Extracurricular')
+    .filter(s => s.category === 'Autonomía Curricular')
     .map(s => s.name);
 
-  const formativeSubjects = subjects
-    .filter(s => s.category === 'Aspectos Formativos')
+  const personalDevSubjects = subjects
+    .filter(s => s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal')
     .map(s => s.name);
 
   const behaviorAspects = [
@@ -208,30 +213,38 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
     const bg = grades.find(g => g.bimestre === bimestre);
     if (!bg) return '-';
 
+    // First check in subjects dictionary
+    if (bg.subjects && bg.subjects[subject] !== undefined) {
+      return bg.subjects[subject];
+    }
+
     // Map behavior aspect labels to their dedicated fields in StudentGrade object
     const behaviorMap: Record<string, keyof StudentGrade> = {
-      'Conducta': 'conduct',
-      'Uniforme': 'uniform',
-      'Inasistencia': 'attendance',
-      'Tareas no realizadas': 'tasksNotDone',
-      'Retardo': 'tardies',
-      'Aseo': 'cleanliness'
+      'conducta': 'conduct',
+      'uniforme': 'uniform',
+      'inasistencia': 'attendance',
+      'faltas': 'attendance',
+      'tareas no realizadas': 'tasksNotDone',
+      'tareas': 'tasksNotDone',
+      'retardo': 'tardies',
+      'retardos': 'tardies',
+      'aseo': 'cleanliness'
     };
 
-    if (behaviorMap[subject]) {
-      const field = behaviorMap[subject];
+    const normKey = subject.toLowerCase().trim();
+    if (behaviorMap[normKey]) {
+      const field = behaviorMap[normKey];
       const val = bg[field];
       return typeof val === 'number' ? val : '-';
     }
 
-    if (!bg.subjects) return '-';
-    return bg.subjects[subject] !== undefined ? bg.subjects[subject] : '-';
+    return '-';
   };
 
   const getSubjectAvg = (subject: string) => {
     let total = 0;
     let count = 0;
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= periodCount; i++) {
         const val = getGrade(subject, i);
         if (typeof val === 'number') {
             total += val;
@@ -256,7 +269,7 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
   const getGlobalAvg = () => {
     let total = 0;
     let count = 0;
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= periodCount; i++) {
         const val = getBimestreAvg(i);
         if (val !== '-') {
             total += parseFloat(val);
@@ -365,21 +378,17 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
               <View style={styles.table}>
                 <View style={styles.tableHeaderRow}>
                   <Text style={styles.tableCellHeaderSubject}>Asignatura</Text>
-                  <Text style={styles.tableCellHeaderGrade}>1º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>2º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>3º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>4º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>5º</Text>
+                  {periodIndices.map(num => (
+                    <Text key={num} style={styles.tableCellHeaderGrade}>{num}º</Text>
+                  ))}
                   <Text style={styles.tableCellHeaderAvg}>PROM</Text>
                 </View>
                 {academicSubjects.map((subject, idx) => (
                   <View key={idx} style={styles.tableRow}>
                     <Text style={styles.tableCellSubject}>{subject}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 1)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 2)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 3)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 4)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 5)}</Text>
+                    {periodIndices.map(num => (
+                      <Text key={num} style={styles.tableCellGrade}>{getGrade(subject, num)}</Text>
+                    ))}
                     <View style={{ flex: 1.2, backgroundColor: '#F1F5F9', height: '100%', justifyContent: 'center' }}>
                        <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getSubjectAvg(subject)}</Text>
                     </View>
@@ -389,11 +398,9 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
                 {/* PROMEDIO ROW */}
                 <View style={[styles.tableRow, { backgroundColor: '#E2E8F0', borderBottomWidth: 2, borderBottomColor: '#0F172A' }]}>
                   <Text style={[styles.tableCellSubject, { fontWeight: 'bold' }]}>PROMEDIO PARCIAL</Text>
-                  <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getBimestreAvg(1)}</Text>
-                  <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getBimestreAvg(2)}</Text>
-                  <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getBimestreAvg(3)}</Text>
-                  <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getBimestreAvg(4)}</Text>
-                  <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getBimestreAvg(5)}</Text>
+                  {periodIndices.map(num => (
+                    <Text key={num} style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getBimestreAvg(num)}</Text>
+                  ))}
                   <View style={{ flex: 1.2, backgroundColor: '#0F172A', height: '100%', justifyContent: 'center' }}>
                      <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#FFFFFF' }]}>{getGlobalAvg()}</Text>
                   </View>
@@ -410,21 +417,17 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
               <View style={[styles.table, { marginBottom: 15 }]}>
                 <View style={styles.tableHeaderRow}>
                   <Text style={styles.tableCellHeaderSubject}>Taller / Club</Text>
-                  <Text style={styles.tableCellHeaderGrade}>1º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>2º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>3º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>4º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>5º</Text>
+                  {periodIndices.map(num => (
+                    <Text key={num} style={styles.tableCellHeaderGrade}>{num}º</Text>
+                  ))}
                   <Text style={styles.tableCellHeaderAvg}>PROM</Text>
                 </View>
                 {curricularSubjects.map((subject, idx) => (
                   <View key={idx} style={styles.tableRow}>
                     <Text style={styles.tableCellSubject}>{subject}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 1)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 2)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 3)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 4)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(subject, 5)}</Text>
+                    {periodIndices.map(num => (
+                      <Text key={num} style={styles.tableCellGrade}>{getGrade(subject, num)}</Text>
+                    ))}
                     <View style={{ flex: 1.2, backgroundColor: '#F1F5F9', height: '100%', justifyContent: 'center' }}>
                        <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getSubjectAvg(subject)}</Text>
                     </View>
@@ -432,34 +435,20 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
                 ))}
               </View>
 
-              <Text style={styles.sectionTitle}>Aspectos Formativos y Conducta</Text>
+              <Text style={styles.sectionTitle}>Desarrollo Personal y Conducta</Text>
               <View style={styles.table}>
                 <View style={[styles.tableHeaderRow, { backgroundColor: '#475569' }]}>
-                  <Text style={styles.tableCellHeaderSubject}>Aspecto</Text>
-                  <Text style={styles.tableCellHeaderGrade}>1º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>2º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>3º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>4º</Text>
-                  <Text style={styles.tableCellHeaderGrade}>5º</Text>
+                  <Text style={styles.tableCellHeaderSubject}>Aspecto / Materia</Text>
+                  {periodIndices.map(num => (
+                    <Text key={num} style={styles.tableCellHeaderGrade}>{num}º</Text>
+                  ))}
                 </View>
-                {formativeSubjects.map((aspect, idx) => (
-                  <View key={`formative-${idx}`} style={styles.tableRow}>
+                {(personalDevSubjects.length > 0 ? personalDevSubjects : behaviorAspects).map((aspect, idx) => (
+                  <View key={`dev-${idx}`} style={styles.tableRow}>
                     <Text style={[styles.tableCellSubject, { color: '#475569' }]}>{aspect}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 1)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 2)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 3)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 4)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 5)}</Text>
-                  </View>
-                ))}
-                {behaviorAspects.map((aspect, idx) => (
-                  <View key={idx} style={styles.tableRow}>
-                    <Text style={[styles.tableCellSubject, { color: '#475569' }]}>{aspect}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 1)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 2)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 3)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 4)}</Text>
-                    <Text style={styles.tableCellGrade}>{getGrade(aspect, 5)}</Text>
+                    {periodIndices.map(num => (
+                      <Text key={num} style={styles.tableCellGrade}>{getGrade(aspect, num)}</Text>
+                    ))}
                   </View>
                 ))}
               </View>

@@ -22,6 +22,7 @@ import {
 import { format, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import { studentMatchesSearch } from '../lib/utils';
 
 interface StudentAttendanceRecord {
   id: string;
@@ -227,8 +228,7 @@ export default function ChecadorAlumnos() {
         
         // Search filter
         if (searchTerm) {
-          const fullQuery = `${s.name} ${s.lastName} ${s.motherLastName || ''} ${s.matricula || ''}`.toLowerCase();
-          return fullQuery.includes(searchTerm.toLowerCase());
+          return studentMatchesSearch([s.name, s.lastName, s.motherLastName, s.matricula, s.curp], searchTerm);
         }
         return true;
       })

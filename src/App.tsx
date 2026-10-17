@@ -69,6 +69,57 @@ import TeacherVirtualCredential from './pages/TeacherVirtualCredential';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+const AppLoadingScreen = ({ message = "Iniciando sesión y cargando tu cuenta..." }: { message?: string }) => {
+  const [showDelayedHelp, setShowDelayedHelp] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowDelayedHelp(true);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 p-6 text-center select-none">
+      <div className="relative mb-5">
+        <div className="w-16 h-16 rounded-2xl bg-white shadow-md border border-slate-200/80 flex items-center justify-center">
+          <GraduationCap className="text-blue-600 animate-pulse" size={30} />
+        </div>
+        <div className="absolute -inset-2 border-2 border-blue-600/20 border-t-blue-600 rounded-3xl animate-spin" />
+      </div>
+
+      <h3 className="text-sm font-black text-slate-800 tracking-wide mb-1">
+        Colegio México Franciscano
+      </h3>
+      <p className="text-xs text-slate-500 font-medium max-w-xs mb-2">
+        {message}
+      </p>
+
+      {showDelayedHelp && (
+        <div className="mt-4 p-4 max-w-sm bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <p className="text-[11px] text-amber-700 font-semibold leading-relaxed">
+            La conexión con el servidor está tardando más de lo habitual. Si no carga de inmediato, puedes reintentar o volver a ingresar:
+          </p>
+          <div className="flex items-center justify-center gap-2 pt-1">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              Reintentar carga
+            </button>
+            <button
+              onClick={() => auth.signOut()}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all cursor-pointer"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const [user] = useAuthState(auth);
@@ -185,11 +236,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const handleLogout = () => auth.signOut();
 
-  if (loading) return (
-    <div className="h-screen flex items-center justify-center bg-slate-50">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-    </div>
-  );
+  if (loading) return <AppLoadingScreen message="Cargando tu perfil y permisos..." />;
 
   if (!userProfile && user?.email?.toLowerCase() !== 'cramonmb@gmail.com') {
     return (
@@ -514,11 +561,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const [user, loading] = useAuthState(auth);
 
-  if (loading) return (
-    <div className="h-screen flex items-center justify-center bg-slate-50">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-    </div>
-  );
+  if (loading) return <AppLoadingScreen message="Verificando sesión en el sistema..." />;
   
   if (!user) return <Navigate to="/login" />;
 
@@ -590,7 +633,7 @@ const AppContent = () => {
         path="/alumnos" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <Students />}
+            {isParent || !hasPermission('students', 'view') ? <Navigate to="/" /> : <Students />}
           </ProtectedRoute>
         } 
       />
@@ -598,7 +641,7 @@ const AppContent = () => {
         path="/padres" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <Parents />}
+            {isParent || !hasPermission('parents', 'view') ? <Navigate to="/" /> : <Parents />}
           </ProtectedRoute>
         } 
       />
@@ -606,7 +649,7 @@ const AppContent = () => {
         path="/pagos" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <Payments />}
+            {isParent || !hasPermission('payments', 'view') ? <Navigate to="/" /> : <Payments />}
           </ProtectedRoute>
         } 
       />
@@ -614,7 +657,7 @@ const AppContent = () => {
         path="/gastos" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <Expenses />}
+            {isParent || !hasPermission('expenses', 'view') ? <Navigate to="/" /> : <Expenses />}
           </ProtectedRoute>
         } 
       />
@@ -622,7 +665,7 @@ const AppContent = () => {
         path="/recepcion" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <Reception />}
+            {isParent || !hasPermission('reception', 'view') ? <Navigate to="/" /> : <Reception />}
           </ProtectedRoute>
         } 
       />
@@ -630,7 +673,7 @@ const AppContent = () => {
         path="/control-escolar" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <AcademicControl />}
+            {isParent || !hasPermission('controlEscolar', 'view') ? <Navigate to="/" /> : <AcademicControl />}
           </ProtectedRoute>
         } 
       />
@@ -638,7 +681,7 @@ const AppContent = () => {
         path="/ajustes" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <Settings />}
+            {isParent || !(hasPermission('settings', 'view') || hasPermission('settings', 'manageUsers') || hasPermission('settings', 'editGeneral') || hasPermission('settings', 'editCycles')) ? <Navigate to="/" /> : <Settings />}
           </ProtectedRoute>
         } 
       />
@@ -646,7 +689,7 @@ const AppContent = () => {
         path="/docentes" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <TeacherPortal />}
+            {isParent || !hasPermission('grading', 'view') ? <Navigate to="/" /> : <TeacherPortal />}
           </ProtectedRoute>
         } 
       />

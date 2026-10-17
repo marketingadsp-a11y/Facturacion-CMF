@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { GraduationCap, Lock, Mail, AlertCircle, UserPlus, ArrowLeft, User, Phone } from 'lucide-react';
@@ -119,13 +119,7 @@ export default function Login() {
 
         navigate('/');
       } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
-
-        // Check if user is a parent and if email is verified
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        const userData = userDoc.data();
-
+        await signInWithEmailAndPassword(auth, email.trim(), password);
         navigate('/');
       }
     } catch (err: any) {
@@ -306,7 +300,27 @@ export default function Login() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Contraseña</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-slate-700">Contraseña</label>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!email || !email.trim()) {
+                          setError('Ingresa tu correo electrónico arriba para enviarte el enlace de restablecimiento.');
+                          return;
+                        }
+                        try {
+                          await sendPasswordResetEmail(auth, email.trim());
+                          alert(`Se ha enviado un correo de restablecimiento de contraseña a ${email.trim()}.\nPor favor revisa tu bandeja de entrada o spam para definir tu clave.`);
+                        } catch (err: any) {
+                          setError(`No se pudo enviar el correo de restablecimiento: ${err.message}`);
+                        }
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input

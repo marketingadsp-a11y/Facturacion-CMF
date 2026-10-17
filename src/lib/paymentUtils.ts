@@ -58,6 +58,10 @@ export function calculateStudentDebts(
   // Helper to compute debts for a given cycle
   const computeDebtsForCycle = (cycle: SchoolCycle, isPreviousCycle: boolean) => {
     const cycleDebts: Debt[] = [];
+    // Si la colegiatura está en 0 o menos, no se generan cobros ni deudas de colegiatura
+    if (!cycle || !cycle.billableMonths || (cycle.tuitionAmount ?? 0) <= 0) {
+      return cycleDebts;
+    }
     const years = cycle.name.split('-').map(y => parseInt(y.trim()));
     const startYear = years[0] || currentYear;
     const endYear = years[1] || currentYear + 1;

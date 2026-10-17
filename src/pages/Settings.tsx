@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs, getDoc, writeBatch, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, collection, addDoc, updateDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs, getDoc, writeBatch, where } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement, BimestreLock } from '../types';
+import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement, BimestreLock, LevelEvaluationConfig, Subject } from '../types';
+import { getLevelEvaluationConfig, generateDefaultPeriodNames } from '../lib/evaluationUtils';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   Settings as SettingsIcon, 
@@ -34,9 +35,25 @@ import {
   FileText,
   GraduationCap,
   MapPin,
-  Database
+  Database,
+  Search,
+  Phone,
+  Mail,
+  LayoutList,
+  LayoutGrid,
+  Eye,
+  EyeOff,
+  Copy,
+  Briefcase,
+  Sparkles,
+  UserCheck,
+  ChevronDown,
+  ChevronUp,
+  Layers
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { formatCurrency, cn } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
 import ChargesCatalog from '../components/settings/ChargesCatalog';
@@ -80,6 +97,18 @@ export default function Settings() {
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [userRoleFilter, setUserRoleFilter] = useState<'Todos' | UserRole>('Todos');
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [userViewMode, setUserViewMode] = useState<'table' | 'cards'>('table');
+  const [selectedUserDetail, setSelectedUserDetail] = useState<AppUser | null>(null);
+  const [userLevelFilter, setUserLevelFilter] = useState('');
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState<string | null>(null);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showDetailPassword, setShowDetailPassword] = useState(false);
+  const [isResetEmailSending, setIsResetEmailSending] = useState(false);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [expandedSubjectLevels, setExpandedSubjectLevels] = useState<Record<string, boolean>>({});
 
   const [selectedScheduleLevel, setSelectedScheduleLevel] = useState<string>('');
 
@@ -259,9 +288,13 @@ export default function Settings() {
   const [userFormData, setUserFormData] = useState<Partial<AppUser> & { password?: string }>({
     email: '',
     name: '',
+    phone: '',
+    employeeNumber: '',
     password: '',
     role: 'Cajero',
-    permissions: DEFAULT_PERMISSIONS['Cajero']
+    permissions: DEFAULT_PERMISSIONS['Cajero'],
+    teacherSubjectAccess: 'all',
+    assignedSubjects: []
   });
 
   // New Cycle Form
@@ -270,6 +303,10 @@ export default function Settings() {
     tuitionAmount: 0,
     billableMonths: [7, 8, 9, 10, 11, 1, 2, 3, 4, 5] // Default Aug-Dec, Feb-Jun
   });
+
+  // Edit Cycle Form
+  const [editingCycle, setEditingCycle] = useState<SchoolCycle | null>(null);
+  const [isEditCycleModalOpen, setIsEditCycleModalOpen] = useState(false);
 
   useEffect(() => {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
@@ -291,7 +328,11 @@ export default function Settings() {
       setGradeLocks(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as BimestreLock)));
     });
 
-    return () => { unsubSettings(); unsubCycles(); unsubUsers(); unsubLocks(); };
+    const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snap) => {
+      setSubjects(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Subject)));
+    });
+
+    return () => { unsubSettings(); unsubCycles(); unsubUsers(); unsubLocks(); unsubSubjects(); };
   }, []);
 
   const handleSave = async () => {
@@ -305,16 +346,54 @@ export default function Settings() {
   };
 
   const handleAddCycle = async () => {
-    if (!newCycle.name || newCycle.tuitionAmount <= 0) return;
+    if (!newCycle.name.trim() || Number(newCycle.tuitionAmount) < 0) return;
     try {
       await addDoc(collection(db, 'cycles'), {
-        ...newCycle,
+        name: newCycle.name.trim(),
+        tuitionAmount: Number(newCycle.tuitionAmount) || 0,
+        billableMonths: newCycle.billableMonths,
         createdAt: serverTimestamp()
       });
       setNewCycle({ name: '', tuitionAmount: 0, billableMonths: [7, 8, 9, 10, 11, 1, 2, 3, 4, 5] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (error) {
       console.error("Error adding cycle:", error);
     }
+  };
+
+  const handleOpenEditCycle = (cycle: SchoolCycle, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingCycle({ ...cycle });
+    setIsEditCycleModalOpen(true);
+  };
+
+  const handleUpdateCycle = async () => {
+    if (!editingCycle || !editingCycle.name.trim() || Number(editingCycle.tuitionAmount) < 0) return;
+    try {
+      await updateDoc(doc(db, 'cycles', editingCycle.id), {
+        name: editingCycle.name.trim(),
+        tuitionAmount: Number(editingCycle.tuitionAmount) || 0,
+        billableMonths: editingCycle.billableMonths || []
+      });
+      setIsEditCycleModalOpen(false);
+      setEditingCycle(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (error) {
+      console.error("Error updating cycle:", error);
+    }
+  };
+
+  const toggleEditCycleMonth = (monthIndex: number) => {
+    if (!editingCycle) return;
+    const current = editingCycle.billableMonths || [];
+    setEditingCycle({
+      ...editingCycle,
+      billableMonths: current.includes(monthIndex)
+        ? current.filter(m => m !== monthIndex)
+        : [...current, monthIndex].sort((a, b) => a - b)
+    });
   };
 
   const toggleMonth = (monthIndex: number) => {
@@ -942,11 +1021,18 @@ export default function Settings() {
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Monto Colegiatura</label>
                         <input
                           type="number"
+                          min="0"
+                          step="any"
                           placeholder="0.00"
                           value={isNaN(newCycle.tuitionAmount) ? '' : newCycle.tuitionAmount}
-                          onChange={(e) => setNewCycle({...newCycle, tuitionAmount: parseFloat(e.target.value) || 0})}
+                          onChange={(e) => setNewCycle({...newCycle, tuitionAmount: Math.max(0, parseFloat(e.target.value) || 0)})}
                           className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
                         />
+                        {Number(newCycle.tuitionAmount) === 0 && (
+                          <p className="text-[9px] text-amber-600 font-bold mt-1">
+                            * En $0.00 no se generarán cobros ni deudas de colegiatura.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div>
@@ -998,14 +1084,48 @@ export default function Settings() {
                            </div>
                         )}
                         <div className="space-y-4">
-                          <div>
-                            <p className={`text-xl font-black ${settings.currentCycleId === cycle.id ? 'text-white' : 'text-slate-900'}`}>{cycle.name}</p>
-                            <p className={`text-[10px] font-bold uppercase tracking-widest ${settings.currentCycleId === cycle.id ? 'text-slate-400' : 'text-slate-500'}`}>Ciclo Escolar</p>
+                          <div className="flex items-start justify-between pr-8">
+                            <div>
+                              <p className={`text-xl font-black ${settings.currentCycleId === cycle.id ? 'text-white' : 'text-slate-900'}`}>{cycle.name}</p>
+                              <p className={`text-[10px] font-bold uppercase tracking-widest ${settings.currentCycleId === cycle.id ? 'text-slate-400' : 'text-slate-500'}`}>
+                                {settings.currentCycleId === cycle.id ? 'Ciclo Activo Actual' : 'Ciclo Escolar'}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenEditCycle(cycle, e)}
+                              className={`px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 text-[10px] font-black uppercase tracking-wider ${
+                                settings.currentCycleId === cycle.id
+                                  ? 'bg-white/20 hover:bg-white text-white hover:text-slate-900'
+                                  : 'bg-slate-100 hover:bg-indigo-600 text-slate-600 hover:text-white'
+                              }`}
+                              title="Modificar ciclo escolar"
+                            >
+                              <Edit2 size={12} />
+                              <span>Editar</span>
+                            </button>
                           </div>
                           
                           <div className={`p-4 rounded-xl ${settings.currentCycleId === cycle.id ? 'bg-white/10' : 'bg-slate-50'}`}>
-                             <p className={`text-lg font-black ${settings.currentCycleId === cycle.id ? 'text-emerald-400' : 'text-slate-900'}`}>{formatCurrency(cycle.tuitionAmount)}</p>
-                             <p className={`text-[9px] font-bold uppercase ${settings.currentCycleId === cycle.id ? 'text-slate-400' : 'text-slate-500'}`}>Mensualidad Base</p>
+                             <div className="flex items-baseline gap-2">
+                               <p className={`text-lg font-black ${
+                                 Number(cycle.tuitionAmount) === 0
+                                   ? (settings.currentCycleId === cycle.id ? 'text-amber-300' : 'text-amber-600')
+                                   : (settings.currentCycleId === cycle.id ? 'text-emerald-400' : 'text-slate-900')
+                               }`}>
+                                 {formatCurrency(cycle.tuitionAmount || 0)}
+                               </p>
+                               {Number(cycle.tuitionAmount) === 0 && (
+                                 <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                   settings.currentCycleId === cycle.id ? 'bg-amber-400/20 text-amber-200' : 'bg-amber-100 text-amber-700'
+                                 }`}>
+                                   Sin cobro
+                                 </span>
+                               )}
+                             </div>
+                             <p className={`text-[9px] font-bold uppercase ${settings.currentCycleId === cycle.id ? 'text-slate-400' : 'text-slate-500'}`}>
+                               {Number(cycle.tuitionAmount) === 0 ? 'Sin cobro de colegiaturas' : 'Mensualidad Base'}
+                             </p>
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1026,6 +1146,127 @@ export default function Settings() {
                   </div>
                 </div>
               </div>
+
+              {/* Edit Cycle Modal */}
+              {isEditCycleModalOpen && editingCycle && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+                    <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100">
+                          <Calendar size={20} />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Editar Ciclo Escolar</h2>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{editingCycle.name || 'Ciclo'}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => { setIsEditCycleModalOpen(false); setEditingCycle(null); }}
+                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+                      >
+                        <XIcon size={18} />
+                      </button>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Nombre del Ciclo</label>
+                          <input
+                            type="text"
+                            placeholder="2026-2027"
+                            value={editingCycle.name}
+                            onChange={(e) => setEditingCycle({ ...editingCycle, name: e.target.value })}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 focus:bg-white transition-all text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Monto Colegiatura ($)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="0.00"
+                            value={isNaN(editingCycle.tuitionAmount) ? '' : editingCycle.tuitionAmount}
+                            onChange={(e) => setEditingCycle({ ...editingCycle, tuitionAmount: Math.max(0, parseFloat(e.target.value) || 0) })}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 focus:bg-white transition-all text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Info box when tuition is 0 */}
+                      {Number(editingCycle.tuitionAmount) === 0 ? (
+                        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200/80 flex items-start gap-2.5">
+                          <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={16} />
+                          <div className="text-xs">
+                            <p className="font-bold text-amber-900">Monto de colegiatura configurado en $0.00</p>
+                            <p className="text-amber-700 mt-0.5">Para este ciclo no se generarán cobros ni deudas automáticas de colegiaturas a los alumnos.</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-start gap-2.5">
+                          <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={16} />
+                          <div className="text-xs">
+                            <p className="font-bold text-emerald-900">Colegiatura activa: {formatCurrency(editingCycle.tuitionAmount)}</p>
+                            <p className="text-emerald-700 mt-0.5">Se generará cobro mensual a los alumnos vinculados durante los meses cobrables seleccionados.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2.5 ml-1">Meses Cobrables</label>
+                        <div className="flex flex-wrap gap-2">
+                          {MONTHS.map((month, index) => {
+                            const isSelected = (editingCycle.billableMonths || []).includes(index);
+                            return (
+                              <button
+                                key={month}
+                                type="button"
+                                onClick={() => toggleEditCycleMonth(index)}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all border",
+                                  isSelected
+                                    ? "bg-slate-900 text-white border-slate-900 shadow-md"
+                                    : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                )}
+                              >
+                                {month.substring(0, 3)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {settings.currentCycleId === editingCycle.id && (
+                        <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                          <p className="text-xs font-bold text-blue-900">Este ciclo es actualmente el ciclo escolar activo del sistema.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { setIsEditCycleModalOpen(false); setEditingCycle(null); }}
+                        className="px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-all"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleUpdateCycle}
+                        disabled={!editingCycle.name.trim()}
+                        className="px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
+                      >
+                        <Save size={15} /> Guardar Cambios
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1268,6 +1509,169 @@ export default function Settings() {
                     items={settings.academicGroups || []} 
                     onUpdate={(newItems) => setSettings({...settings, academicGroups: newItems})}
                   />
+                </div>
+              </div>
+
+              {/* Card: Periodos de Calificación por Nivel Educativo */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <Calendar size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Periodos de Calificación por Nivel</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Trimestres, Bimestres y entregas de notas docentes</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newConfig = { ...(settings.levelEvaluationConfig || {}) };
+                      (settings.academicLevels || []).forEach(lvl => {
+                        const lower = lvl.toLowerCase();
+                        if (lower.includes('prepa') || lower.includes('bachiller')) {
+                          newConfig[lvl] = {
+                            periodCount: 5,
+                            periodType: 'Bimestres',
+                            periodNames: generateDefaultPeriodNames('Bimestres', 5)
+                          };
+                        } else if (lower.includes('uni') || lower.includes('licenciatura')) {
+                          newConfig[lvl] = {
+                            periodCount: 2,
+                            periodType: 'Semestres',
+                            periodNames: generateDefaultPeriodNames('Semestres', 2)
+                          };
+                        } else {
+                          newConfig[lvl] = {
+                            periodCount: 3,
+                            periodType: 'Trimestres',
+                            periodNames: generateDefaultPeriodNames('Trimestres', 3)
+                          };
+                        }
+                      });
+                      setSettings({ ...settings, levelEvaluationConfig: newConfig });
+                    }}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-200 transition-colors"
+                  >
+                    <Sparkles size={14} />
+                    Aplicar Regla SEP (3 Trimestres / 5 Bimestres)
+                  </button>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
+                    <AlertCircle className="text-indigo-600 shrink-0 mt-0.5" size={18} />
+                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                      Define los periodos que conformarán el ciclo escolar por cada nivel educativo (por ejemplo, <strong>3 Trimestres</strong> en Primaria y Secundaria, y <strong>5 Bimestres</strong> en Preparatoria). Esta configuración se aplicará automáticamente a la <strong>captura docente</strong>, el <strong>bloqueo de notas</strong>, el cálculo de <strong>promedios</strong> y la <strong>boleta oficial</strong>.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6">
+                    {settings.academicLevels?.map((level) => {
+                      const currentConfig = getLevelEvaluationConfig(settings, level);
+                      return (
+                        <div key={level} className="p-5 bg-white rounded-xl border border-slate-200 hover:border-indigo-300 transition-all shadow-sm space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                              <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">{level}</h3>
+                            </div>
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-100">
+                              {currentConfig.periodCount} {currentConfig.periodType}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end">
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                                Tipo de Periodo
+                              </label>
+                              <select
+                                value={currentConfig.periodType}
+                                onChange={(e) => {
+                                  const newType = e.target.value as any;
+                                  let newCount = currentConfig.periodCount;
+                                  if (newType === 'Trimestres' && newCount !== 3) newCount = 3;
+                                  if (newType === 'Bimestres' && newCount !== 5) newCount = 5;
+                                  if (newType === 'Semestres' && newCount !== 2) newCount = 2;
+                                  if (newType === 'Cuatrimestres' && newCount !== 3) newCount = 3;
+
+                                  const updated: LevelEvaluationConfig = {
+                                    periodType: newType,
+                                    periodCount: newCount,
+                                    periodNames: generateDefaultPeriodNames(newType, newCount)
+                                  };
+                                  const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                  newMap[level] = updated;
+                                  setSettings({ ...settings, levelEvaluationConfig: newMap });
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                              >
+                                <option value="Trimestres">Trimestres (SEP Primaria/Secundaria)</option>
+                                <option value="Bimestres">Bimestres (Preparatoria)</option>
+                                <option value="Semestres">Semestres</option>
+                                <option value="Cuatrimestres">Cuatrimestres</option>
+                                <option value="Personalizado">Personalizado</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                                Cantidad de Periodos (Entregas)
+                              </label>
+                              <div className="flex items-center gap-2">
+                                {[1, 2, 3, 4, 5, 6].map((num) => (
+                                  <button
+                                    key={num}
+                                    type="button"
+                                    onClick={() => {
+                                      const updated: LevelEvaluationConfig = {
+                                        ...currentConfig,
+                                        periodCount: num,
+                                        periodNames: generateDefaultPeriodNames(currentConfig.periodType, num)
+                                      };
+                                      const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                      newMap[level] = updated;
+                                      setSettings({ ...settings, levelEvaluationConfig: newMap });
+                                    }}
+                                    className={cn(
+                                      "flex-1 py-1.5 rounded-lg text-xs font-black transition-all",
+                                      currentConfig.periodCount === num
+                                        ? "bg-slate-900 text-white shadow-sm"
+                                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                    )}
+                                  >
+                                    {num}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                                Previsualización de Entregas Docentes
+                              </label>
+                              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 rounded-lg border border-slate-100 min-h-[36px] items-center">
+                                {currentConfig.periodNames?.map((pName, pIdx) => (
+                                  <span key={pIdx} className="px-2 py-0.5 bg-white border border-slate-200 text-slate-700 font-bold text-[10px] rounded shadow-2xs">
+                                    {pName}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(!settings.academicLevels || settings.academicLevels.length === 0) && (
+                      <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <AlertCircle className="mx-auto text-slate-300 mb-2" size={32} />
+                        <p className="text-sm font-bold text-slate-400">Primero configura los Niveles Educativos arriba.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1663,126 +2067,692 @@ export default function Settings() {
             </div>
           )}
 
-          {activeTab === 'users' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+          {activeTab === 'users' && (() => {
+            const allStaffUsers = appUsers.filter(u => u.role !== 'Padre');
+
+            // Quick Stats
+            const totalCount = allStaffUsers.length;
+            const teacherCount = allStaffUsers.filter(u => u.role === 'Docente').length;
+            const adminCount = allStaffUsers.filter(u => u.role === 'Administrador' || u.role === 'Superadministrador' || u.role === 'Control Escolar').length;
+            const opsCount = allStaffUsers.filter(u => u.role === 'Cajero' || u.role === 'Recepción' || u.role === 'Visor').length;
+
+            const filteredUsers = allStaffUsers.filter(user => {
+              // Role filter
+              if (userRoleFilter !== 'Todos' && user.role !== userRoleFilter) return false;
+
+              // Level filter
+              if (userLevelFilter && user.assignedLevel !== userLevelFilter) return false;
+
+              // Search term
+              if (userSearchTerm) {
+                const term = userSearchTerm.toLowerCase();
+                const matchesName = (user.name || '').toLowerCase().includes(term);
+                const matchesEmail = (user.email || '').toLowerCase().includes(term);
+                const matchesPhone = (user.phone || '').toLowerCase().includes(term);
+                const matchesEmpNo = (user.employeeNumber || '').toLowerCase().includes(term);
+                const matchesRole = (user.role || '').toLowerCase().includes(term);
+                const matchesAssignment = `${user.assignedLevel || ''} ${user.assignedGrade || ''} ${user.assignedGroup || ''}`.toLowerCase().includes(term);
+                if (!matchesName && !matchesEmail && !matchesPhone && !matchesEmpNo && !matchesRole && !matchesAssignment) {
+                  return false;
+                }
+              }
+
+              return true;
+            });
+
+            const getRoleBadge = (role: UserRole) => {
+              switch (role) {
+                case 'Superadministrador':
+                  return 'bg-purple-950 text-purple-200 border-purple-800 shadow-sm';
+                case 'Administrador':
+                  return 'bg-rose-50 text-rose-700 border-rose-200';
+                case 'Control Escolar':
+                  return 'bg-amber-50 text-amber-800 border-amber-200';
+                case 'Docente':
+                  return 'bg-blue-50 text-blue-700 border-blue-200';
+                case 'Cajero':
+                  return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                case 'Recepción':
+                  return 'bg-cyan-50 text-cyan-800 border-cyan-200';
+                case 'Visor':
+                  return 'bg-slate-100 text-slate-700 border-slate-200';
+                default:
+                  return 'bg-slate-100 text-slate-700 border-slate-200';
+              }
+            };
+
+            const getPermissionsList = (perms?: AppPermissions) => {
+              if (!perms) return [];
+              const list: { key: string; label: string }[] = [];
+              if (perms.dashboard?.view) list.push({ key: 'dashboard', label: 'Dashboard' });
+              if (perms.students?.view) list.push({ key: 'students', label: 'Alumnos' });
+              if (perms.payments?.view) list.push({ key: 'payments', label: 'Pagos' });
+              if (perms.expenses?.view) list.push({ key: 'expenses', label: 'Gastos' });
+              if (perms.controlEscolar?.view) list.push({ key: 'controlEscolar', label: 'Control Escolar' });
+              if (perms.grading?.view) list.push({ key: 'grading', label: 'Calificaciones' });
+              if (perms.timeClock?.view) list.push({ key: 'timeClock', label: 'Checador' });
+              if (perms.reception?.view) list.push({ key: 'reception', label: 'Recepción' });
+              if (perms.announcements?.view) list.push({ key: 'announcements', label: 'Avisos' });
+              if (perms.parents?.view) list.push({ key: 'parents', label: 'Padres' });
+              if (perms.settings?.view) list.push({ key: 'settings', label: 'Ajustes' });
+              return list;
+            };
+
+            const handleCopyEmail = (email: string) => {
+              navigator.clipboard.writeText(email);
+              setCopiedEmail(email);
+              setTimeout(() => setCopiedEmail(null), 2000);
+            };
+
+            const handleDeleteUser = async (user: AppUser) => {
+              if (window.confirm(`¿Eliminar acceso al usuario ${user.name}? Se quitarán todas sus lecciones y clases asignadas en los horarios.`)) {
+                try {
+                  const batch = writeBatch(db);
+                  
+                  // Delete user doc and biometric profile
+                  batch.delete(doc(db, 'users', user.id));
+                  batch.delete(doc(db, 'employees', user.id));
+                  
+                  // If it was a teacher, sweep their schedule contracts
+                  const contractsSnap = await getDocs(
+                    query(collection(db, 'schedule_contracts'), where('teacherId', '==', user.id))
+                  );
+                  contractsSnap.forEach(d => {
+                    batch.delete(doc(db, 'schedule_contracts', d.id));
+                  });
+
+                  // Sweep their grid slots
+                  const schedulesSnap = await getDocs(
+                    query(collection(db, 'schedules'), where('teacherId', '==', user.id))
+                  );
+                  schedulesSnap.forEach(d => {
+                    batch.delete(doc(db, 'schedules', d.id));
+                  });
+
+                  await batch.commit();
+                } catch (error) {
+                  console.error("Error deleting user and schedules:", error);
+                  alert("Hubo un error al eliminar al colaborador.");
+                }
+              }
+            };
+
+            return (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 font-sans">
+                
+                {/* Header & Main Action */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-                        <Shield size={20} />
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                        <Shield size={22} />
                       </div>
                       <div>
-                        <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Panel de Seguridad</h2>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Usuarios y privilegios</p>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                            Gestión de Colaboradores
+                          </h2>
+                          <span className="bg-indigo-100 text-indigo-700 font-black text-[10px] px-2 py-0.5 rounded-full">
+                            {totalCount} Personal
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-bold">
+                          Directorio de usuarios, credenciales, asignaciones académicas y privilegios
+                        </p>
                       </div>
                     </div>
+
                     <button 
                       onClick={() => {
                         setEditingUser(null);
-                        setUserFormData({ email: '', name: '', password: '', role: 'Cajero', permissions: DEFAULT_PERMISSIONS['Cajero'] });
+                        setUserFormData({
+                          email: '',
+                          name: '',
+                          phone: '',
+                          employeeNumber: '',
+                          password: '',
+                          role: 'Cajero',
+                          permissions: DEFAULT_PERMISSIONS['Cajero'],
+                          teacherSubjectAccess: 'all',
+                          assignedSubjects: [],
+                          teacherSubjectGrades: {},
+                          teacherSubjectGroups: {},
+                          teacherGroupAccess: 'single',
+                          restrictedLevels: [],
+                          restrictedGrades: [],
+                          restrictedGroups: []
+                        });
+                        setShowCurrentPassword(false);
+                        setShowNewPassword(false);
                         setIsUserModalOpen(true);
                       }}
-                      className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-95 cursor-pointer self-start md:self-auto"
                     >
-                      <Plus size={16} strokeWidth={3} /> Nuevo Operador
+                      <Plus size={16} strokeWidth={3} />
+                      <span>Nuevo Colaborador</span>
                     </button>
                   </div>
-                  
-                  <div className="p-8">
-                    <div className="flex items-center gap-2 mb-8 bg-slate-50 p-1.5 rounded-xl w-fit border border-slate-200">
-                      {(['Todos', 'Superadministrador', 'Administrador', 'Cajero', 'Docente', 'Recepción'] as const).map((role) => (
-                        <button
-                          key={role}
-                          onClick={() => setUserRoleFilter(role)}
-                          className={cn(
-                            "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                            userRoleFilter === role 
-                              ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
-                              : "text-slate-400 hover:text-slate-600"
-                          )}
-                        >
-                          {role}
-                        </button>
-                      ))}
+
+                  {/* KPI Quick Stats */}
+                  <div className="p-6 grid grid-cols-2 lg:grid-cols-4 gap-4 border-b border-slate-100 bg-slate-50/30">
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <Users size={18} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block leading-none mb-1">
+                          Total Personal
+                        </span>
+                        <span className="text-xl font-black text-slate-900">{totalCount}</span>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {appUsers
-                        .filter(u => (userRoleFilter === 'Todos' || u.role === userRoleFilter) && u.role !== 'Padre')
-                        .map(user => (
-                       <div key={user.id} className="p-6 bg-white rounded-xl border border-slate-100 flex flex-col justify-between group hover:border-blue-200 hover:shadow-xl transition-all relative">
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-lg font-black shadow-inner">
-                              {user.name.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-black text-slate-900 leading-none mb-1">{user.name}</p>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase truncate max-w-[140px]">{user.email}</p>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center justify-between pt-4 border-t border-slate-100/50">
-                             <span className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${user.role === 'Administrador' ? 'bg-rose-100 text-rose-600' : user.role === 'Superadministrador' ? 'bg-indigo-900 text-white' : 'bg-blue-100 text-blue-600'}`}>
-                               {user.role}
-                             </span>
-                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => {
-                                    setEditingUser(user);
-                                    setUserFormData({ ...user, password: '' });
-                                    setIsUserModalOpen(true);
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                >
-                                  <Edit2 size={14} />
-                                </button>
-                                <button 
-                                  onClick={async () => {
-                                    if (window.confirm(`¿Eliminar acceso al usuario ${user.name}? Se quitarán todas sus lecciones y clases asignadas en los horarios.`)) {
-                                      try {
-                                        const batch = writeBatch(db);
-                                        
-                                        // Delete user doc and biometric profile
-                                        batch.delete(doc(db, 'users', user.id));
-                                        batch.delete(doc(db, 'employees', user.id));
-                                        
-                                        // If it was a teacher, sweep their schedule contracts
-                                        const contractsSnap = await getDocs(
-                                          query(collection(db, 'schedule_contracts'), where('teacherId', '==', user.id))
-                                        );
-                                        contractsSnap.forEach(d => {
-                                          batch.delete(doc(db, 'schedule_contracts', d.id));
-                                        });
-
-                                        // Sweep their grid slots
-                                        const schedulesSnap = await getDocs(
-                                          query(collection(db, 'schedules'), where('teacherId', '==', user.id))
-                                        );
-                                        schedulesSnap.forEach(d => {
-                                          batch.delete(doc(db, 'schedules', d.id));
-                                        });
-
-                                        await batch.commit();
-                                      } catch (error) {
-                                        console.error("Error deleting user and schedules:", error);
-                                      }
-                                    }
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                             </div>
-                          </div>
-                        </div>
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <GraduationCap size={18} />
                       </div>
-                    ))}
+                      <div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block leading-none mb-1">
+                          Docentes / Tutores
+                        </span>
+                        <span className="text-xl font-black text-blue-900">{teacherCount}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                        <ShieldAlert size={18} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block leading-none mb-1">
+                          Administrativos
+                        </span>
+                        <span className="text-xl font-black text-rose-900">{adminCount}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <Briefcase size={18} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block leading-none mb-1">
+                          Caja y Recepción
+                        </span>
+                        <span className="text-xl font-black text-emerald-900">{opsCount}</span>
+                      </div>
                     </div>
                   </div>
-               </div>
-            </div>
-          )}
+
+                  {/* Control & Filter Bar */}
+                  <div className="p-6 space-y-4">
+                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                      {/* Search Input */}
+                      <div className="relative flex-1 min-w-[280px]">
+                        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={userSearchTerm}
+                          onChange={(e) => setUserSearchTerm(e.target.value)}
+                          placeholder="Buscar por nombre, correo, teléfono o no. de empleado..."
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 transition-all placeholder:text-slate-400 placeholder:font-normal"
+                        />
+                        {userSearchTerm && (
+                          <button
+                            onClick={() => setUserSearchTerm('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Level Filter (if any levels configured) */}
+                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                          <GraduationCap size={14} className="text-slate-400" />
+                          <select
+                            value={userLevelFilter}
+                            onChange={(e) => setUserLevelFilter(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                          >
+                            <option value="">TODOS LOS NIVELES</option>
+                            {(settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(lvl => (
+                              <option key={lvl} value={lvl}>{lvl}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* View Switcher: Table vs Cards */}
+                        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                          <button
+                            onClick={() => setUserViewMode('table')}
+                            className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              userViewMode === 'table'
+                                ? 'bg-white text-slate-900 shadow-xs'
+                                : 'text-slate-500 hover:text-slate-900'
+                            }`}
+                            title="Vista en Tabla"
+                          >
+                            <LayoutList size={15} />
+                            <span className="hidden sm:inline text-[11px]">Tabla</span>
+                          </button>
+                          <button
+                            onClick={() => setUserViewMode('cards')}
+                            className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              userViewMode === 'cards'
+                                ? 'bg-white text-slate-900 shadow-xs'
+                                : 'text-slate-500 hover:text-slate-900'
+                            }`}
+                            title="Vista en Cuadrícula"
+                          >
+                            <LayoutGrid size={15} />
+                            <span className="hidden sm:inline text-[11px]">Tarjetas</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Role Filter Pills */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                      {(['Todos', 'Superadministrador', 'Administrador', 'Control Escolar', 'Docente', 'Cajero', 'Recepción', 'Visor'] as const).map((role) => {
+                        const count = role === 'Todos' ? totalCount : allStaffUsers.filter(u => u.role === role).length;
+                        const isSelected = userRoleFilter === role;
+                        return (
+                          <button
+                            key={role}
+                            onClick={() => setUserRoleFilter(role)}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 border ${
+                              isSelected
+                                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            <span>{role}</span>
+                            <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full ${
+                              isSelected ? 'bg-slate-800 text-indigo-300' : 'bg-slate-200/80 text-slate-600'
+                            }`}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Main Display: TABLE VIEW */}
+                  {userViewMode === 'table' ? (
+                    <div className="border-t border-slate-200 overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-slate-900 text-white text-[10px] uppercase font-black tracking-wider">
+                          <tr>
+                            <th className="py-3 px-4 w-10 text-center text-slate-400">#</th>
+                            <th className="py-3 px-4">Colaborador</th>
+                            <th className="py-3 px-4">Contacto</th>
+                            <th className="py-3 px-4">Rol en el Sistema</th>
+                            <th className="py-3 px-4">Asignación / Alcance</th>
+                            <th className="py-3 px-4">Módulos Habilitados</th>
+                            <th className="py-3 px-4">Fecha de Alta</th>
+                            <th className="py-3 px-4 text-center">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredUsers.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="py-12 text-center text-slate-400">
+                                <Users size={32} className="mx-auto text-slate-300 mb-2" />
+                                <p className="text-sm font-bold text-slate-600">No se encontraron colaboradores</p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                  {userSearchTerm ? 'Prueba con otros términos de búsqueda' : 'No hay usuarios dados de alta en este filtro.'}
+                                </p>
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredUsers.map((user, idx) => {
+                              const permissionsList = getPermissionsList(user.permissions);
+                              const hasFullAssignment = user.assignedLevel || user.assignedGrade || user.assignedGroup;
+
+                              return (
+                                <tr key={user.id} className="hover:bg-slate-50/80 transition-colors group">
+                                  {/* # */}
+                                  <td className="py-3.5 px-4 text-center text-[10px] font-bold text-slate-400">
+                                    {idx + 1}
+                                  </td>
+
+                                  {/* User Name & Avatar */}
+                                  <td className="py-3.5 px-4">
+                                    <div className="flex items-center gap-3">
+                                      {user.photoUrl ? (
+                                        <img
+                                          src={user.photoUrl}
+                                          alt={user.name}
+                                          className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-xs"
+                                        />
+                                      ) : (
+                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center text-sm font-black shadow-xs">
+                                          {user.name.charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <div>
+                                        <button
+                                          onClick={() => setSelectedUserDetail(user)}
+                                          className="text-xs font-black text-slate-900 hover:text-indigo-600 transition-colors text-left uppercase flex items-center gap-1 cursor-pointer"
+                                        >
+                                          {user.name}
+                                        </button>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                          {user.employeeNumber ? (
+                                            <span className="font-mono text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded uppercase">
+                                              No. {user.employeeNumber}
+                                            </span>
+                                          ) : (
+                                            <span className="text-[9px] font-mono text-slate-400">
+                                              ID: {user.id.slice(0, 7)}...
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Contact info */}
+                                  <td className="py-3.5 px-4">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <Mail size={12} className="text-slate-400 shrink-0" />
+                                        <span className="text-slate-700 font-bold truncate max-w-[180px]">{user.email}</span>
+                                        <button
+                                          onClick={() => handleCopyEmail(user.email)}
+                                          className="text-slate-300 hover:text-indigo-600 transition-colors p-0.5 cursor-pointer"
+                                          title="Copiar correo"
+                                        >
+                                          {copiedEmail === user.email ? (
+                                            <Check size={11} className="text-emerald-600" />
+                                          ) : (
+                                            <Copy size={11} />
+                                          )}
+                                        </button>
+                                      </div>
+                                      {user.phone ? (
+                                        <div className="flex items-center gap-1.5 text-slate-600">
+                                          <Phone size={12} className="text-slate-400 shrink-0" />
+                                          <span className="font-mono text-[11px] font-semibold">{user.phone}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 italic">Sin teléfono</span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Role */}
+                                  <td className="py-3.5 px-4">
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border ${getRoleBadge(user.role)}`}>
+                                      <Shield size={10} />
+                                      {user.role}
+                                    </span>
+                                  </td>
+
+                                  {/* Academic Assignment */}
+                                  <td className="py-3.5 px-4">
+                                    {user.role === 'Docente' ? (
+                                      (user.teacherGroupAccess === 'multiple' || (user.restrictedLevels && user.restrictedLevels.length > 1) || (user.restrictedGrades && user.restrictedGrades.length > 1)) ? (
+                                        <div className="space-y-0.5">
+                                          <div className="font-black text-indigo-700 text-[11px] flex items-center gap-1">
+                                            <Users size={12} className="text-indigo-600" />
+                                            Múltiples Grupos
+                                          </div>
+                                          <span className="text-[10px] text-slate-500 font-bold block">
+                                            {user.restrictedLevels?.join(', ') || 'Todos los niveles'}
+                                          </span>
+                                        </div>
+                                      ) : hasFullAssignment ? (
+                                        <div className="space-y-0.5">
+                                          <div className="font-black text-slate-800 text-[11px]">
+                                            {user.assignedLevel} {user.assignedGrade} "{user.assignedGroup}"
+                                          </div>
+                                          {user.maxHoursPerWeek ? (
+                                            <span className="text-[10px] font-bold text-slate-400 block">
+                                              Jornada: {user.maxHoursPerWeek} hrs/sem
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-bold">
+                                          Sin grupo asignado
+                                        </span>
+                                      )
+                                    ) : user.role === 'Control Escolar' ? (
+                                      (user.restrictedLevels?.length || user.restrictedGrades?.length || user.restrictedGroups?.length) ? (
+                                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
+                                          Acceso Restringido ({user.restrictedLevels?.length || 0} niv.)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                          Acceso Total
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 font-bold uppercase">
+                                        Institucional
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Permissions Summary */}
+                                  <td className="py-3.5 px-4">
+                                    <div className="flex flex-wrap items-center gap-1 max-w-[220px]">
+                                      {permissionsList.slice(0, 3).map(p => (
+                                        <span key={p.key} className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                                          {p.label}
+                                        </span>
+                                      ))}
+                                      {permissionsList.length > 3 && (
+                                        <button
+                                          onClick={() => setSelectedUserDetail(user)}
+                                          className="text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded hover:bg-indigo-100 transition-colors cursor-pointer"
+                                        >
+                                          +{permissionsList.length - 3} más
+                                        </button>
+                                      )}
+                                      {permissionsList.length === 0 && (
+                                        <span className="text-[10px] text-slate-400 italic">Sin permisos</span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Date Created */}
+                                  <td className="py-3.5 px-4 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                    {user.createdAt ? (
+                                      format(user.createdAt.toDate(), 'dd MMM yyyy', { locale: es })
+                                    ) : (
+                                      'N/D'
+                                    )}
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        onClick={() => setSelectedUserDetail(user)}
+                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                                        title="Ver detalles completos"
+                                      >
+                                        <Eye size={15} />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setEditingUser(user);
+                                          setUserFormData({
+                                            ...user,
+                                            password: '',
+                                            teacherSubjectAccess: user.teacherSubjectAccess || 'all',
+                                            assignedSubjects: user.assignedSubjects || []
+                                          });
+                                          setShowCurrentPassword(false);
+                                          setShowNewPassword(false);
+                                          setIsUserModalOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                                        title="Editar colaborador"
+                                      >
+                                        <Edit2 size={15} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteUser(user)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                        title="Eliminar colaborador"
+                                      >
+                                        <Trash2 size={15} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    /* CARDS VIEW */
+                    <div className="p-6 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredUsers.length === 0 ? (
+                        <div className="col-span-full py-12 text-center text-slate-400">
+                          <Users size={32} className="mx-auto text-slate-300 mb-2" />
+                          <p className="text-sm font-bold text-slate-600">No se encontraron colaboradores</p>
+                        </div>
+                      ) : (
+                        filteredUsers.map(user => {
+                          const permissionsList = getPermissionsList(user.permissions);
+                          return (
+                            <div key={user.id} className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 hover:shadow-lg transition-all flex flex-col justify-between space-y-4">
+                              <div className="space-y-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-center gap-3">
+                                    {user.photoUrl ? (
+                                      <img
+                                        src={user.photoUrl}
+                                        alt={user.name}
+                                        className="w-12 h-12 rounded-xl object-cover border border-slate-200"
+                                      />
+                                    ) : (
+                                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center text-base font-black shadow-xs">
+                                        {user.name.charAt(0).toUpperCase()}
+                                      </div>
+                                    )}
+                                    <div>
+                                      <h3 className="text-sm font-black text-slate-900 leading-tight uppercase">
+                                        {user.name}
+                                      </h3>
+                                      <p className="text-[11px] text-slate-500 font-bold truncate max-w-[160px]">
+                                        {user.email}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border ${getRoleBadge(user.role)}`}>
+                                    {user.role}
+                                  </span>
+                                </div>
+
+                                {user.phone && (
+                                  <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold">
+                                    <Phone size={12} className="text-slate-400" />
+                                    <span>{user.phone}</span>
+                                  </div>
+                                )}
+
+                                {user.role === 'Docente' && (
+                                  (user.teacherGroupAccess === 'multiple' || (user.restrictedLevels && user.restrictedLevels.length > 1)) ? (
+                                    <div className="p-2 bg-indigo-50 border border-indigo-100 rounded-lg text-xs font-bold text-indigo-900 flex items-center justify-between">
+                                      <span className="flex items-center gap-1.5"><Users size={12} className="text-indigo-600" /> Múltiples Grupos ({user.restrictedLevels?.join(', ') || 'Todos'})</span>
+                                    </div>
+                                  ) : (user.assignedLevel || user.assignedGrade) ? (
+                                    <div className="p-2 bg-blue-50 rounded-lg text-xs font-bold text-blue-900 flex items-center justify-between">
+                                      <span>{user.assignedLevel} {user.assignedGrade} "{user.assignedGroup || 'A'}"</span>
+                                      {user.maxHoursPerWeek ? (
+                                        <span className="text-[10px] text-blue-600 font-mono">{user.maxHoursPerWeek}h/sem</span>
+                                      ) : null}
+                                    </div>
+                                  ) : null
+                                )}
+
+                                {/* Permissions count */}
+                                <div className="flex items-center justify-between text-[11px] pt-1">
+                                  <span className="text-slate-400 font-bold uppercase text-[10px]">Permisos:</span>
+                                  <span className="text-indigo-600 font-black">{permissionsList.length} módulos</span>
+                                </div>
+                              </div>
+
+                              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                                <span className="text-[10px] text-slate-400 font-bold">
+                                  {user.createdAt ? format(user.createdAt.toDate(), 'dd/MM/yyyy') : ''}
+                                </span>
+
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setSelectedUserDetail(user)}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Ver Ficha"
+                                  >
+                                    <Eye size={15} />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setEditingUser(user);
+                                      setUserFormData({
+                                        ...user,
+                                        password: '',
+                                        teacherSubjectAccess: user.teacherSubjectAccess || 'all',
+                                        assignedSubjects: user.assignedSubjects || [],
+                                        teacherSubjectGrades: user.teacherSubjectGrades || {},
+                                        teacherSubjectGroups: user.teacherSubjectGroups || {},
+                                        teacherGroupAccess: user.teacherGroupAccess || (
+                                          (user.restrictedLevels && user.restrictedLevels.length > 1) ||
+                                          (user.restrictedGrades && user.restrictedGrades.length > 1) ||
+                                          (user.restrictedGroups && user.restrictedGroups.length > 1)
+                                            ? 'multiple'
+                                            : 'single'
+                                        ),
+                                        restrictedLevels: user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : []),
+                                        restrictedGrades: user.restrictedGrades || (user.assignedGrade ? [user.assignedGrade] : []),
+                                        restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : [])
+                                      });
+                                      setShowCurrentPassword(false);
+                                      setShowNewPassword(false);
+                                      setIsUserModalOpen(true);
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Editar"
+                                  >
+                                    <Edit2 size={15} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteUser(user)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* Table Footer info */}
+                  <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
+                    <span>Mostrando <strong>{filteredUsers.length}</strong> de <strong>{totalCount}</strong> colaboradores</span>
+                    <span className="text-[11px]">Control Integral Escolar • Seguridad y Accesos</span>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })()}
 
           {isUserModalOpen && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
@@ -1805,7 +2775,7 @@ export default function Settings() {
                         required
                         value={userFormData.name}
                         onChange={(e) => setUserFormData({...userFormData, name: e.target.value})}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
                       />
                     </div>
                     <div>
@@ -1815,21 +2785,141 @@ export default function Settings() {
                         type="email"
                         value={userFormData.email}
                         onChange={(e) => setUserFormData({...userFormData, email: e.target.value})}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
                         disabled={!!editingUser}
                       />
                     </div>
-                    {!editingUser && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Teléfono / WhatsApp</label>
+                      <input
+                        type="tel"
+                        placeholder="Ej. 55 1234 5678"
+                        value={userFormData.phone || ''}
+                        onChange={(e) => setUserFormData({...userFormData, phone: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">No. de Empleado / Clave</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. EMP-024"
+                        value={userFormData.employeeNumber || ''}
+                        onChange={(e) => setUserFormData({...userFormData, employeeNumber: e.target.value.toUpperCase()})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold uppercase"
+                      />
+                    </div>
+                    {!editingUser ? (
                       <div className="md:col-span-2">
                         <label className="block text-xs font-semibold text-slate-700 mb-1">Contraseña Inicial *</label>
-                        <input
-                          required
-                          type="password"
-                          value={userFormData.password}
-                          onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                          placeholder="Mínimo 6 caracteres"
-                        />
+                        <div className="relative">
+                          <input
+                            required
+                            type={showNewPassword ? 'text' : 'password'}
+                            value={userFormData.password}
+                            onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
+                            className="w-full px-4 py-2.5 pr-10 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                            placeholder="Mínimo 6 caracteres"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                            title={showNewPassword ? "Ocultar" : "Ver contraseña"}
+                          >
+                            {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="md:col-span-2 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                          <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <Key size={14} className="text-indigo-600" />
+                            Gestión de Contraseña
+                          </label>
+                          {userFormData.email && (
+                            <button
+                              type="button"
+                              disabled={isResetEmailSending}
+                              onClick={async () => {
+                                try {
+                                  setIsResetEmailSending(true);
+                                  const auth = getAuth();
+                                  await sendPasswordResetEmail(auth, userFormData.email!);
+                                  alert(`Se ha enviado un correo de restablecimiento de contraseña a ${userFormData.email}`);
+                                } catch (err: any) {
+                                  alert(`Error al enviar correo: ${err.message}`);
+                                } finally {
+                                  setIsResetEmailSending(false);
+                                }
+                              }}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer disabled:opacity-50 text-left sm:text-right"
+                            >
+                              {isResetEmailSending ? 'Enviando...' : 'Enviar enlace de restablecimiento al correo'}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Contraseña Actual */}
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Contraseña Actual</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-800 select-all">
+                                {editingUser.currentPassword 
+                                  ? (showCurrentPassword ? editingUser.currentPassword : '••••••••••••')
+                                  : <span className="text-slate-400 font-normal italic text-[11px]">No registrada previamente</span>}
+                              </span>
+                              {editingUser.currentPassword && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                    className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors cursor-pointer"
+                                    title={showCurrentPassword ? "Ocultar" : "Ver contraseña"}
+                                  >
+                                    {showCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(editingUser.currentPassword || '');
+                                      setCopiedPassword('current');
+                                      setTimeout(() => setCopiedPassword(null), 2000);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors cursor-pointer"
+                                    title="Copiar contraseña"
+                                  >
+                                    {copiedPassword === 'current' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Cambiar Contraseña */}
+                          <div>
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nueva Contraseña (Opcional)</span>
+                            <div className="relative">
+                              <input
+                                type={showNewPassword ? 'text' : 'password'}
+                                value={userFormData.password || ''}
+                                onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
+                                placeholder="Dejar en blanco para conservar"
+                                className="w-full px-3 py-2 pr-9 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowNewPassword(!showNewPassword)}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                title={showNewPassword ? "Ocultar" : "Ver contraseña"}
+                              >
+                                {showNewPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1930,77 +3020,817 @@ export default function Settings() {
                   )}
 
                   {userFormData.role === 'Docente' && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                      <div className="md:col-span-3">
-                        <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Asignación de Grupo (Solo Docente)</p>
-                      </div>
+                    <div className="space-y-4 p-4 bg-blue-50/70 rounded-2xl border border-blue-100">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nivel</label>
-                        <select
-                          value={userFormData.assignedLevel || ''}
-                          onChange={(e) => setUserFormData({...userFormData, assignedLevel: e.target.value})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                        >
-                          <option value="">Seleccionar Nivel</option>
-                          {(settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
-                            <option key={level} value={level}>{level}</option>
-                          ))}
-                        </select>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-black text-blue-700 uppercase flex items-center gap-1.5 tracking-wider">
+                            <Users size={13} className="text-blue-600" />
+                            Modalidad de Asignación de Grupos
+                          </p>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            {userFormData.teacherGroupAccess === 'multiple' 
+                              ? `${(userFormData.restrictedLevels || []).length} niv. • ${(userFormData.restrictedGrades || []).length} gr. • ${(userFormData.restrictedGroups || []).length} grupos`
+                              : 'Grupo único'}
+                          </span>
+                        </div>
+
+                        {/* Selector de Modalidad */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2 rounded-xl border border-blue-200 mb-4">
+                          <label className={cn(
+                            "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
+                            (!userFormData.teacherGroupAccess || userFormData.teacherGroupAccess === 'single')
+                              ? "bg-blue-50/80 border-blue-300 shadow-xs"
+                              : "border-slate-100 hover:bg-slate-50"
+                          )}>
+                            <input
+                              type="radio"
+                              name="teacherGroupAccess"
+                              checked={!userFormData.teacherGroupAccess || userFormData.teacherGroupAccess === 'single'}
+                              onChange={() => {
+                                const defaultLvl = userFormData.restrictedLevels?.[0] || userFormData.assignedLevel || (settings.academicLevels?.[0] || 'Primaria');
+                                const defaultGrd = userFormData.restrictedGrades?.[0] || userFormData.assignedGrade || '1ro';
+                                const defaultGrp = userFormData.restrictedGroups?.[0] || userFormData.assignedGroup || 'A';
+                                setUserFormData({
+                                  ...userFormData,
+                                  teacherGroupAccess: 'single',
+                                  assignedLevel: defaultLvl,
+                                  assignedGrade: defaultGrd,
+                                  assignedGroup: defaultGrp,
+                                  restrictedLevels: [defaultLvl],
+                                  restrictedGrades: [defaultGrd],
+                                  restrictedGroups: [defaultGrp]
+                                });
+                              }}
+                              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                              <p className="text-xs font-black text-slate-800">Grupo Único / Titular</p>
+                              <p className="text-[10px] text-slate-500">Asignado a 1 solo grupo exclusivo</p>
+                            </div>
+                          </label>
+
+                          <label className={cn(
+                            "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
+                            userFormData.teacherGroupAccess === 'multiple'
+                              ? "bg-blue-50/80 border-blue-300 shadow-xs"
+                              : "border-slate-100 hover:bg-slate-50"
+                          )}>
+                            <input
+                              type="radio"
+                              name="teacherGroupAccess"
+                              checked={userFormData.teacherGroupAccess === 'multiple'}
+                              onChange={() => {
+                                const allLvls = settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+                                const allGrds = settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+                                const allGrps = settings.academicGroups || ['A', 'B', 'C'];
+                                setUserFormData({
+                                  ...userFormData,
+                                  teacherGroupAccess: 'multiple',
+                                  restrictedLevels: (userFormData.restrictedLevels && userFormData.restrictedLevels.length > 0) ? userFormData.restrictedLevels : allLvls,
+                                  restrictedGrades: (userFormData.restrictedGrades && userFormData.restrictedGrades.length > 0) ? userFormData.restrictedGrades : allGrds,
+                                  restrictedGroups: (userFormData.restrictedGroups && userFormData.restrictedGroups.length > 0) ? userFormData.restrictedGroups : allGrps,
+                                  assignedLevel: userFormData.assignedLevel || allLvls[0],
+                                  assignedGrade: userFormData.assignedGrade || allGrds[0],
+                                  assignedGroup: userFormData.assignedGroup || allGrps[0]
+                                });
+                              }}
+                              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                              <p className="text-xs font-black text-slate-800">Múltiples Grupos / Especialidad</p>
+                              <p className="text-[10px] text-slate-500">Música, Arte, Educación Física o varios grupos</p>
+                            </div>
+                          </label>
+                        </div>
+
+                        {/* Single Group Form */}
+                        {(!userFormData.teacherGroupAccess || userFormData.teacherGroupAccess === 'single') ? (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white p-3.5 rounded-xl border border-blue-200">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nivel</label>
+                              <select
+                                value={userFormData.assignedLevel || ''}
+                                onChange={(e) => {
+                                  const lvl = e.target.value;
+                                  setUserFormData({
+                                    ...userFormData,
+                                    assignedLevel: lvl,
+                                    restrictedLevels: lvl ? [lvl] : []
+                                  });
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
+                              >
+                                <option value="">Seleccionar Nivel</option>
+                                {(settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+                                  <option key={level} value={level}>{level}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grado</label>
+                              <select
+                                value={userFormData.assignedGrade || ''}
+                                onChange={(e) => {
+                                  const grd = e.target.value;
+                                  setUserFormData({
+                                    ...userFormData,
+                                    assignedGrade: grd,
+                                    restrictedGrades: grd ? [grd] : []
+                                  });
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
+                              >
+                                <option value="">Seleccionar Grado</option>
+                                {(settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
+                                  <option key={grade} value={grade}>{grade}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grupo</label>
+                              <select
+                                value={userFormData.assignedGroup || ''}
+                                onChange={(e) => {
+                                  const grp = e.target.value;
+                                  setUserFormData({
+                                    ...userFormData,
+                                    assignedGroup: grp,
+                                    restrictedGroups: grp ? [grp] : []
+                                  });
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
+                              >
+                                <option value="">Seleccionar Grupo</option>
+                                {(settings.academicGroups || ['A', 'B', 'C']).map(group => (
+                                  <option key={group} value={group}>{group}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Multi-Group Checkboxes */
+                          <div className="bg-white p-3.5 rounded-xl border border-blue-200 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                              <span className="text-xs font-bold text-slate-700">Selecciona los niveles, grados y grupos asignados:</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const allLvls = settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+                                  const allGrds = settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+                                  const allGrps = settings.academicGroups || ['A', 'B', 'C'];
+                                  setUserFormData({
+                                    ...userFormData,
+                                    restrictedLevels: allLvls,
+                                    restrictedGrades: allGrds,
+                                    restrictedGroups: allGrps,
+                                    assignedLevel: allLvls[0],
+                                    assignedGrade: allGrds[0],
+                                    assignedGroup: allGrps[0]
+                                  });
+                                }}
+                                className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer"
+                              >
+                                ⚡ Asignar a TODOS los grupos del colegio
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {/* Niveles */}
+                              <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-black text-slate-600 uppercase">Niveles ({userFormData.restrictedLevels?.length || 0})</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const all = settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+                                      const isAll = (userFormData.restrictedLevels || []).length === all.length;
+                                      setUserFormData({ ...userFormData, restrictedLevels: isAll ? [] : all, assignedLevel: isAll ? '' : all[0] });
+                                    }}
+                                    className="text-[9px] font-bold text-blue-600 hover:underline"
+                                  >
+                                    {(userFormData.restrictedLevels || []).length === (settings.academicLevels || []).length ? 'Desmarcar' : 'Todos'}
+                                  </button>
+                                </div>
+                                <div className="space-y-1 max-h-36 overflow-y-auto">
+                                  {(settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(lvl => (
+                                    <label key={lvl} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-blue-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={(userFormData.restrictedLevels || []).includes(lvl)}
+                                        onChange={(e) => {
+                                          const current = userFormData.restrictedLevels || [];
+                                          const next = e.target.checked ? [...current, lvl] : current.filter(l => l !== lvl);
+                                          setUserFormData({ ...userFormData, restrictedLevels: next, assignedLevel: next[0] || '' });
+                                        }}
+                                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                                      />
+                                      {lvl}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Grados */}
+                              <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-black text-slate-600 uppercase">Grados ({userFormData.restrictedGrades?.length || 0})</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const all = settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+                                      const isAll = (userFormData.restrictedGrades || []).length === all.length;
+                                      setUserFormData({ ...userFormData, restrictedGrades: isAll ? [] : all, assignedGrade: isAll ? '' : all[0] });
+                                    }}
+                                    className="text-[9px] font-bold text-blue-600 hover:underline"
+                                  >
+                                    {(userFormData.restrictedGrades || []).length === (settings.academicGrades || []).length ? 'Desmarcar' : 'Todos'}
+                                  </button>
+                                </div>
+                                <div className="space-y-1 max-h-36 overflow-y-auto">
+                                  {(settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grd => (
+                                    <label key={grd} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-blue-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={(userFormData.restrictedGrades || []).includes(grd)}
+                                        onChange={(e) => {
+                                          const current = userFormData.restrictedGrades || [];
+                                          const next = e.target.checked ? [...current, grd] : current.filter(g => g !== grd);
+                                          setUserFormData({ ...userFormData, restrictedGrades: next, assignedGrade: next[0] || '' });
+                                        }}
+                                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                                      />
+                                      {grd}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Grupos */}
+                              <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-black text-slate-600 uppercase">Grupos ({userFormData.restrictedGroups?.length || 0})</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const all = settings.academicGroups || ['A', 'B', 'C'];
+                                      const isAll = (userFormData.restrictedGroups || []).length === all.length;
+                                      setUserFormData({ ...userFormData, restrictedGroups: isAll ? [] : all, assignedGroup: isAll ? '' : all[0] });
+                                    }}
+                                    className="text-[9px] font-bold text-blue-600 hover:underline"
+                                  >
+                                    {(userFormData.restrictedGroups || []).length === (settings.academicGroups || []).length ? 'Desmarcar' : 'Todos'}
+                                  </button>
+                                </div>
+                                <div className="space-y-1 max-h-36 overflow-y-auto">
+                                  {(settings.academicGroups || ['A', 'B', 'C']).map(grp => (
+                                    <label key={grp} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-blue-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={(userFormData.restrictedGroups || []).includes(grp)}
+                                        onChange={(e) => {
+                                          const current = userFormData.restrictedGroups || [];
+                                          const next = e.target.checked ? [...current, grp] : current.filter(g => g !== grp);
+                                          setUserFormData({ ...userFormData, restrictedGroups: next, assignedGroup: next[0] || '' });
+                                        }}
+                                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                                      />
+                                      Grupo {grp}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Nivel Principal por defecto */}
+                            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Nivel inicial por defecto (al iniciar sesión):</span>
+                              <select
+                                value={userFormData.assignedLevel || (userFormData.restrictedLevels?.[0] || '')}
+                                onChange={(e) => setUserFormData({ ...userFormData, assignedLevel: e.target.value })}
+                                className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                              >
+                                {(userFormData.restrictedLevels && userFormData.restrictedLevels.length > 0 ? userFormData.restrictedLevels : (settings.academicLevels || [])).map(lvl => (
+                                  <option key={lvl} value={lvl}>{lvl}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grado</label>
-                        <select
-                          value={userFormData.assignedGrade || ''}
-                          onChange={(e) => setUserFormData({...userFormData, assignedGrade: e.target.value})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                        >
-                          <option value="">Seleccionar Grado</option>
-                          {(settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
-                            <option key={grade} value={grade}>{grade}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grupo</label>
-                        <select
-                          value={userFormData.assignedGroup || ''}
-                          onChange={(e) => setUserFormData({...userFormData, assignedGroup: e.target.value})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                        >
-                          <option value="">Seleccionar Grupo</option>
-                          {(settings.academicGroups || ['A', 'B', 'C']).map(group => (
-                            <option key={group} value={group}>{group}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="md:col-span-3 mt-2 border-t border-blue-100/50 pt-3">
+
+                      {/* Límites de Jornada Académica (Docente) */}
+                      <div className="border-t border-blue-100/60 pt-3">
                         <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Límites de Jornada Académica (Docente)</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Máximas por Día</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="24"
+                              placeholder="Sin límite"
+                              value={userFormData.maxHoursPerDay || ''}
+                              onChange={(e) => setUserFormData({...userFormData, maxHoursPerDay: e.target.value ? Number(e.target.value) : undefined})}
+                              className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Máximas por Semana</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="168"
+                              placeholder="Sin límite"
+                              value={userFormData.maxHoursPerWeek || ''}
+                              onChange={(e) => setUserFormData({...userFormData, maxHoursPerWeek: e.target.value ? Number(e.target.value) : undefined})}
+                              className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Máximas por Día</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="24"
-                          placeholder="Sin límite"
-                          value={userFormData.maxHoursPerDay || ''}
-                          onChange={(e) => setUserFormData({...userFormData, maxHoursPerDay: e.target.value ? Number(e.target.value) : undefined})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                        />
+
+                      {/* Acceso a Materias / Calificaciones */}
+                      <div className="md:col-span-3 mt-2 border-t border-blue-100/60 pt-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold text-blue-700 uppercase flex items-center gap-1.5">
+                            <BookOpen size={13} className="text-blue-600" />
+                            Acceso a Materias y Calificaciones
+                          </p>
+                          {userFormData.teacherSubjectAccess === 'specific' && (
+                            <span className="text-[10px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                              {(userFormData.assignedSubjects || []).length} materias seleccionadas
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-blue-200">
+                          <label className={cn(
+                            "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
+                            (!userFormData.teacherSubjectAccess || userFormData.teacherSubjectAccess === 'all')
+                              ? "bg-blue-50 border-blue-300 text-blue-950 font-bold"
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                          )}>
+                            <input
+                              type="radio"
+                              name="teacherSubjectAccess"
+                              value="all"
+                              checked={!userFormData.teacherSubjectAccess || userFormData.teacherSubjectAccess === 'all'}
+                              onChange={() => setUserFormData({...userFormData, teacherSubjectAccess: 'all'})}
+                              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                              <p className="text-xs font-bold leading-tight">Todas las materias del grupo</p>
+                              <p className="text-[9px] text-slate-400 font-normal">Docente titular / califica todas las materias</p>
+                            </div>
+                          </label>
+
+                          <label className={cn(
+                            "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
+                            userFormData.teacherSubjectAccess === 'specific'
+                              ? "bg-blue-50 border-blue-300 text-blue-950 font-bold"
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                          )}>
+                            <input
+                              type="radio"
+                              name="teacherSubjectAccess"
+                              value="specific"
+                              checked={userFormData.teacherSubjectAccess === 'specific'}
+                              onChange={() => setUserFormData({...userFormData, teacherSubjectAccess: 'specific'})}
+                              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                              <p className="text-xs font-bold leading-tight">Materias específicas / Talleres</p>
+                              <p className="text-[9px] text-slate-400 font-normal">Solo califica música, artes, deportes, etc.</p>
+                            </div>
+                          </label>
+                        </div>
+
+                        {userFormData.teacherSubjectAccess === 'specific' && (() => {
+                          const allowedLevels = userFormData.teacherGroupAccess === 'multiple' && (userFormData.restrictedLevels || []).length > 0
+                            ? userFormData.restrictedLevels
+                            : (userFormData.assignedLevel ? [userFormData.assignedLevel] : []);
+
+                          const allKnownLevels = (settings.academicLevels && settings.academicLevels.length > 0)
+                            ? settings.academicLevels
+                            : ['Preescolar', 'Primaria', 'Secundaria', 'Preparatoria'];
+
+                          const configuredLevels = allowedLevels.length > 0
+                            ? allowedLevels
+                            : allKnownLevels;
+
+                          // Include any distinct levels from registered subjects if allowedLevels is empty
+                          const distinctSubjectLevels = Array.from(new Set(subjects.map(s => s.level).filter(Boolean)));
+                          const levelsList: string[] = Array.from(new Set([
+                            ...configuredLevels,
+                            ...(allowedLevels.length === 0 ? distinctSubjectLevels : [])
+                          ]));
+
+                          // Check if there are subjects without level
+                          const hasSubjectsWithoutLevel = subjects.some(s => !s.level);
+                          if (hasSubjectsWithoutLevel && allowedLevels.length === 0) {
+                            levelsList.push('General / Sin nivel');
+                          }
+
+                          const lvlMatches = (subjLevel?: string, targetLevel?: string) => {
+                            if (targetLevel === 'General / Sin nivel') return !subjLevel;
+                            return (subjLevel || '').trim().toLowerCase() === (targetLevel || '').trim().toLowerCase();
+                          };
+
+                          const totalAvailableCount = subjects.filter(s => 
+                            levelsList.some(lvl => lvlMatches(s.level, lvl))
+                          ).length;
+
+                          const isSubjectSelected = (subj: Subject) => {
+                            const subjKey = `${subj.name}__${subj.level}`;
+                            const list = userFormData.assignedSubjects || [];
+                            return list.includes(subj.id) || list.includes(subjKey) || list.includes(subj.name);
+                          };
+
+                          const totalSelectedCount = subjects.filter(s => 
+                            levelsList.some(lvl => lvlMatches(s.level, lvl)) && isSubjectSelected(s)
+                          ).length;
+
+                          const handleToggleSubject = (subj: Subject, checked: boolean) => {
+                            const current = userFormData.assignedSubjects || [];
+                            const subjKey = `${subj.name}__${subj.level}`;
+                            let next: string[];
+                            if (checked) {
+                              next = Array.from(new Set([...current, subj.id, subjKey, subj.name]));
+                            } else {
+                              next = current.filter(x => x !== subj.id && x !== subjKey);
+                              const anotherWithSameName = subjects.some(other => 
+                                other.id !== subj.id && 
+                                other.name.toLowerCase() === subj.name.toLowerCase() && 
+                                (next.includes(other.id) || next.includes(`${other.name}__${other.level}`))
+                              );
+                              if (!anotherWithSameName) {
+                                next = next.filter(x => x !== subj.name);
+                              }
+                            }
+                            setUserFormData({ ...userFormData, assignedSubjects: next });
+                          };
+
+                          const handleSelectAllInLevel = (lvl: string) => {
+                            const lvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                            const current = userFormData.assignedSubjects || [];
+                            const additions: string[] = [];
+                            lvlSubjs.forEach(s => {
+                              additions.push(s.id, `${s.name}__${s.level}`, s.name);
+                            });
+                            setUserFormData({
+                              ...userFormData,
+                              assignedSubjects: Array.from(new Set([...current, ...additions]))
+                            });
+                          };
+
+                          const handleClearLevel = (lvl: string) => {
+                            const lvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                            const lvlIds = new Set(lvlSubjs.map(s => s.id));
+                            const lvlKeys = new Set(lvlSubjs.map(s => `${s.name}__${s.level}`));
+                            const current = userFormData.assignedSubjects || [];
+                            let next = current.filter(x => !lvlIds.has(x) && !lvlKeys.has(x));
+                            lvlSubjs.forEach(s => {
+                              const remainingHasSameName = subjects.some(other => 
+                                !lvlIds.has(other.id) && 
+                                other.name.toLowerCase() === s.name.toLowerCase() && 
+                                (next.includes(other.id) || next.includes(`${other.name}__${other.level}`))
+                              );
+                              if (!remainingHasSameName) {
+                                next = next.filter(x => x !== s.name);
+                              }
+                            });
+                            setUserFormData({ ...userFormData, assignedSubjects: next });
+                          };
+
+                          const handleExpandAll = (expand: boolean) => {
+                            const map: Record<string, boolean> = {};
+                            levelsList.forEach(l => { map[l] = expand; });
+                            setExpandedSubjectLevels(map);
+                          };
+
+                          return (
+                            <div className="bg-white rounded-xl border border-blue-200 shadow-xs overflow-hidden space-y-0">
+                              {/* Header Bar */}
+                              <div className="p-3.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-white border-b border-blue-200/80 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                    <Layers size={17} />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-2">
+                                      Materias por Nivel Educativo
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                                        {totalSelectedCount} de {totalAvailableCount} seleccionadas
+                                      </span>
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500">
+                                      {allowedLevels.length > 0 
+                                        ? `Niveles asignados al docente: ${allowedLevels.join(', ')}`
+                                        : 'Organizadas por cada nivel para evitar confusiones entre grados y materias'}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExpandAll(true)}
+                                    className="px-2 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Desplegar todos
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExpandAll(false)}
+                                    className="px-2 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Colapsar todos
+                                  </button>
+                                  <span className="text-slate-300">|</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const allAdditions: string[] = [];
+                                      subjects.forEach(s => {
+                                        if (levelsList.some(lvl => lvlMatches(s.level, lvl))) {
+                                          allAdditions.push(s.id, `${s.name}__${s.level}`, s.name);
+                                        }
+                                      });
+                                      setUserFormData({ ...userFormData, assignedSubjects: Array.from(new Set(allAdditions)) });
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                                  >
+                                    Marcar todas
+                                  </button>
+                                  <span className="text-slate-300">•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setUserFormData({ ...userFormData, assignedSubjects: [] })}
+                                    className="text-slate-500 hover:text-slate-700 underline cursor-pointer"
+                                  >
+                                    Limpiar
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Table / List of Levels */}
+                              <div className="divide-y divide-slate-200">
+                                {levelsList.map((lvl) => {
+                                  const lvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                                  const selectedInLvl = lvlSubjs.filter(s => isSubjectSelected(s));
+                                  const selectedCount = selectedInLvl.length;
+                                  const isExpanded = expandedSubjectLevels[lvl] !== undefined
+                                    ? expandedSubjectLevels[lvl]
+                                    : (levelsList.length === 1 || selectedCount > 0);
+
+                                  const lvlLower = lvl.toLowerCase();
+                                  const defaultLevelGrades = lvlLower.includes('preescolar') || lvlLower.includes('secundaria')
+                                    ? ['1ro', '2do', '3ro']
+                                    : (settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']);
+                                  const finalGrades = (userFormData.restrictedGrades && userFormData.restrictedGrades.length > 0)
+                                    ? defaultLevelGrades.filter(g => userFormData.restrictedGrades?.includes(g))
+                                    : defaultLevelGrades;
+                                  const effectiveGrades = finalGrades.length > 0 ? finalGrades : defaultLevelGrades;
+
+                                  return (
+                                    <div key={lvl} className="transition-all">
+                                      {/* Level Row Header (Clickable Table Row) */}
+                                      <div 
+                                        onClick={() => {
+                                          setExpandedSubjectLevels(prev => ({
+                                            ...prev,
+                                            [lvl]: !isExpanded
+                                          }));
+                                        }}
+                                        className={cn(
+                                          "p-3 flex items-center justify-between gap-3 cursor-pointer select-none transition-colors",
+                                          isExpanded ? "bg-slate-50/90 border-b border-slate-200/60" : "bg-white hover:bg-slate-50/60"
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                          <div className={cn(
+                                            "w-6 h-6 rounded-md flex items-center justify-center transition-transform",
+                                            isExpanded ? "rotate-180 bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
+                                          )}>
+                                            <ChevronDown size={14} />
+                                          </div>
+
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <span className="text-xs font-black text-slate-800 tracking-wide">
+                                                {lvl}
+                                              </span>
+                                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                                {lvlSubjs.length} {lvlSubjs.length === 1 ? 'materia' : 'materias'}
+                                              </span>
+                                              {selectedCount > 0 ? (
+                                                <span className="text-[10px] font-black px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                  ✓ {selectedCount} asignada{selectedCount > 1 ? 's' : ''}
+                                                </span>
+                                              ) : (
+                                                <span className="text-[10px] font-medium px-2 py-0.2 rounded-full bg-slate-100 text-slate-400">
+                                                  0 asignadas
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            {/* Preview tags of selected subjects in this level */}
+                                            {selectedCount > 0 && !isExpanded && (
+                                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                {selectedInLvl.slice(0, 4).map(s => {
+                                                  const subjKey = `${s.name}__${s.level}`;
+                                                  const grades = userFormData.teacherSubjectGrades?.[subjKey] 
+                                                    || userFormData.teacherSubjectGrades?.[s.name];
+                                                  const hasSpecificGrades = grades && grades.length > 0 && !grades.includes('all');
+                                                  return (
+                                                    <span key={s.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800">
+                                                      {s.name} {hasSpecificGrades ? `(${grades.join(',')})` : ''}
+                                                    </span>
+                                                  );
+                                                })}
+                                                {selectedCount > 4 && (
+                                                  <span className="text-[9px] text-slate-400 font-bold">
+                                                    +{selectedCount - 4} más...
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Actions for this level */}
+                                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSelectAllInLevel(lvl)}
+                                            className="text-[10px] text-blue-600 hover:text-blue-800 font-bold px-2 py-1 rounded bg-blue-50/70 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
+                                            title={`Seleccionar todas las materias de ${lvl}`}
+                                          >
+                                            + Todas
+                                          </button>
+                                          {selectedCount > 0 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleClearLevel(lvl)}
+                                              className="text-[10px] text-slate-500 hover:text-red-600 font-bold px-2 py-1 rounded bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-colors cursor-pointer"
+                                              title={`Desmarcar materias de ${lvl}`}
+                                            >
+                                              Limpiar
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setExpandedSubjectLevels(prev => ({
+                                                ...prev,
+                                                [lvl]: !isExpanded
+                                              }));
+                                            }}
+                                            className="text-[10px] font-bold text-slate-600 hover:text-slate-800 px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer flex items-center gap-1"
+                                          >
+                                            {isExpanded ? 'Ocultar' : 'Ver materias'}
+                                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Unfolded Level Panel (se desprenden las materias) */}
+                                      {isExpanded && (
+                                        <div className="p-3 bg-slate-50/50 space-y-2.5">
+                                          {lvlSubjs.length === 0 ? (
+                                            <p className="text-xs text-amber-600 italic py-2 px-2 bg-amber-50 rounded-lg border border-amber-200">
+                                              No hay materias registradas para el nivel <strong>{lvl}</strong>. Puedes agregarlas en la pestaña de Materias.
+                                            </p>
+                                          ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                              {lvlSubjs.map(subj => {
+                                                const isSelected = isSubjectSelected(subj);
+                                                const cat = subj.category || 'Académica';
+                                                const isAutonomy = cat === 'Autonomía Curricular';
+                                                const isDP = cat === 'Desarrollo Personal' || cat === 'Aspectos Formativos';
+                                                const subjKey = `${subj.name}__${subj.level}`;
+                                                const currentGrades = userFormData.teacherSubjectGrades?.[subjKey] 
+                                                  || userFormData.teacherSubjectGrades?.[subj.name] 
+                                                  || ['all'];
+                                                const isAllGrades = currentGrades.includes('all') || currentGrades.length === 0;
+
+                                                return (
+                                                  <div 
+                                                    key={subj.id}
+                                                    className={cn(
+                                                      "p-2.5 rounded-xl border text-xs transition-all flex flex-col justify-between gap-2 shadow-2xs",
+                                                      isSelected 
+                                                        ? "bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-200" 
+                                                        : "bg-white border-slate-200 hover:bg-slate-50 text-slate-700"
+                                                    )}
+                                                  >
+                                                    <div className="flex items-start gap-2">
+                                                      <input
+                                                        type="checkbox"
+                                                        id={`subj_${subj.id}`}
+                                                        checked={isSelected}
+                                                        onChange={(e) => handleToggleSubject(subj, e.target.checked)}
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 mt-0.5 cursor-pointer"
+                                                      />
+                                                      <div className="min-w-0 flex-1">
+                                                        <label htmlFor={`subj_${subj.id}`} className="font-bold text-slate-800 leading-tight block cursor-pointer">
+                                                          {subj.name}
+                                                        </label>
+                                                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                                          <span className={cn(
+                                                            "text-[8px] font-bold px-1 rounded inline-block",
+                                                            isAutonomy ? "bg-amber-100 text-amber-800" :
+                                                            isDP ? "bg-indigo-100 text-indigo-800" :
+                                                            "bg-blue-100 text-blue-800"
+                                                          )}>
+                                                            {cat}
+                                                          </span>
+                                                          <span className="text-[8px] font-bold px-1 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                                            {lvl}
+                                                          </span>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Grade assignment selector per subject */}
+                                                    {isSelected && (
+                                                      <div className="pt-2 border-t border-indigo-200/60 space-y-1 bg-white/80 p-1.5 rounded-lg">
+                                                        <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+                                                          <span>Grados en {lvl}:</span>
+                                                          <span className="text-indigo-700 font-black">
+                                                            {isAllGrades ? 'Todos los grados' : currentGrades.join(', ')}
+                                                          </span>
+                                                        </div>
+                                                        <div className="flex flex-wrap items-center gap-1">
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                              const newMap = { ...(userFormData.teacherSubjectGrades || {}) };
+                                                              newMap[subjKey] = ['all'];
+                                                              newMap[subj.name] = ['all'];
+                                                              setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
+                                                            }}
+                                                            className={cn(
+                                                              "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                                              isAllGrades
+                                                                ? "bg-indigo-600 text-white shadow-xs"
+                                                                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                            )}
+                                                          >
+                                                            Todos
+                                                          </button>
+                                                          {effectiveGrades.map(grd => {
+                                                            const isGradeActive = !isAllGrades && currentGrades.includes(grd);
+                                                            return (
+                                                              <button
+                                                                key={grd}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                  const newMap = { ...(userFormData.teacherSubjectGrades || {}) };
+                                                                  let nextGrades: string[];
+                                                                  if (isAllGrades) {
+                                                                    nextGrades = [grd];
+                                                                  } else if (currentGrades.includes(grd)) {
+                                                                    nextGrades = currentGrades.filter(g => g !== grd);
+                                                                    if (nextGrades.length === 0) nextGrades = ['all'];
+                                                                  } else {
+                                                                    nextGrades = [...currentGrades, grd];
+                                                                  }
+                                                                  newMap[subjKey] = nextGrades;
+                                                                  newMap[subj.name] = nextGrades;
+                                                                  setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
+                                                                }}
+                                                                className={cn(
+                                                                  "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
+                                                                  isGradeActive
+                                                                    ? "bg-indigo-600 text-white font-black shadow-xs"
+                                                                    : isAllGrades
+                                                                      ? "bg-indigo-100 text-indigo-900 border border-indigo-200 hover:bg-indigo-200"
+                                                                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                )}
+                                                              >
+                                                                {grd}
+                                                              </button>
+                                                            );
+                                                          })}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Máximas por Semana</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="168"
-                          placeholder="Sin límite"
-                          value={userFormData.maxHoursPerWeek || ''}
-                          onChange={(e) => setUserFormData({...userFormData, maxHoursPerWeek: e.target.value ? Number(e.target.value) : undefined})}
-                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                        />
-                      </div>
-                      <div className="hidden md:block"></div>
                     </div>
                   )}
 
@@ -2069,6 +3899,11 @@ export default function Settings() {
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, payments: {...userFormData.permissions?.payments, invoice: v}}})}
                         />
                         <PermissionToggle 
+                          label="Ver Ajustes" 
+                          checked={userFormData.permissions?.settings?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions?.settings, view: v}}})}
+                        />
+                        <PermissionToggle 
                           label="Gestionar Usuarios" 
                           checked={userFormData.permissions?.settings?.manageUsers} 
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions?.settings, manageUsers: v}}})}
@@ -2077,6 +3912,11 @@ export default function Settings() {
                           label="Editar Ciclos/Reglas" 
                           checked={userFormData.permissions?.settings?.editCycles} 
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions?.settings, editCycles: v, editRules: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Editar Datos Generales" 
+                          checked={userFormData.permissions?.settings?.editGeneral} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, settings: {...userFormData.permissions?.settings, editGeneral: v}}})}
                         />
                         <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Anuncios y Control Escolar</p>
                         <PermissionToggle 
@@ -2109,7 +3949,7 @@ export default function Settings() {
                           checked={userFormData.permissions?.grading?.manage} 
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, grading: {...userFormData.permissions?.grading, manage: v}}})}
                         />
-                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Checador</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Checador y Recepción</p>
                         <PermissionToggle 
                           label="Ver Checador" 
                           checked={userFormData.permissions?.timeClock?.view} 
@@ -2119,6 +3959,27 @@ export default function Settings() {
                           label="Gestionar Checador" 
                           checked={userFormData.permissions?.timeClock?.manage} 
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, timeClock: {...userFormData.permissions?.timeClock, manage: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Ver Recepción" 
+                          checked={userFormData.permissions?.reception?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, reception: {...userFormData.permissions?.reception, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Recepción" 
+                          checked={userFormData.permissions?.reception?.manage} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, reception: {...userFormData.permissions?.reception, manage: v}}})}
+                        />
+                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Directorio de Familias</p>
+                        <PermissionToggle 
+                          label="Ver Padres de Familia" 
+                          checked={userFormData.permissions?.parents?.view} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, parents: {...userFormData.permissions?.parents, view: v}}})}
+                        />
+                        <PermissionToggle 
+                          label="Gestionar Padres" 
+                          checked={userFormData.permissions?.parents?.manage} 
+                          onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, parents: {...userFormData.permissions?.parents, manage: v}}})}
                         />
                       </div>
                     </div>
@@ -2187,19 +4048,76 @@ export default function Settings() {
                           } finally {
                             await deleteApp(secondaryApp);
                           }
+                        } else if (userFormData.password && userFormData.password.trim() !== '') {
+                          // If editing an existing user and a new password was provided, update it in Firebase Auth
+                          let authUpdated = false;
+                          let authErrorMsg = '';
+                          try {
+                            const secondaryApp = initializeApp(firebaseConfig, `SecondaryApp_Update_${Date.now()}`);
+                            const secondaryAuth = getAuth(secondaryApp);
+                            try {
+                              if (editingUser.currentPassword) {
+                                const cred = await signInWithEmailAndPassword(
+                                  secondaryAuth,
+                                  editingUser.email,
+                                  editingUser.currentPassword
+                                );
+                                await updatePassword(cred.user, userFormData.password.trim());
+                                authUpdated = true;
+                              } else {
+                                authErrorMsg = 'Este usuario no tenía contraseña previa registrada en el sistema.';
+                              }
+                            } catch (err: any) {
+                              authErrorMsg = err.message || 'La contraseña anterior no coincide con Firebase Auth.';
+                            } finally {
+                              await deleteApp(secondaryApp);
+                            }
+                          } catch (authErr: any) {
+                            console.warn("Could not update auth password directly via secondaryApp:", authErr);
+                            authErrorMsg = authErr.message;
+                          }
+
+                          if (!authUpdated) {
+                            // Automatically trigger a password reset email so the collaborator can sync their key
+                            try {
+                              await sendPasswordResetEmail(auth, userFormData.email!);
+                            } catch (_) {}
+                            alert(
+                              `Aviso sobre la contraseña:\n\nSe actualizó la ficha de ${userFormData.name} en el sistema.\n\nSin embargo, para sincronizar el acceso a Firebase Auth (ya que este usuario fue dado de alta con anterioridad sin registro de clave previa), se ha enviado un enlace de restablecimiento a ${userFormData.email}.\n\nEl usuario debe abrir ese correo para confirmar su nueva clave.`
+                            );
+                          }
                         }
 
                         if (!uid) throw new Error("No se pudo obtener el UID del usuario");
 
                         const userRef = doc(db, 'users', uid);
                         const { password, ...firestoreData } = userFormData;
+
+                        const finalPassword = userFormData.password && userFormData.password.trim() !== ''
+                          ? userFormData.password.trim()
+                          : (editingUser?.currentPassword || '');
                         
                         await setDoc(userRef, {
                           ...firestoreData,
+                          ...(finalPassword ? { currentPassword: finalPassword } : {}),
+                          teacherSubjectAccess: userFormData.role === 'Docente' ? (userFormData.teacherSubjectAccess || 'all') : 'all',
+                          assignedSubjects: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
+                            ? (userFormData.assignedSubjects || [])
+                            : [],
+                          teacherSubjectGrades: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
+                            ? (userFormData.teacherSubjectGrades || {})
+                            : {},
+                          teacherSubjectGroups: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
+                            ? (userFormData.teacherSubjectGroups || {})
+                            : {},
+                          teacherGroupAccess: userFormData.role === 'Docente' ? (userFormData.teacherGroupAccess || 'single') : 'single',
+                          assignedLevel: userFormData.assignedLevel || (userFormData.restrictedLevels?.[0] || 'General'),
+                          assignedGrade: userFormData.assignedGrade || (userFormData.restrictedGrades?.[0] || ''),
+                          assignedGroup: userFormData.assignedGroup || (userFormData.restrictedGroups?.[0] || ''),
                           id: uid,
                           createdAt: editingUser ? editingUser.createdAt : serverTimestamp(),
                           updatedAt: serverTimestamp()
-                        });
+                        }, { merge: true });
 
                         // Automatically sync with biometric employees list
                         if (userFormData.role === 'Docente') {
@@ -2240,6 +4158,316 @@ export default function Settings() {
                   >
                     {editingUser ? 'Guardar Cambios' : 'Crear Usuario'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Collaborator Detailed Profile Modal */}
+          {selectedUserDetail && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[88vh]">
+                {/* Modal Header */}
+                <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    {selectedUserDetail.photoUrl ? (
+                      <img
+                        src={selectedUserDetail.photoUrl}
+                        alt={selectedUserDetail.name}
+                        className="w-12 h-12 rounded-2xl object-cover border-2 border-indigo-400"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-lg font-black shadow-inner">
+                        {selectedUserDetail.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-950 px-2 py-0.5 rounded border border-indigo-800">
+                          {selectedUserDetail.role}
+                        </span>
+                        {selectedUserDetail.employeeNumber && (
+                          <span className="text-[10px] font-mono font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded">
+                            No. {selectedUserDetail.employeeNumber}
+                          </span>
+                        )}
+                      </div>
+                      <h2 className="text-lg font-black uppercase tracking-tight text-white mt-0.5">
+                        {selectedUserDetail.name}
+                      </h2>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedUserDetail(null)}
+                    className="w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                  >
+                    <XIcon size={18} />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
+                  {/* General Info Grid */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Users size={12} className="text-indigo-600" />
+                      Datos de Contacto y Cuenta
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 block text-[10px] font-bold uppercase">Correo Electrónico:</span>
+                        <span className="font-bold text-slate-900">{selectedUserDetail.email}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px] font-bold uppercase">Teléfono:</span>
+                        <span className="font-bold text-slate-900">{selectedUserDetail.phone || 'Sin registrar'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px] font-bold uppercase">Identificador UID:</span>
+                        <span className="font-mono text-[10px] text-slate-600 break-all">{selectedUserDetail.id}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px] font-bold uppercase">Fecha de Registro:</span>
+                        <span className="font-bold text-slate-900">
+                          {selectedUserDetail.createdAt ? format(selectedUserDetail.createdAt.toDate(), 'PPP', { locale: es }) : 'N/D'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Contraseña Actual Registrada */}
+                    <div className="pt-3 border-t border-slate-200/70 flex items-center justify-between">
+                      <div>
+                        <span className="text-slate-400 block text-[10px] font-bold uppercase">Contraseña Registrada:</span>
+                        <span className="font-mono text-xs font-bold text-slate-800 select-all">
+                          {selectedUserDetail.currentPassword ? (
+                            showDetailPassword ? selectedUserDetail.currentPassword : '••••••••••••'
+                          ) : (
+                            <span className="text-slate-400 font-normal italic">Sin registrar en base de datos</span>
+                          )}
+                        </span>
+                      </div>
+                      {selectedUserDetail.currentPassword && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowDetailPassword(!showDetailPassword)}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                            title={showDetailPassword ? "Ocultar" : "Mostrar contraseña"}
+                          >
+                            {showDetailPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedUserDetail.currentPassword || '');
+                              setCopiedPassword('detail');
+                              setTimeout(() => setCopiedPassword(null), 2000);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 bg-white border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                            title="Copiar contraseña"
+                          >
+                            {copiedPassword === 'detail' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Academic Assignment (If Docente or Control Escolar) */}
+                  {(selectedUserDetail.role === 'Docente' || selectedUserDetail.role === 'Control Escolar') && (
+                    <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-200 space-y-3">
+                      <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <GraduationCap size={13} className="text-blue-600" />
+                        Asignación y Jornada Académica
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <span className="text-blue-600/80 block text-[10px] font-bold uppercase">Modalidad y Nivel:</span>
+                          <span className="font-black text-blue-950">
+                            {selectedUserDetail.teacherGroupAccess === 'multiple' || (selectedUserDetail.restrictedLevels && selectedUserDetail.restrictedLevels.length > 1)
+                              ? `Múltiples Grupos (${selectedUserDetail.restrictedLevels?.join(', ') || 'Todos'})`
+                              : (selectedUserDetail.assignedLevel || 'No especificado')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-blue-600/80 block text-[10px] font-bold uppercase">Grados y Grupos:</span>
+                          <span className="font-black text-blue-950">
+                            {selectedUserDetail.teacherGroupAccess === 'multiple' || (selectedUserDetail.restrictedGrades && selectedUserDetail.restrictedGrades.length > 1)
+                              ? `Grados: ${selectedUserDetail.restrictedGrades?.join(', ') || 'Todos'} | Grupos: ${selectedUserDetail.restrictedGroups?.join(', ') || 'Todos'}`
+                              : (selectedUserDetail.assignedGrade ? `${selectedUserDetail.assignedGrade} "${selectedUserDetail.assignedGroup || 'A'}"` : 'General')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-blue-600/80 block text-[10px] font-bold uppercase">Carga Horaria:</span>
+                          <span className="font-black text-blue-950">
+                            {selectedUserDetail.maxHoursPerWeek ? `${selectedUserDetail.maxHoursPerWeek} hrs/semana` : 'Sin límite'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Restrictions if Docente */}
+                      {selectedUserDetail.role === 'Docente' && (
+                        <div className="pt-2 border-t border-blue-200/60 text-[11px]">
+                          <span className="text-blue-700 font-bold block mb-1">Materias y Calificaciones Permitidas:</span>
+                          {selectedUserDetail.teacherSubjectAccess === 'specific' ? (
+                            <div>
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <span className="bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                  Materias Específicas / Talleres ({selectedUserDetail.assignedSubjects?.length || 0})
+                                </span>
+                              </div>
+                              {selectedUserDetail.assignedSubjects?.length ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(() => {
+                                    const seen = new Set<string>();
+                                    const itemsToRender: { id: string; name: string; level?: string; grades?: string[] }[] = [];
+
+                                    (selectedUserDetail.assignedSubjects || []).forEach(subj => {
+                                      const subjObj = subjects.find(s => s.id === subj || `${s.name}__${s.level}` === subj || s.name === subj);
+                                      const name = subjObj ? subjObj.name : (subj.includes('__') ? subj.split('__')[0] : subj);
+                                      const level = subjObj?.level || (subj.includes('__') ? subj.split('__')[1] : undefined);
+                                      const uniqueKey = `${name}__${level || ''}`;
+
+                                      if (!seen.has(uniqueKey)) {
+                                        seen.add(uniqueKey);
+                                        const grades = selectedUserDetail.teacherSubjectGrades?.[uniqueKey]
+                                          || (subjObj && selectedUserDetail.teacherSubjectGrades?.[subjObj.id])
+                                          || selectedUserDetail.teacherSubjectGrades?.[name]
+                                          || selectedUserDetail.teacherSubjectGrades?.[subj];
+                                        itemsToRender.push({ id: subjObj?.id || subj, name, level, grades });
+                                      }
+                                    });
+
+                                    return itemsToRender.map(item => {
+                                      const hasSpecificGrades = item.grades && item.grades.length > 0 && !item.grades.includes('all');
+                                      return (
+                                        <span key={item.id} className="bg-white border border-blue-200 text-blue-900 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5 shadow-2xs">
+                                          <span>{item.name}</span>
+                                          {item.level && (
+                                            <span className="text-[8px] bg-slate-100 text-slate-600 px-1 rounded border border-slate-200 font-bold">
+                                              {item.level}
+                                            </span>
+                                          )}
+                                          {hasSpecificGrades && (
+                                            <span className="text-[9px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 rounded font-black">
+                                              Grados: {item.grades!.join(', ')}
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    });
+                                  })()}
+                                </div>
+                              ) : (
+                                <span className="text-amber-700 italic">No tiene materias seleccionadas (no podrá asentar calificaciones).</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-emerald-700 font-bold">
+                              ✓ Docente Titular (Acceso completo a calificar todas las materias del grupo)
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Restrictions if Control Escolar */}
+                      {selectedUserDetail.role === 'Control Escolar' && (
+                        <div className="pt-2 border-t border-blue-200/60 text-[11px]">
+                          <span className="text-blue-700 font-bold block mb-1">Alcance de Niveles Permitidos:</span>
+                          {selectedUserDetail.restrictedLevels?.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {selectedUserDetail.restrictedLevels.map(lvl => (
+                                <span key={lvl} className="bg-white border border-blue-200 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded">
+                                  {lvl}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-emerald-700 font-bold">✓ Acceso global a todos los niveles de Control Escolar</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Permissions Breakdown Matrix */}
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Lock size={12} className="text-indigo-600" />
+                      Privilegios y Accesos a Módulos
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {[
+                        { label: 'Dashboard', enabled: selectedUserDetail.permissions?.dashboard?.view },
+                        { label: 'Alumnos (Ver)', enabled: selectedUserDetail.permissions?.students?.view },
+                        { label: 'Alumnos (Crear)', enabled: selectedUserDetail.permissions?.students?.create },
+                        { label: 'Alumnos (Editar)', enabled: selectedUserDetail.permissions?.students?.edit },
+                        { label: 'Alumnos (Eliminar)', enabled: selectedUserDetail.permissions?.students?.delete },
+                        { label: 'Pagos (Ver)', enabled: selectedUserDetail.permissions?.payments?.view },
+                        { label: 'Pagos (Cobrar)', enabled: selectedUserDetail.permissions?.payments?.create },
+                        { label: 'Facturación', enabled: selectedUserDetail.permissions?.payments?.invoice },
+                        { label: 'Gastos (Ver)', enabled: selectedUserDetail.permissions?.expenses?.view },
+                        { label: 'Gastos (Registrar)', enabled: selectedUserDetail.permissions?.expenses?.create },
+                        { label: 'Control Escolar', enabled: selectedUserDetail.permissions?.controlEscolar?.view },
+                        { label: 'Calificaciones', enabled: selectedUserDetail.permissions?.grading?.view },
+                        { label: 'Checador (Ver)', enabled: selectedUserDetail.permissions?.timeClock?.view },
+                        { label: 'Checador (Gestionar)', enabled: selectedUserDetail.permissions?.timeClock?.manage },
+                        { label: 'Recepción', enabled: selectedUserDetail.permissions?.reception?.view },
+                        { label: 'Portal Padres', enabled: selectedUserDetail.permissions?.parents?.view },
+                        { label: 'Ajustes Generales', enabled: selectedUserDetail.permissions?.settings?.editGeneral },
+                        { label: 'Gestión Usuarios', enabled: selectedUserDetail.permissions?.settings?.manageUsers }
+                      ].map((item, i) => (
+                        <div
+                          key={i}
+                          className={`p-2 rounded-lg border flex items-center justify-between text-[11px] font-bold ${
+                            item.enabled
+                              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                              : 'bg-slate-50 border-slate-200 text-slate-400 opacity-60'
+                          }`}
+                        >
+                          <span className="truncate">{item.label}</span>
+                          <span className="text-[10px] font-black">{item.enabled ? '✓' : '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">
+                    Ficha Técnica de Colaborador
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedUserDetail(null)}
+                      className="px-4 py-2 border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Cerrar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const targetUser = selectedUserDetail;
+                        setSelectedUserDetail(null);
+                        setEditingUser(targetUser);
+                        setUserFormData({
+                          ...targetUser,
+                          password: '',
+                          teacherSubjectAccess: targetUser.teacherSubjectAccess || 'all',
+                          assignedSubjects: targetUser.assignedSubjects || []
+                        });
+                        setShowCurrentPassword(false);
+                        setShowNewPassword(false);
+                        setIsUserModalOpen(true);
+                      }}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/20 active:scale-95 cursor-pointer"
+                    >
+                      <Edit2 size={13} />
+                      Editar Colaborador
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

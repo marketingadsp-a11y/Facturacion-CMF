@@ -3,6 +3,7 @@ import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, ord
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
+import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -40,7 +41,7 @@ import {
   QrCode,
   FileBadge
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, studentMatchesSearch } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { subscribeToSchedules, subscribeToSubstitutions } from '../services/scheduleService';
 import { pdf } from '@react-pdf/renderer';
@@ -61,7 +62,7 @@ const DEFAULT_TIME_PERIODS = [
 
 export default function TeacherPortal() {
   const { userProfile, hasPermission } = usePermissions();
-  const [students, setStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Record<string, StudentGrade>>({});
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
@@ -91,10 +92,184 @@ export default function TeacherPortal() {
   const [isLocking, setIsLocking] = useState(false);
   const [savedStatus, setSavedStatus] = useState<string | null>(null);
   const [isBimestreLocked, setIsBimestreLocked] = useState(false);
-  const [adminSelectedLevel, setAdminSelectedLevel] = useState<string>('');
-  const [adminSelectedGrade, setAdminSelectedGrade] = useState<string>('');
-  const [adminSelectedGroup, setAdminSelectedGroup] = useState<string>('');
+  const [selectedLevel, setSelectedLevel] = useState<string>('');
+  const [selectedGrade, setSelectedGrade] = useState<string>('');
+  const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [settings, setSettings] = useState<AppSettings | null>(null);
+
+  const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
+  const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
+  const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
+
+  const availableLevels = useMemo(() => {
+    const all = settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+    if (restrictedLevels.length > 0) {
+      return all.filter(lvl => restrictedLevels.includes(lvl));
+    }
+    return all;
+  }, [settings?.academicLevels, restrictedLevels]);
+
+  const availableGrades = useMemo(() => {
+    const all = settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+    if (restrictedGrades.length > 0) {
+      return all.filter(g => restrictedGrades.includes(g));
+    }
+    return all;
+  }, [settings?.academicGrades, restrictedGrades]);
+
+  const availableGroups = useMemo(() => {
+    const all = ['A', 'B', 'C', 'D'];
+    if (restrictedGroups.length > 0) {
+      return all.filter(grp => restrictedGroups.includes(grp));
+    }
+    return all;
+  }, [restrictedGroups]);
+
+  const isMultiGroupTeacher = userProfile?.role === 'Docente' && (
+    userProfile.teacherGroupAccess === 'multiple' ||
+    (userProfile.restrictedLevels && userProfile.restrictedLevels.length > 1) ||
+    (userProfile.restrictedGrades && userProfile.restrictedGrades.length > 1) ||
+    (userProfile.restrictedGroups && userProfile.restrictedGroups.length > 1) ||
+    availableLevels.length > 1 ||
+    availableGrades.length > 1 ||
+    availableGroups.length > 1
+  );
+
+  const canFilterGroups = userProfile?.role !== 'Docente' || isMultiGroupTeacher;
+
+  const activeLevel = useMemo(() => {
+    if (selectedLevel && availableLevels.includes(selectedLevel)) return selectedLevel;
+    if (userProfile?.role === 'Docente' && userProfile.assignedLevel && availableLevels.includes(userProfile.assignedLevel)) {
+      return userProfile.assignedLevel;
+    }
+    return availableLevels[0] || '';
+  }, [selectedLevel, availableLevels, userProfile]);
+
+  const activeGrade = useMemo(() => {
+    if (selectedGrade && availableGrades.includes(selectedGrade)) return selectedGrade;
+    if (userProfile?.role === 'Docente' && userProfile.assignedGrade && availableGrades.includes(userProfile.assignedGrade)) {
+      return userProfile.assignedGrade;
+    }
+    return availableGrades[0] || '';
+  }, [selectedGrade, availableGrades, userProfile]);
+
+  const activeGroup = useMemo(() => {
+    if (selectedGroup && availableGroups.includes(selectedGroup)) return selectedGroup;
+    if (userProfile?.role === 'Docente' && userProfile.assignedGroup && availableGroups.includes(userProfile.assignedGroup)) {
+      return userProfile.assignedGroup;
+    }
+    return availableGroups[0] || 'A';
+  }, [selectedGroup, availableGroups, userProfile]);
+
+  const students = useMemo(() => {
+    let list = [...allStudents];
+    if (restrictedLevels.length > 0) {
+      list = list.filter(s => restrictedLevels.includes(s.level));
+    }
+    if (restrictedGrades.length > 0) {
+      list = list.filter(s => restrictedGrades.includes(s.grade));
+    }
+    if (restrictedGroups.length > 0) {
+      list = list.filter(s => restrictedGroups.includes(s.group || ''));
+    }
+
+    if (activeLevel) {
+      list = list.filter(s => s.level?.toLowerCase().trim() === activeLevel.toLowerCase().trim());
+    }
+    if (activeGrade) {
+      list = list.filter(s => s.grade === activeGrade);
+    }
+    if (activeGroup) {
+      list = list.filter(s => s.group === activeGroup);
+    }
+    return list.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+  }, [allStudents, restrictedLevels, restrictedGrades, restrictedGroups, activeLevel, activeGrade, activeGroup]);
+
+  const evalConfig = useMemo(() => {
+    return getLevelEvaluationConfig(settings, activeLevel);
+  }, [settings, activeLevel]);
+
+  // Subjects for the current active level
+  const activeLevelSubjects = useMemo(() => {
+    let list = subjects.filter(s => 
+      s.level && activeLevel && 
+      s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
+    );
+
+    // If teacher has specific subject access, filter only assigned subjects (and by grade/group if restricted)
+    if (userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific') {
+      const allowed = userProfile.assignedSubjects || [];
+      list = list.filter(s => {
+        const keyWithLevel = `${s.name}__${s.level}`;
+        const isSubjectAllowed = allowed.includes(s.id) || allowed.includes(keyWithLevel) || allowed.includes(s.name);
+        if (!isSubjectAllowed) return false;
+
+        // Check if grade-restricted for this subject
+        const gradeList = userProfile.teacherSubjectGrades?.[keyWithLevel] 
+          || userProfile.teacherSubjectGrades?.[s.name] 
+          || userProfile.teacherSubjectGrades?.[s.id];
+
+        if (gradeList && gradeList.length > 0 && !gradeList.includes('all')) {
+          if (activeGrade && !gradeList.includes(activeGrade)) {
+            return false;
+          }
+        }
+
+        // Check if group-restricted for this subject
+        const groupList = userProfile.teacherSubjectGroups?.[keyWithLevel]
+          || userProfile.teacherSubjectGroups?.[s.name]
+          || userProfile.teacherSubjectGroups?.[s.id];
+
+        if (groupList && groupList.length > 0 && !groupList.includes('all')) {
+          if (activeGroup && !groupList.includes(activeGroup)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+    }
+
+    return list;
+  }, [subjects, activeLevel, activeGrade, activeGroup, userProfile]);
+
+  // Academic and Autonomía Curricular subjects (combined, used for average calculations)
+  const academicLevelSubjects = useMemo(() => {
+    return activeLevelSubjects.filter(s => 
+      s.category !== 'Aspectos Formativos' && s.category !== 'Desarrollo Personal'
+    );
+  }, [activeLevelSubjects]);
+
+  // Pure academic subjects only
+  const pureAcademicSubjects = useMemo(() => {
+    return activeLevelSubjects.filter(s => 
+      !s.category || s.category === 'Académica'
+    );
+  }, [activeLevelSubjects]);
+
+  // Autonomía Curricular subjects only
+  const autonomyCurricularSubjects = useMemo(() => {
+    return activeLevelSubjects.filter(s => 
+      s.category === 'Autonomía Curricular'
+    );
+  }, [activeLevelSubjects]);
+
+  // Desarrollo Personal subjects (formerly Aspectos Formativos)
+  const personalDevLevelSubjects = useMemo(() => {
+    return activeLevelSubjects.filter(s => 
+      s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal'
+    );
+  }, [activeLevelSubjects]);
+
+  const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
+
+  // Adjust selectedBimestre if it exceeds the level's period count
+  useEffect(() => {
+    if (evalConfig.periodCount && selectedBimestre > evalConfig.periodCount) {
+      setSelectedBimestre(1);
+    }
+  }, [evalConfig.periodCount, selectedBimestre]);
 
   const [currentCycleId, setCurrentCycleId] = useState('');
   const [selectedLevelSchema, setSelectedLevelSchema] = useState('');
@@ -178,40 +353,40 @@ export default function TeacherPortal() {
     return unsub;
   }, []);
 
-  // Fetch students based on teacher's assignment
+  // Fetch students once
   useEffect(() => {
-    if (!userProfile) return;
+    let isMounted = true;
 
-    // Teachers can only see their group
-    // Admins can see everything based on search/filter
-    let q = query(collection(db, 'students'), orderBy('lastName', 'asc'));
-
-    const activeLevel = userProfile.role === 'Docente' ? userProfile.assignedLevel : adminSelectedLevel;
-    const activeGrade = userProfile.role === 'Docente' ? userProfile.assignedGrade : adminSelectedGrade;
-    const activeGroup = userProfile.role === 'Docente' ? userProfile.assignedGroup : adminSelectedGroup;
-
-    if (activeLevel && activeGrade) {
-      const filters = [
-        where('level', '==', activeLevel),
-        where('grade', '==', activeGrade)
-      ];
-      if (activeGroup) {
-        filters.push(where('group', '==', activeGroup));
+    // Safety timeout: Ensure the portal doesn't get stuck indefinitely if network is slow
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        console.warn("TeacherPortal: Timeout de seguridad alcanzado cargando alumnos.");
+        setLoading(false);
       }
-      q = query(collection(db, 'students'), ...filters, orderBy('lastName', 'asc'));
-    }
+    }, 6000);
 
-    const unsubStudents = onSnapshot(q, (snap) => {
-      setStudents(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Student)));
+    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
+      clearTimeout(safetyTimer);
+      if (!isMounted) return;
+      const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Student));
+      setAllStudents(list);
       setLoading(false);
+    }, (error) => {
+      clearTimeout(safetyTimer);
+      console.error("Error loading students:", error);
+      if (isMounted) setLoading(false);
     });
 
-    return () => unsubStudents();
-  }, [userProfile]);
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
+      unsubStudents();
+    };
+  }, []);
 
   // Fetch grades for the selected bimestre
   useEffect(() => {
-    if (students.length === 0 || !currentCycleId) return;
+    if (!currentCycleId) return;
 
     const unsubGrades = onSnapshot(
       query(
@@ -226,27 +401,35 @@ export default function TeacherPortal() {
           gradesMap[data.studentId] = { ...data, id: doc.id };
         });
         setGrades(gradesMap);
+      },
+      (error) => {
+        console.error("Error loading grades:", error);
       }
     );
 
     return () => unsubGrades();
-  }, [students, selectedBimestre, currentCycleId]);
+  }, [selectedBimestre, currentCycleId]);
 
   // Fetch lock status
   useEffect(() => {
-    if (!userProfile || !currentCycleId) return;
+    if (!currentCycleId || !activeLevel || !activeGrade) {
+      setIsBimestreLocked(false);
+      return;
+    }
     
-    const lockId = `${selectedBimestre}_${userProfile.assignedLevel}_${userProfile.assignedGrade}_${userProfile.assignedGroup}_${currentCycleId}`;
+    const lockId = `${selectedBimestre}_${activeLevel}_${activeGrade}_${activeGroup || ''}_${currentCycleId}`;
     const unsubLock = onSnapshot(doc(db, 'bimestreLocks', lockId), (snap) => {
       setIsBimestreLocked(snap.exists() && snap.data().locked);
+    }, (error) => {
+      console.error("Error reading lock status:", error);
     });
 
     return () => unsubLock();
-  }, [userProfile, selectedBimestre, currentCycleId]);
+  }, [activeLevel, activeGrade, activeGroup, selectedBimestre, currentCycleId]);
 
   // Fetch attendance for selected date
   useEffect(() => {
-    if (students.length === 0 || !currentCycleId || activeTab !== 'attendance') return;
+    if (!currentCycleId || activeTab !== 'attendance') return;
 
     const unsubAttendance = onSnapshot(
       query(
@@ -261,11 +444,14 @@ export default function TeacherPortal() {
           attMap[data.studentId] = { ...data, id: doc.id };
         });
         setAttendance(attMap);
+      },
+      (error) => {
+        console.error("Error loading attendance:", error);
       }
     );
 
     return () => unsubAttendance();
-  }, [students, selectedDate, currentCycleId, activeTab]);
+  }, [selectedDate, currentCycleId, activeTab]);
 
   const handleGradeChange = (studentId: string, field: string, value: any, isSubject: boolean = false) => {
     if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
@@ -330,29 +516,34 @@ export default function TeacherPortal() {
 
   const handleFinalize = async () => {
     if (!userProfile || !currentCycleId) return;
-    if (!window.confirm('¿Estás seguro de finalizar las calificaciones de este bimestre? Una vez finalizado, no podrás editarlas a menos que un administrador te habilite.')) return;
+    const periodLabel = evalConfig.periodNames?.[selectedBimestre - 1] || `Periodo ${selectedBimestre}`;
+    if (!window.confirm(`¿Estás seguro de finalizar las calificaciones de ${periodLabel}? Una vez finalizado, no podrás editarlas a menos que un administrador te habilite.`)) return;
 
     setIsLocking(true);
     try {
       // First save everything
       await handleSaveAll();
 
-      const lockId = `${selectedBimestre}_${userProfile.assignedLevel}_${userProfile.assignedGrade}_${userProfile.assignedGroup}_${currentCycleId}`;
+      const targetLevel = activeLevel;
+      const targetGrade = activeGrade;
+      const targetGroup = activeGroup;
+
+      const lockId = `${selectedBimestre}_${targetLevel}_${targetGrade}_${targetGroup || ''}_${currentCycleId}`;
       await setDoc(doc(db, 'bimestreLocks', lockId), {
         id: lockId,
         bimestre: selectedBimestre,
-        level: userProfile.assignedLevel,
-        grade: userProfile.assignedGrade,
-        group: userProfile.assignedGroup,
+        level: targetLevel,
+        grade: targetGrade,
+        group: targetGroup || '',
         cycleId: currentCycleId,
         locked: true,
         lockedAt: serverTimestamp(),
         lockedBy: userProfile.id
       });
-      setSavedStatus('¡Bimestre finalizado y bloqueado!');
+      setSavedStatus(`¡${periodLabel} finalizado y bloqueado!`);
     } catch (error) {
       console.error("Error locking bimestre:", error);
-      alert("Error al finalizar bimestre");
+      alert("Error al finalizar el periodo");
     } finally {
       setIsLocking(false);
     }
@@ -377,8 +568,13 @@ export default function TeacherPortal() {
   };
 
   const filteredStudents = students.filter(s => {
-    const fullName = `${s.name} ${s.lastName}`.toLowerCase();
-    return fullName.includes(searchTerm.toLowerCase()) || s.curp?.toLowerCase().includes(searchTerm.toLowerCase());
+    return studentMatchesSearch([
+      s.name,
+      s.lastName,
+      s.motherLastName,
+      s.curp,
+      s.matricula
+    ], searchTerm);
   }).sort((a, b) => {
     const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
     const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
@@ -612,7 +808,7 @@ export default function TeacherPortal() {
     );
   }
 
-  if (userProfile?.role === 'Docente' && (!userProfile.assignedLevel || !userProfile.assignedGrade) && activeTab !== 'credencial') {
+  if (userProfile?.role === 'Docente' && (!userProfile.assignedLevel || !userProfile.assignedGrade) && !isMultiGroupTeacher && activeTab !== 'credencial') {
     return (
       <div className="space-y-6 pb-12">
         <div className="flex gap-1.5 p-1 bg-slate-100 rounded-md w-fit">
@@ -673,15 +869,7 @@ export default function TeacherPortal() {
   const presentCount = Object.values(attendance).filter(a => a.status === 'Asistió' || a.status === 'Retardo').length;
   const attendancePercentage = students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0;
 
-  const activeLevel = userProfile?.role === 'Docente' ? userProfile?.assignedLevel : adminSelectedLevel;
-  const activeGrade = userProfile?.role === 'Docente' ? userProfile?.assignedGrade : adminSelectedGrade;
-  const activeGroup = userProfile?.role === 'Docente' ? userProfile?.assignedGroup : adminSelectedGroup;
 
-  // Filter subjects for the group level (case-insensitive and trimmed)
-  const levelSubjects = subjects.filter(s => 
-    s.level && activeLevel && 
-    s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
-  );
 
   return (
     <div className="space-y-6 pb-12">
@@ -693,43 +881,60 @@ export default function TeacherPortal() {
       >
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase italic">Portal Docente</h1>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1 opacity-60">
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1 opacity-75 flex items-center gap-2">
             {userProfile?.role === 'Docente' 
-              ? `ASIGNACIÓN: ${activeLevel} - ${activeGrade}${activeGroup || ''}`
-              : 'Gestión de Calificaciones y Asistencia'}
+              ? (isMultiGroupTeacher ? (
+                  <span className="flex items-center gap-1.5 text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                    DOCENTE MULTIGRUPO • SELECCIONADO: <strong>{activeLevel} {activeGrade} "{activeGroup}"</strong>
+                  </span>
+                ) : (
+                  <span>ASIGNACIÓN: <strong>{activeLevel} - {activeGrade} "{activeGroup}"</strong></span>
+                ))
+              : (
+                <span>GESTIÓN DE CALIFICACIONES Y ASISTENCIA • <strong>{activeLevel} {activeGrade} "{activeGroup}"</strong></span>
+              )}
           </p>
         </div>
 
-        {/* Admin level selection if no teacher assignment */}
-        {userProfile?.role !== 'Docente' && (
-          <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1">Seleccionar Grupo:</span>
+        {/* Group selection filter for admin or multi-group teachers */}
+        {canFilterGroups ? (
+          <div className="flex flex-wrap items-center gap-2.5 bg-slate-50 p-2.5 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest ml-1 flex items-center gap-1">
+              <Users size={12} className="text-blue-600" />
+              Grupo Activo:
+            </span>
             <select
-              value={adminSelectedLevel}
-              onChange={(e) => setAdminSelectedLevel(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+              value={activeLevel}
+              onChange={(e) => setSelectedLevel(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer shadow-xs"
             >
-              <option value="">Nivel</option>
-              {settings?.academicLevels?.map(l => <option key={l} value={l}>{l}</option>)}
+              {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <select
-              value={adminSelectedGrade}
-              onChange={(e) => setAdminSelectedGrade(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+              value={activeGrade}
+              onChange={(e) => setSelectedGrade(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer shadow-xs"
             >
-              <option value="">Grado</option>
-              {settings?.academicGrades?.map(g => <option key={g} value={g}>{g}</option>)}
+              {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
             </select>
             <select
-              value={adminSelectedGroup}
-              onChange={(e) => setAdminSelectedGroup(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+              value={activeGroup}
+              onChange={(e) => setSelectedGroup(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer shadow-xs"
             >
-              <option value="">Grupo (Opcional)</option>
-              {['A', 'B', 'C', 'D'].map(g => <option key={g} value={g}>{g}</option>)}
+              {availableGroups.map(grp => <option key={grp} value={grp}>Grupo {grp}</option>)}
             </select>
           </div>
+        ) : (
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl text-blue-900">
+            <Users size={14} className="text-blue-600" />
+            <span className="text-xs font-black uppercase tracking-wider">
+              {activeLevel} • {activeGrade} "{activeGroup}"
+            </span>
+          </div>
         )}
+        
         
         {activeTab === 'grading' && hasPermission('grading', 'manage') && (
           <div className="flex flex-wrap gap-2">
@@ -744,7 +949,7 @@ export default function TeacherPortal() {
                 ) : (
                   <Lock size={12} className="mr-1" />
                 )}
-                Finalizar Bimestre
+                Finalizar {evalConfig.periodNames?.[selectedBimestre - 1] || 'Periodo'}
               </button>
             )}
             {isBimestreLocked && (
@@ -763,7 +968,7 @@ export default function TeacherPortal() {
               ) : (
                 <Save size={12} />
               )}
-              {isBimestreLocked ? 'Guardar (Admin)' : `Guardar B${selectedBimestre}`}
+              {isBimestreLocked ? 'Guardar (Admin)' : `Guardar ${evalConfig.periodType.charAt(0)}${selectedBimestre}`}
             </button>
           </div>
         )}
@@ -805,9 +1010,13 @@ export default function TeacherPortal() {
             transition={{ delay: 0.2 }}
             className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
           >
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Bimestre Activo</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
+              {evalConfig.periodType === 'Trimestres' ? 'Trimestre Activo' : evalConfig.periodType === 'Bimestres' ? 'Bimestre Activo' : 'Periodo Activo'}
+            </p>
             <div className="flex items-end justify-between">
-              <p className="text-2xl font-bold text-slate-900 tabular-nums lowercase">{selectedBimestre} <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">periodo</span></p>
+              <p className="text-xl font-bold text-slate-900 tabular-nums">
+                {evalConfig.periodNames?.[selectedBimestre - 1] || `${selectedBimestre}º Periodo`}
+              </p>
               <ClipboardList size={16} className="text-slate-200 mb-1" />
             </div>
           </motion.div>
@@ -912,19 +1121,23 @@ export default function TeacherPortal() {
           {/* Controls - Compact */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-200 shadow-sm">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">Bimestre:</span>
-              {[1, 2, 3, 4, 5].map((b) => (
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
+                {evalConfig.periodType}:
+              </span>
+              {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
                 <button
                   key={b}
-                  onClick={() => setSelectedBimestre(b as Bimestre)}
+                  type="button"
+                  title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
+                  onClick={() => setSelectedBimestre(b)}
                   className={cn(
-                    "w-7 h-7 rounded font-black text-[10px] transition-all",
+                    "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center",
                     selectedBimestre === b 
                       ? "bg-slate-900 text-white shadow-sm" 
                       : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                   )}
                 >
-                  {b}
+                  {evalConfig.periodType.charAt(0)}{b}
                 </button>
               ))}
             </div>
@@ -940,146 +1153,413 @@ export default function TeacherPortal() {
             </div>
           </div>
 
-          {/* Grading Table - High Density */}
-          <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[1200px]">
-                <thead>
-                  <tr className="bg-slate-50/80 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
-                    <th className="px-4 py-3 sticky left-0 bg-slate-50/95 z-10 w-56 border-r border-slate-200 backdrop-blur-sm">Identidad Alumno</th>
-                    {levelSubjects.length > 0 ? levelSubjects.map(subj => (
-                      <th key={subj.id} className="px-1 py-3 text-center border-r border-slate-200 min-w-[75px] max-w-[75px]">{subj.name.substring(0, 10)}...</th>
-                    )) : (
-                      <th className="px-4 py-3 border-r border-slate-200 text-amber-500 italic">Sin materias config. en Control Escolar</th>
-                    )}
-                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Cond.</th>
-                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Unif.</th>
-                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Falt.</th>
-                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Tareas</th>
-                    <th className="px-1 py-3 text-center border-r border-slate-200 w-16">Ret.</th>
-                    <th className="px-1 py-3 text-center w-16">Aseo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 font-mono">
-                  {filteredStudents.map((student) => {
-                    const studentGrade = grades[student.id] || {
-                      subjects: {},
-                      conduct: 0,
-                      uniform: 0,
-                      attendance: 0,
-                      tasksNotDone: 0,
-                      tardies: 0,
-                      cleanliness: 0
-                    };
-
-                    return (
-                      <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
-                        <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[1px_0_4px_rgba(0,0,0,0.03)] backdrop-blur-sm group-hover:bg-slate-50/80">
-                          <div className="flex items-center gap-3">
-                            {student.photoUrl ? (
-                              <img 
-                                src={student.photoUrl} 
-                                alt="Avatar" 
-                                className="w-7 h-7 rounded object-cover border border-slate-200 shadow-sm shrink-0"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <div className="w-7 h-7 rounded bg-slate-950 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0">
-                                {student.name.charAt(0)}
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.lastName}</p>
-                              <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{student.name}</p>
-                            </div>
-                          </div>
-                        </td>
-                        {levelSubjects.map(subj => (
-                          <td key={subj.id} className="px-1 py-1.5 border-r border-slate-50">
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              min="0"
-                              max="10"
-                              step="0.1"
-                              disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                              value={studentGrade.subjects?.[subj.name] ?? ''}
-                              onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                              className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
-                              placeholder="-"
-                            />
-                          </td>
-                        ))}
-                        <td className="px-1 py-1.5 border-r border-slate-50">
-                          <input
-                            type="number"
-                            min="0"
-                            max="10"
-                            disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                            value={studentGrade.conduct ?? ''}
-                            onChange={(e) => handleGradeChange(student.id, 'conduct', e.target.value)}
-                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
-                          />
-                        </td>
-                        <td className="px-1 py-1.5 border-r border-slate-50">
-                          <input
-                            type="number"
-                            min="0"
-                            max="10"
-                            disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                            value={studentGrade.uniform ?? ''}
-                            onChange={(e) => handleGradeChange(student.id, 'uniform', e.target.value)}
-                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
-                          />
-                        </td>
-                        <td className="px-1 py-1.5 border-r border-slate-50">
-                          <input
-                            type="number"
-                            min="0"
-                            disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                            value={studentGrade.attendance ?? ''}
-                            onChange={(e) => handleGradeChange(student.id, 'attendance', e.target.value)}
-                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
-                          />
-                        </td>
-                        <td className="px-1 py-1.5 border-r border-slate-50">
-                          <input
-                            type="number"
-                            min="0"
-                            disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                            value={studentGrade.tasksNotDone ?? ''}
-                            onChange={(e) => handleGradeChange(student.id, 'tasksNotDone', e.target.value)}
-                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
-                          />
-                        </td>
-                        <td className="px-1 py-1.5 border-r border-slate-50">
-                          <input
-                            type="number"
-                            min="0"
-                            disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                            value={studentGrade.tardies ?? ''}
-                            onChange={(e) => handleGradeChange(student.id, 'tardies', e.target.value)}
-                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
-                          />
-                        </td>
-                        <td className="px-1 py-1.5">
-                          <input
-                            type="number"
-                            min="0"
-                            max="10"
-                            disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                            value={studentGrade.cleanliness ?? ''}
-                            onChange={(e) => handleGradeChange(student.id, 'cleanliness', e.target.value)}
-                            className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-slate-400 outline-none transition-all italic tabular-nums"
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          {/* Category badges legend bar */}
+          <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 mr-1">Categorías:</span>
+            {(!isSpecificTeacher || pureAcademicSubjects.length > 0) && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-blue-50 text-blue-800 border border-blue-200 shadow-xs">
+                <span>Académica: <strong className="font-black text-blue-900">{pureAcademicSubjects.length}</strong></span>
+              </span>
+            )}
+            {(!isSpecificTeacher || autonomyCurricularSubjects.length > 0) && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200 shadow-xs">
+                <span>Autonomía Curricular: <strong className="font-black text-amber-900">{autonomyCurricularSubjects.length}</strong></span>
+              </span>
+            )}
+            {(!isSpecificTeacher || personalDevLevelSubjects.length > 0) && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-xs">
+                <span>Desarrollo Personal: <strong className="font-black text-indigo-900">{personalDevLevelSubjects.length > 0 ? personalDevLevelSubjects.length : 6}</strong></span>
+              </span>
+            )}
+            {isSpecificTeacher && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-purple-50 text-purple-800 border border-purple-200 shadow-xs">
+                <span>Modo: <strong className="font-black text-purple-900">Materias Específicas ({activeLevelSubjects.length})</strong></span>
+              </span>
+            )}
           </div>
+
+          {/* If specific teacher and no subjects assigned in this level */}
+          {isSpecificTeacher && activeLevelSubjects.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center mb-12 shadow-sm">
+              <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
+              <h3 className="text-sm font-black text-amber-900 uppercase">Sin materias asignadas para este grupo</h3>
+              <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto font-medium">
+                Tu usuario tiene asignado acceso a materias específicas, pero ninguna de tus materias asignadas corresponde al nivel o grupo seleccionado. Solicita a Dirección o Administración que verifique tus materias en Gestión de Colaboradores.
+              </p>
+            </div>
+          ) : (
+            /* Grading Table - High Density with Category Divisions */
+            <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1200px]">
+                  <thead>
+                    {/* Category Group Header Row */}
+                    <tr className="text-[10px] font-black uppercase tracking-wider">
+                      <th 
+                        rowSpan={2} 
+                        className="px-4 py-3 sticky left-0 bg-slate-100/95 z-20 w-56 border-r-[3px] border-r-slate-300 border-b border-slate-200 backdrop-blur-sm text-slate-700 shadow-[2px_0_4px_rgba(0,0,0,0.03)]"
+                      >
+                        <span>Identidad Alumno</span>
+                      </th>
+
+                      {/* Grupo: Académica */}
+                      {pureAcademicSubjects.length > 0 ? (
+                        <th 
+                          colSpan={pureAcademicSubjects.length} 
+                          className="py-2.5 px-3 text-center bg-blue-50/90 text-blue-900 border-b border-blue-200 border-r-[3px] border-r-slate-300 font-black"
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="tracking-wider">Materias Académicas</span>
+                            <span className="text-[9px] bg-blue-200/80 text-blue-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
+                              {pureAcademicSubjects.length}
+                            </span>
+                          </div>
+                        </th>
+                      ) : !isSpecificTeacher ? (
+                        <th 
+                          colSpan={1} 
+                          className="py-2.5 px-3 text-center bg-blue-50/60 text-blue-400 border-b border-blue-200 border-r-[3px] border-r-slate-300 font-bold italic text-[9px]"
+                        >
+                          Sin materias académicas
+                        </th>
+                      ) : null}
+
+                      {/* Grupo: Autonomía Curricular */}
+                      {autonomyCurricularSubjects.length > 0 && (
+                        <th 
+                          colSpan={autonomyCurricularSubjects.length} 
+                          className={cn(
+                            "py-2.5 px-3 text-center bg-amber-50/90 text-amber-900 border-b border-amber-200 font-black",
+                            (personalDevLevelSubjects.length > 0 || !isSpecificTeacher) ? "border-r-[3px] border-r-slate-300" : ""
+                          )}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="tracking-wider">Autonomía Curricular</span>
+                            <span className="text-[9px] bg-amber-200/80 text-amber-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
+                              {autonomyCurricularSubjects.length}
+                            </span>
+                          </div>
+                        </th>
+                      )}
+
+                      {/* Grupo: Desarrollo Personal */}
+                      {personalDevLevelSubjects.length > 0 ? (
+                        <th 
+                          colSpan={personalDevLevelSubjects.length} 
+                          className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="tracking-wider">Desarrollo Personal</span>
+                            <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
+                              {personalDevLevelSubjects.length}
+                            </span>
+                          </div>
+                        </th>
+                      ) : !isSpecificTeacher ? (
+                        <th 
+                          colSpan={6} 
+                          className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="tracking-wider">Desarrollo Personal</span>
+                            <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
+                              6
+                            </span>
+                          </div>
+                        </th>
+                      ) : null}
+                    </tr>
+
+                    {/* Subject Names Sub-Header Row */}
+                    <tr className="text-[9px] font-black uppercase tracking-wider border-b border-slate-200">
+                      {/* Pure Academic Subjects */}
+                      {pureAcademicSubjects.length > 0 ? (
+                        pureAcademicSubjects.map((subj, idx) => {
+                          const isLast = idx === pureAcademicSubjects.length - 1;
+                          return (
+                            <th 
+                              key={subj.id} 
+                              className={cn(
+                                "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-blue-50/30 text-blue-950",
+                                isLast ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-200"
+                              )} 
+                              title={`Académica: ${subj.name}`}
+                            >
+                              <span className="block leading-tight">{subj.name}</span>
+                            </th>
+                          );
+                        })
+                      ) : !isSpecificTeacher ? (
+                        <th className="px-3 py-2 text-center text-slate-400 italic text-[8px] border-r-[3px] border-r-slate-300">
+                          -
+                        </th>
+                      ) : null}
+
+                      {/* Autonomía Curricular Subjects */}
+                      {autonomyCurricularSubjects.length > 0 && (
+                        autonomyCurricularSubjects.map((subj, idx) => {
+                          const isLast = idx === autonomyCurricularSubjects.length - 1;
+                          return (
+                            <th 
+                              key={subj.id} 
+                              className={cn(
+                                "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-amber-50/60 text-amber-950 font-black",
+                                (isLast && (personalDevLevelSubjects.length > 0 || !isSpecificTeacher)) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-200/70"
+                              )} 
+                              title={`Autonomía Curricular: ${subj.name}`}
+                            >
+                              <span className="block leading-tight">{subj.name}</span>
+                            </th>
+                          );
+                        })
+                      )}
+
+                      {/* Desarrollo Personal Subjects */}
+                      {personalDevLevelSubjects.length > 0 ? (
+                        personalDevLevelSubjects.map((subj, idx) => {
+                          const isLast = idx === personalDevLevelSubjects.length - 1;
+                          return (
+                            <th 
+                              key={subj.id} 
+                              title={`Desarrollo Personal: ${subj.name}`}
+                              className={cn(
+                                "px-2 py-2.5 text-center min-w-[90px] max-w-[130px] whitespace-normal break-words leading-tight bg-indigo-50/70 text-indigo-900 font-black",
+                                isLast ? "" : "border-r border-indigo-200/70"
+                              )}
+                            >
+                              <span className="block leading-tight">{subj.name}</span>
+                            </th>
+                          );
+                        })
+                      ) : !isSpecificTeacher ? (
+                        // Fallback when no Desarrollo Personal subjects have been added to this level yet
+                        <>
+                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Conducta">Cond.</th>
+                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Uniforme">Unif.</th>
+                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Inasistencia / Faltas">Falt.</th>
+                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Tareas no realizadas">Tareas</th>
+                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Retardo">Ret.</th>
+                          <th className="px-1 py-2.5 text-center w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Aseo">Aseo</th>
+                        </>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {filteredStudents.map((student) => {
+                      const studentGrade = grades[student.id] || {
+                        subjects: {},
+                        conduct: 0,
+                        uniform: 0,
+                        attendance: 0,
+                        tasksNotDone: 0,
+                        tardies: 0,
+                        cleanliness: 0
+                      };
+
+                      return (
+                        <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
+                          <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r-[3px] border-r-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.03)] backdrop-blur-sm group-hover:bg-slate-50/80">
+                            <div className="flex items-center gap-3">
+                              {student.photoUrl ? (
+                                <img 
+                                  src={student.photoUrl} 
+                                  alt="Avatar" 
+                                  className="w-7 h-7 rounded object-cover border border-slate-200 shadow-sm shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded bg-slate-950 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0">
+                                  {student.name.charAt(0)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.lastName}</p>
+                                <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{student.name}</p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Pure Academic Inputs */}
+                          {pureAcademicSubjects.length > 0 ? (
+                            pureAcademicSubjects.map((subj, idx) => {
+                              const isLast = idx === pureAcademicSubjects.length - 1;
+                              return (
+                                <td 
+                                  key={subj.id} 
+                                  className={cn(
+                                    "px-1 py-1.5 bg-blue-50/5",
+                                    isLast ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
+                                  )}
+                                >
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    max="10"
+                                    step="0.1"
+                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    value={studentGrade.subjects?.[subj.name] ?? ''}
+                                    onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                    className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                    placeholder="-"
+                                  />
+                                </td>
+                              );
+                            })
+                          ) : !isSpecificTeacher ? (
+                            <td className="px-1 py-1.5 border-r-[3px] border-r-slate-300 text-center text-slate-300 text-[10px] italic">
+                              -
+                            </td>
+                          ) : null}
+
+                          {/* Autonomía Curricular Inputs */}
+                          {autonomyCurricularSubjects.length > 0 && (
+                            autonomyCurricularSubjects.map((subj, idx) => {
+                              const isLast = idx === autonomyCurricularSubjects.length - 1;
+                              return (
+                                <td 
+                                  key={subj.id} 
+                                  className={cn(
+                                    "px-1 py-1.5 bg-amber-50/20",
+                                    (isLast && (personalDevLevelSubjects.length > 0 || !isSpecificTeacher)) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
+                                  )}
+                                >
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    max="10"
+                                    step="0.1"
+                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    value={studentGrade.subjects?.[subj.name] ?? ''}
+                                    onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                    className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                    placeholder="-"
+                                  />
+                                </td>
+                              );
+                            })
+                          )}
+
+                          {/* Desarrollo Personal Inputs */}
+                          {personalDevLevelSubjects.length > 0 ? (
+                            personalDevLevelSubjects.map((subj, idx) => {
+                              const isLast = idx === personalDevLevelSubjects.length - 1;
+                              const norm = subj.name.toLowerCase().trim();
+                              const legacyField = (
+                                norm === 'conducta' ? 'conduct' :
+                                norm === 'uniforme' ? 'uniform' :
+                                norm === 'faltas' || norm === 'falta' || norm === 'inasistencia' ? 'attendance' :
+                                norm === 'tareas' || norm === 'tareas no realizadas' ? 'tasksNotDone' :
+                                norm === 'retardo' || norm === 'retardos' ? 'tardies' :
+                                norm === 'aseo' ? 'cleanliness' : null
+                              ) as keyof StudentGrade | null;
+
+                              const gradeVal = studentGrade.subjects?.[subj.name] ?? (legacyField ? studentGrade[legacyField] : '') ?? '';
+
+                              return (
+                                <td 
+                                  key={subj.id} 
+                                  className={cn(
+                                    "px-1 py-1.5 bg-indigo-50/15",
+                                    isLast ? "" : "border-r border-indigo-100/70"
+                                  )}
+                                >
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    step="0.1"
+                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    value={gradeVal}
+                                    onChange={(e) => {
+                                      handleGradeChange(student.id, subj.name, e.target.value, true);
+                                      if (legacyField) {
+                                        handleGradeChange(student.id, legacyField, e.target.value, false);
+                                      }
+                                    }}
+                                    className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                    placeholder="-"
+                                  />
+                                </td>
+                              );
+                            })
+                          ) : !isSpecificTeacher ? (
+                            // Fallback inputs if no Desarrollo Personal subjects defined for this level yet
+                            <>
+                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="10"
+                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                  value={studentGrade.conduct ?? ''}
+                                  onChange={(e) => handleGradeChange(student.id, 'conduct', e.target.value)}
+                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                />
+                              </td>
+                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="10"
+                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                  value={studentGrade.uniform ?? ''}
+                                  onChange={(e) => handleGradeChange(student.id, 'uniform', e.target.value)}
+                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                />
+                              </td>
+                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                  value={studentGrade.attendance ?? ''}
+                                  onChange={(e) => handleGradeChange(student.id, 'attendance', e.target.value)}
+                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                />
+                              </td>
+                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                  value={studentGrade.tasksNotDone ?? ''}
+                                  onChange={(e) => handleGradeChange(student.id, 'tasksNotDone', e.target.value)}
+                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                />
+                              </td>
+                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                  value={studentGrade.tardies ?? ''}
+                                  onChange={(e) => handleGradeChange(student.id, 'tardies', e.target.value)}
+                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                />
+                              </td>
+                              <td className="px-1 py-1.5 bg-indigo-50/15">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="10"
+                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                  value={studentGrade.cleanliness ?? ''}
+                                  onChange={(e) => handleGradeChange(student.id, 'cleanliness', e.target.value)}
+                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                />
+                              </td>
+                            </>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       ) : activeTab === 'attendance' ? (
         <div className="space-y-4">

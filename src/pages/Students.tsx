@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, Timestamp, writeBatch } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, BookOpen, ReceiptText, ShieldCheck, IdCard, Image as ImageIcon } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, Users, BookOpen, ReceiptText, ShieldCheck, IdCard, Image as ImageIcon, FileSpreadsheet } from 'lucide-react';
+import ImportStudentsModal from '../components/ImportStudentsModal';
+import { cn, studentMatchesSearch } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -19,7 +20,7 @@ import StudentCredentialPDF from '../components/StudentCredentialPDF';
 
 export default function Students() {
   const navigate = useNavigate();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, userProfile } = usePermissions();
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -44,10 +45,15 @@ export default function Students() {
   
   // Migration States
   const [isMigrateModalOpen, setIsMigrateModalOpen] = useState(false);
+  const [isImportExcelOpen, setIsImportExcelOpen] = useState(false);
   const [migrationSourceCycle, setMigrationSourceCycle] = useState('');
   const [migrationTargetCycle, setMigrationTargetCycle] = useState('');
   const [migrationSelectedStudents, setMigrationSelectedStudents] = useState<string[]>([]);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationScope, setMigrationScope] = useState<'one' | 'multiple' | 'all'>('multiple');
+  const [migrationSearchQuery, setMigrationSearchQuery] = useState('');
+  const [migrationFilterLvl, setMigrationFilterLvl] = useState('');
+  const [migrationFilterGrd, setMigrationFilterGrd] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -206,6 +212,7 @@ export default function Students() {
         enrollmentYear: student.enrollmentYear
       });
     } else {
+      const defaultLevel = availableLevels[0] || 'Primaria';
       setEditingStudent(null);
       setFormData({
         name: '', 
@@ -218,9 +225,9 @@ export default function Students() {
         email: '', 
         phone: '', 
         parentEmail: '', 
-        level: 'Primaria', 
-        grade: '', 
-        group: '', 
+        level: defaultLevel, 
+        grade: availableGrades[0] || '', 
+        group: availableGroups[0] || '', 
         rfc: '', 
         billingName: '', 
         billingAddress: '', 
@@ -228,7 +235,7 @@ export default function Students() {
         taxSystem: '605', 
         registrationCode: generateRegistrationCode(),
         photoUrl: '',
-        matricula: generateMatriculaCode('Primaria'),
+        matricula: generateMatriculaCode(defaultLevel),
         cycleId: settings?.currentCycleId || '',
         startPayment: 'current',
         enrollmentMonth: undefined,
@@ -394,12 +401,58 @@ export default function Students() {
     }
   };
 
+  const originCycleStudents = useMemo(() => {
+    if (!migrationSourceCycle) return [];
+    return students.filter(s => 
+      s.cycleId === migrationSourceCycle || 
+      (s.cycles && s.cycles.includes(migrationSourceCycle)) || 
+      (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)
+    );
+  }, [students, migrationSourceCycle, settings?.currentCycleId]);
+
+  const filteredMigrationStudents = useMemo(() => {
+    return originCycleStudents.filter(student => {
+      const history = student.cycleId !== migrationSourceCycle ? student.gradeHistory?.[migrationSourceCycle] : null;
+      const level = history?.level || student.level;
+      const grade = history?.grade || student.grade;
+      
+      if (migrationFilterLvl && level !== migrationFilterLvl) return false;
+      if (migrationFilterGrd && grade !== migrationFilterGrd) return false;
+      
+      if (migrationSearchQuery.trim()) {
+        return studentMatchesSearch([
+          student.name,
+          student.lastName,
+          student.motherLastName,
+          student.matricula,
+          student.curp
+        ], migrationSearchQuery);
+      }
+      return true;
+    });
+  }, [originCycleStudents, migrationSourceCycle, migrationFilterLvl, migrationFilterGrd, migrationSearchQuery]);
+
   const handleExecuteMigration = async () => {
     if (!migrationSourceCycle || !migrationTargetCycle || migrationSelectedStudents.length === 0) return;
     if (migrationSourceCycle === migrationTargetCycle) {
       alert("El ciclo de origen y destino no pueden ser el mismo.");
       return;
     }
+
+    const srcCycleObj = cycles.find(c => c.id === migrationSourceCycle);
+    const tgtCycleObj = cycles.find(c => c.id === migrationTargetCycle);
+
+    let confirmMsg = '';
+    if (migrationScope === 'one') {
+      const singleStudent = students.find(s => s.id === migrationSelectedStudents[0]);
+      confirmMsg = `¿Confirmas migrar al alumno "${singleStudent?.lastName || ''} ${singleStudent?.name || ''}" del ciclo "${srcCycleObj?.name || 'Origen'}" al ciclo "${tgtCycleObj?.name || 'Destino'}"?\n\nAvanzará automáticamente al grado siguiente.`;
+    } else if (migrationScope === 'all') {
+      confirmMsg = `¡ATENCIÓN! Estás a punto de migrar a TODOS los ${migrationSelectedStudents.length} alumnos del ciclo "${srcCycleObj?.name || 'Origen'}" al ciclo "${tgtCycleObj?.name || 'Destino'}".\n\nTodos avanzarán automáticamente a su siguiente grado. ¿Deseas continuar?`;
+    } else {
+      confirmMsg = `¿Confirmas migrar a los ${migrationSelectedStudents.length} alumnos seleccionados del ciclo "${srcCycleObj?.name || 'Origen'}" al ciclo "${tgtCycleObj?.name || 'Destino'}"?\n\nAvanzarán automáticamente a su siguiente grado.`;
+    }
+
+    if (!window.confirm(confirmMsg)) return;
     
     setIsMigrating(true);
     try {
@@ -449,6 +502,9 @@ export default function Students() {
       setMigrationSourceCycle('');
       setMigrationTargetCycle('');
       setMigrationSelectedStudents([]);
+      setMigrationSearchQuery('');
+      setMigrationFilterLvl('');
+      setMigrationFilterGrd('');
     } catch (error) {
       console.error("Error migrating students:", error);
       alert("Hubo un error al ejecutar la migración.");
@@ -556,9 +612,61 @@ export default function Students() {
     }
   };
 
+  const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const canManageMatriculasBulk = useMemo(() => {
+    const currentEmail = (auth.currentUser?.email || userProfile?.email || '').toLowerCase().trim();
+    return currentEmail === 'cristobal@cmfranciscano.mx' || currentEmail === 'cramonmb@gmail.com';
+  }, [userProfile?.email]);
+  const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
+  const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
+  const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
+
+  const availableLevels = useMemo(() => {
+    const all = settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+    if (restrictedLevels.length > 0) {
+      return all.filter(lvl => restrictedLevels.includes(lvl));
+    }
+    return all;
+  }, [settings?.academicLevels, restrictedLevels]);
+
+  const availableGrades = useMemo(() => {
+    const all = settings?.academicGrades || Array.from(new Set(students.map(s => s.grade))).sort();
+    if (restrictedGrades.length > 0) {
+      return all.filter(g => restrictedGrades.includes(g));
+    }
+    return all;
+  }, [settings?.academicGrades, students, restrictedGrades]);
+
+  const availableGroups = useMemo(() => {
+    const all = settings?.academicGroups || Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort();
+    if (restrictedGroups.length > 0) {
+      return all.filter(grp => restrictedGroups.includes(grp));
+    }
+    return all;
+  }, [settings?.academicGroups, students, restrictedGroups]);
+
+  const totalVisibleStudents = useMemo(() => {
+    return students.filter(s => {
+      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+      if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+      return true;
+    }).length;
+  }, [students, restrictedLevels, restrictedGrades, restrictedGroups]);
+
   const filteredStudents = students.filter(s => {
-    const matchesSearch = `${s.name} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.curp?.toLowerCase().includes(searchTerm.toLowerCase());
+    // Restricciones granulares asignadas al usuario
+    if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+    if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+    if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+
+    const matchesSearch = studentMatchesSearch([
+      s.name,
+      s.lastName,
+      s.motherLastName,
+      s.curp,
+      s.matricula
+    ], searchTerm);
     const matchesLevel = !filterLevel || s.level === filterLevel;
     const matchesGrade = !filterGrade || s.grade === filterGrade;
     const matchesGroup = !filterGroup || s.group === filterGroup;
@@ -592,12 +700,12 @@ export default function Students() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 italic">
             Gestión de Alumnos
             <span className="not-italic text-[9px] font-black px-2 py-0.5 bg-slate-100 text-slate-600 rounded uppercase tracking-tighter leading-none inline-flex items-center h-4">
-              {students.length} Registros
+              {totalVisibleStudents} Registros
             </span>
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {hasPermission('students', 'edit') && (
+          {canManageMatriculasBulk && hasPermission('students', 'edit') && (
             <>
               <button
                 onClick={handleBulkGenerateMatriculas}
@@ -618,6 +726,14 @@ export default function Students() {
           )}
           {hasPermission('students', 'create') && (
             <div className="flex gap-2">
+              <button
+                onClick={() => setIsImportExcelOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer"
+              >
+                <FileSpreadsheet size={14} />
+                Importar Excel
+              </button>
+
               <button
                 onClick={() => setIsMigrateModalOpen(true)}
                 className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
@@ -674,7 +790,7 @@ export default function Students() {
               className="bg-transparent py-1.5 text-[10px] font-black uppercase tracking-tight outline-none cursor-pointer"
             >
               <option value="">NIVEL</option>
-              {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+              {availableLevels.map(level => (
                 <option key={level} value={level}>{level}</option>
               ))}
             </select>
@@ -687,7 +803,7 @@ export default function Students() {
               className="bg-transparent py-1.5 text-[10px] font-black uppercase tracking-tight outline-none cursor-pointer"
             >
               <option value="">GRADO</option>
-              {(settings?.academicGrades || Array.from(new Set(students.map(s => s.grade))).sort()).map(grade => (
+              {availableGrades.map(grade => (
                 <option key={grade} value={grade}>{grade}</option>
               ))}
             </select>
@@ -700,7 +816,7 @@ export default function Students() {
               className="bg-transparent py-1.5 text-[10px] font-black uppercase tracking-tight outline-none cursor-pointer"
             >
               <option value="">GRUPO</option>
-              {(settings?.academicGroups || Array.from(new Set(students.map(s => s.group))).filter(Boolean).sort()).map(group => (
+              {availableGroups.map(group => (
                 <option key={group} value={group}>{group}</option>
               ))}
             </select>
@@ -1225,7 +1341,7 @@ export default function Students() {
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-blue-500 outline-none text-xs font-bold transition-all"
                         >
                           <option value="">Seleccionar...</option>
-                          {(settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(level => (
+                          {availableLevels.map(level => (
                             <option key={level} value={level}>{level}</option>
                           ))}
                         </select>
@@ -1250,7 +1366,7 @@ export default function Students() {
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-xs font-bold"
                           >
                             <option value="">Grado</option>
-                            {(settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grade => (
+                            {availableGrades.map(grade => (
                               <option key={grade} value={grade}>{grade}</option>
                             ))}
                           </select>
@@ -1263,7 +1379,7 @@ export default function Students() {
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-xs font-bold"
                           >
                             <option value="">Grupo</option>
-                            {(settings?.academicGroups || ['A', 'B', 'C']).map(group => (
+                            {availableGroups.map(group => (
                               <option key={group} value={group}>{group}</option>
                             ))}
                           </select>
@@ -1708,84 +1824,306 @@ export default function Students() {
               </div>
 
               <div className="py-4 space-y-4 flex-1 overflow-y-auto">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ciclo de Origen *</label>
+                    <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                      1. Ciclo de Origen *
+                    </label>
                     <select
                       value={migrationSourceCycle}
                       onChange={(e) => {
-                        setMigrationSourceCycle(e.target.value);
-                        setMigrationSelectedStudents([]);
+                        const newSource = e.target.value;
+                        setMigrationSourceCycle(newSource);
+                        if (migrationScope === 'all') {
+                          const srcStudents = students.filter(s => 
+                            s.cycleId === newSource || 
+                            (s.cycles && s.cycles.includes(newSource)) || 
+                            (!s.cycleId && newSource === settings?.currentCycleId)
+                          );
+                          setMigrationSelectedStudents(srcStudents.map(s => s.id));
+                        } else {
+                          setMigrationSelectedStudents([]);
+                        }
                       }}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
                     >
-                      <option value="">Seleccionar...</option>
+                      <option value="">Seleccionar ciclo origen...</option>
                       {cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ciclo de Destino *</label>
+                    <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                      2. Ciclo de Destino *
+                    </label>
                     <select
                       value={migrationTargetCycle}
                       onChange={(e) => setMigrationTargetCycle(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
                     >
-                      <option value="">Seleccionar...</option>
+                      <option value="">Seleccionar ciclo destino...</option>
                       {cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                 </div>
 
                 {migrationSourceCycle && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        Alumnos en Ciclo Origen ({students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).length})
-                      </span>
-                      <button
-                        onClick={() => {
-                          const srcStudents = students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId));
-                          if (migrationSelectedStudents.length === srcStudents.length) {
-                            setMigrationSelectedStudents([]);
-                          } else {
-                            setMigrationSelectedStudents(srcStudents.map(s => s.id));
-                          }
-                        }}
-                        className="text-[9px] font-black text-blue-600 uppercase hover:underline"
-                      >
-                        {migrationSelectedStudents.length === students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
-                      </button>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-2">
+                        3. ¿A quiénes deseas migrar?
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {/* Option: Uno (Alguno) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMigrationScope('one');
+                            setMigrationSelectedStudents(prev => prev.slice(0, 1));
+                          }}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer",
+                            migrationScope === 'one'
+                              ? "bg-blue-50/90 border-blue-500 text-blue-900 ring-2 ring-blue-400/20 font-black shadow-xs"
+                              : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600 font-bold"
+                          )}
+                        >
+                          <User size={16} className={migrationScope === 'one' ? "text-blue-600" : "text-slate-400"} />
+                          <span className="text-xs">Un solo alumno</span>
+                          <span className="text-[9px] text-slate-400 font-normal">Buscar y elegir 1</span>
+                        </button>
+
+                        {/* Option: Varios */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMigrationScope('multiple');
+                          }}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer",
+                            migrationScope === 'multiple'
+                              ? "bg-blue-50/90 border-blue-500 text-blue-900 ring-2 ring-blue-400/20 font-black shadow-xs"
+                              : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600 font-bold"
+                          )}
+                        >
+                          <Users size={16} className={migrationScope === 'multiple' ? "text-blue-600" : "text-slate-400"} />
+                          <span className="text-xs">Varios alumnos</span>
+                          <span className="text-[9px] text-slate-400 font-normal">Selección con casillas</span>
+                        </button>
+
+                        {/* Option: Todos */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMigrationScope('all');
+                            setMigrationSelectedStudents(originCycleStudents.map(s => s.id));
+                          }}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer",
+                            migrationScope === 'all'
+                              ? "bg-blue-50/90 border-blue-500 text-blue-900 ring-2 ring-blue-400/20 font-black shadow-xs"
+                              : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600 font-bold"
+                          )}
+                        >
+                          <GraduationCap size={16} className={migrationScope === 'all' ? "text-blue-600" : "text-slate-400"} />
+                          <span className="text-xs">Todos los alumnos</span>
+                          <span className="text-[9px] text-slate-400 font-normal">Toda la matrícula ({originCycleStudents.length})</span>
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="border border-slate-100 rounded-xl max-h-[250px] overflow-y-auto divide-y divide-slate-50 p-2 bg-slate-50">
-                      {students.filter(s => s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId)).map(student => {
-                        const history = student.cycleId !== migrationSourceCycle ? student.gradeHistory?.[migrationSourceCycle] : null;
-                        const level = history?.level || student.level;
-                        const grade = history?.grade || student.grade;
-                        const group = history?.group || student.group || '';
-                        
-                        return (
-                          <label key={student.id} className="flex items-center gap-3 py-1.5 px-2 hover:bg-white rounded-md cursor-pointer text-xs">
-                            <input
-                              type="checkbox"
-                              checked={migrationSelectedStudents.includes(student.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setMigrationSelectedStudents(prev => [...prev, student.id]);
-                                } else {
-                                  setMigrationSelectedStudents(prev => prev.filter(id => id !== student.id));
-                                }
-                              }}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-bold text-slate-800 truncate uppercase">{student.lastName} {student.name}</p>
-                              <p className="text-[9px] font-black text-slate-400 uppercase">{level} - {grade} {group}</p>
+                    {/* Mode: ALL */}
+                    {migrationScope === 'all' && (
+                      <div className="p-3.5 bg-emerald-50/80 rounded-xl border border-emerald-200 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Check className="text-emerald-600 shrink-0" size={16} />
+                          <span className="text-xs font-black text-emerald-900">
+                            Se migrarán los {originCycleStudents.length} alumnos registrados en el ciclo de origen
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">
+                          Al ejecutar la migración, todos los alumnos de este ciclo escolar serán inscritos en el ciclo de destino y avanzarán automáticamente a su siguiente grado (ej. 1ro pasa a 2do).
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Mode: ONE */}
+                    {migrationScope === 'one' && (
+                      <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                          <span>Buscar al alumno que deseas migrar:</span>
+                          {migrationSelectedStudents.length > 0 && (
+                            <span className="text-blue-600 font-black">1 alumno seleccionado</span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                          <input
+                            type="text"
+                            placeholder="Buscar por nombre, apellido o matrícula..."
+                            value={migrationSearchQuery}
+                            onChange={(e) => setMigrationSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        {/* If single student is selected, highlight them */}
+                        {(() => {
+                          const singleSelected = students.find(s => s.id === migrationSelectedStudents[0]);
+                          if (!singleSelected) return null;
+                          const history = singleSelected.cycleId !== migrationSourceCycle ? singleSelected.gradeHistory?.[migrationSourceCycle] : null;
+                          const currentLevel = history?.level || singleSelected.level;
+                          const currentGrade = history?.grade || singleSelected.grade;
+                          const currentGroup = history?.group || singleSelected.group || '';
+                          const { grade: nextGrd, level: nextLvl } = getNextGradeAndLevel(currentGrade, currentLevel);
+                          return (
+                            <div className="p-2.5 bg-blue-100/70 border border-blue-300 rounded-lg flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-blue-700 block">Alumno seleccionado para migrar:</span>
+                                <p className="text-xs font-black text-slate-900 uppercase truncate">
+                                  {singleSelected.lastName} {singleSelected.name}
+                                </p>
+                                <p className="text-[10px] text-blue-900 font-bold">
+                                  {currentLevel} {currentGrade} {currentGroup} ➔ <span className="text-indigo-700">Pasará a: {nextLvl} {nextGrd} {currentGroup}</span>
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setMigrationSelectedStudents([])}
+                                className="text-[10px] font-bold text-red-600 hover:text-red-800 underline cursor-pointer shrink-0"
+                              >
+                                Cambiar
+                              </button>
                             </div>
-                          </label>
-                        );
-                      })}
-                    </div>
+                          );
+                        })()}
+
+                        {/* List to choose one */}
+                        <div className="border border-slate-200 rounded-lg max-h-[180px] overflow-y-auto divide-y divide-slate-100 bg-white">
+                          {filteredMigrationStudents.map(student => {
+                            const isChosen = migrationSelectedStudents.includes(student.id);
+                            const history = student.cycleId !== migrationSourceCycle ? student.gradeHistory?.[migrationSourceCycle] : null;
+                            const level = history?.level || student.level;
+                            const grade = history?.grade || student.grade;
+                            const group = history?.group || student.group || '';
+                            return (
+                              <div
+                                key={student.id}
+                                onClick={() => setMigrationSelectedStudents([student.id])}
+                                className={cn(
+                                  "py-2 px-3 flex items-center justify-between gap-2 cursor-pointer transition-colors text-xs",
+                                  isChosen ? "bg-blue-50 font-bold text-blue-900" : "hover:bg-slate-50 text-slate-700"
+                                )}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-bold truncate uppercase">{student.lastName} {student.name}</p>
+                                  <p className="text-[9px] text-slate-400 font-bold uppercase">{level} - {grade} {group} {student.matricula ? `• Matrícula: ${student.matricula}` : ''}</p>
+                                </div>
+                                <span className={cn(
+                                  "text-[10px] font-black px-2 py-0.5 rounded",
+                                  isChosen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                )}>
+                                  {isChosen ? '✓ Elegido' : 'Seleccionar'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mode: MULTIPLE */}
+                    {migrationScope === 'multiple' && (
+                      <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                            Selecciona los alumnos ({migrationSelectedStudents.length} de {originCycleStudents.length} marcados)
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allFilteredIds = filteredMigrationStudents.map(s => s.id);
+                                const next = Array.from(new Set([...migrationSelectedStudents, ...allFilteredIds]));
+                                setMigrationSelectedStudents(next);
+                              }}
+                              className="text-[9px] font-black text-blue-600 uppercase hover:underline cursor-pointer"
+                            >
+                              Marcar Filtrados
+                            </button>
+                            <span className="text-slate-300">•</span>
+                            <button
+                              type="button"
+                              onClick={() => setMigrationSelectedStudents([])}
+                              className="text-[9px] font-black text-slate-500 uppercase hover:underline cursor-pointer"
+                            >
+                              Desmarcar Todos
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Search & filters for multiple */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                            <input
+                              type="text"
+                              placeholder="Filtrar por nombre o matrícula..."
+                              value={migrationSearchQuery}
+                              onChange={(e) => setMigrationSearchQuery(e.target.value)}
+                              className="w-full pl-8 pr-2 py-1 bg-white border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
+                            />
+                          </div>
+                          <select
+                            value={migrationFilterLvl}
+                            onChange={(e) => setMigrationFilterLvl(e.target.value)}
+                            className="px-2 py-1 bg-white border border-slate-200 rounded text-[10px] font-bold"
+                          >
+                            <option value="">Todos los niveles</option>
+                            {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                          <select
+                            value={migrationFilterGrd}
+                            onChange={(e) => setMigrationFilterGrd(e.target.value)}
+                            className="px-2 py-1 bg-white border border-slate-200 rounded text-[10px] font-bold"
+                          >
+                            <option value="">Todos los grados</option>
+                            {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                        </div>
+
+                        {/* Checkbox list */}
+                        <div className="border border-slate-200 rounded-lg max-h-[220px] overflow-y-auto divide-y divide-slate-100 bg-white p-1">
+                          {filteredMigrationStudents.map(student => {
+                            const isChecked = migrationSelectedStudents.includes(student.id);
+                            const history = student.cycleId !== migrationSourceCycle ? student.gradeHistory?.[migrationSourceCycle] : null;
+                            const level = history?.level || student.level;
+                            const grade = history?.grade || student.grade;
+                            const group = history?.group || student.group || '';
+
+                            return (
+                              <label key={student.id} className="flex items-center gap-2.5 py-1.5 px-2 hover:bg-slate-50 rounded cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setMigrationSelectedStudents(prev => [...prev, student.id]);
+                                    } else {
+                                      setMigrationSelectedStudents(prev => prev.filter(id => id !== student.id));
+                                    }
+                                  }}
+                                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-bold text-slate-800 truncate uppercase">{student.lastName} {student.name}</p>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase">{level} - {grade} {group} {student.matricula ? `• Matrícula: ${student.matricula}` : ''}</p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1797,8 +2135,11 @@ export default function Students() {
                     setMigrationSourceCycle('');
                     setMigrationTargetCycle('');
                     setMigrationSelectedStudents([]);
+                    setMigrationSearchQuery('');
+                    setMigrationFilterLvl('');
+                    setMigrationFilterGrd('');
                   }}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
                   disabled={isMigrating}
                 >
                   Cancelar
@@ -1806,15 +2147,32 @@ export default function Students() {
                 <button
                   onClick={handleExecuteMigration}
                   disabled={isMigrating || !migrationSourceCycle || !migrationTargetCycle || migrationSelectedStudents.length === 0}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 transition-all shadow-lg shadow-blue-100 flex items-center gap-2"
+                  className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 transition-all shadow-lg shadow-blue-100 flex items-center gap-2 cursor-pointer"
                 >
-                  {isMigrating ? 'Migrando...' : `Migrar (${migrationSelectedStudents.length})`}
+                  {isMigrating 
+                    ? 'Migrando...' 
+                    : migrationScope === 'one' 
+                      ? 'Migrar Alumno'
+                      : migrationScope === 'all'
+                        ? `Migrar Todos (${migrationSelectedStudents.length})`
+                        : `Migrar Seleccionados (${migrationSelectedStudents.length})`
+                  }
                 </button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* Excel Import Modal */}
+      <ImportStudentsModal
+        isOpen={isImportExcelOpen}
+        onClose={() => setIsImportExcelOpen(false)}
+        settings={settings}
+        cycles={cycles}
+        existingStudents={students}
+        onSuccess={() => {}}
+      />
     </div>
   );
 }

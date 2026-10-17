@@ -210,6 +210,13 @@ export interface AppUser {
   restrictedLevels?: string[];
   restrictedGrades?: string[];
   restrictedGroups?: string[];
+  // Password and subject assignment management
+  currentPassword?: string;
+  teacherSubjectAccess?: 'all' | 'specific';
+  assignedSubjects?: string[];
+  teacherSubjectGrades?: Record<string, string[]>;
+  teacherSubjectGroups?: Record<string, string[]>;
+  teacherGroupAccess?: 'single' | 'multiple';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -313,17 +320,24 @@ export interface AppSettings {
   matriculaPrefixes?: Record<string, string>;
   levelPeriods?: Record<string, { label: string; time: string; isBreak?: boolean }[]>;
   studentAttendanceTrackExit?: boolean;
+  levelEvaluationConfig?: Record<string, LevelEvaluationConfig>;
+}
+
+export interface LevelEvaluationConfig {
+  periodCount: number; // e.g. 3 or 5
+  periodType: 'Trimestres' | 'Bimestres' | 'Semestres' | 'Cuatrimestres' | 'Personalizado';
+  periodNames?: string[]; // e.g. ["1er Trimestre", "2do Trimestre", "3er Trimestre"]
 }
 
 export interface Subject {
   id: string;
   name: string;
   level: string; // Preescolar, Primaria, etc.
-  category?: 'Académica' | 'Extracurricular' | 'Aspectos Formativos';
+  category?: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos';
   createdAt: Timestamp;
 }
 
-export type Bimestre = 1 | 2 | 3 | 4 | 5;
+export type Bimestre = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface StudentGrade {
   id?: string;

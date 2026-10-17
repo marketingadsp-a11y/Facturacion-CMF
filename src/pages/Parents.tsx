@@ -22,7 +22,7 @@ import {
   Heart,
   UserRound
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, studentMatchesSearch } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -109,8 +109,7 @@ export default function Parents() {
   };
 
   const filteredParents = parents.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.email.toLowerCase().includes(searchTerm.toLowerCase())
+    studentMatchesSearch([p.name, p.email, p.phone], searchTerm)
   );
 
   return (
@@ -376,7 +375,7 @@ function LinkStudentModal({ parent, onClose, students }: { parent: AppUser, onCl
   
   const availableStudents = students.filter(s => 
     s.parentEmail !== parent.email && 
-    (`${s.name} ${s.lastName}`.toLowerCase().includes(search.toLowerCase()) || s.curp?.toLowerCase().includes(search.toLowerCase()))
+    studentMatchesSearch([s.name, s.lastName, s.curp, s.matricula], search)
   );
 
   const handleLink = async (studentId: string) => {

@@ -36,13 +36,18 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import { ReceptionLogPDF } from '../components/ReceptionLogPDF';
 
 export default function Reception() {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, userProfile } = usePermissions();
   const [activeTab, setActiveTab] = useState<'visitas' | 'bitacora'>('visitas');
   const [visits, setVisits] = useState<ReceptionVisit[]>([]);
   const [logVisits, setLogVisits] = useState<ReceptionVisit[]>([]);
   const [logDate, setLogDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+
+  const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const restrictedLevels = isSuperAdmin ? [] : (userProfile?.restrictedLevels || []);
+  const restrictedGrades = isSuperAdmin ? [] : (userProfile?.restrictedGrades || []);
+  const restrictedGroups = isSuperAdmin ? [] : (userProfile?.restrictedGroups || []);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -160,7 +165,12 @@ export default function Reception() {
     const currentYear = now.getFullYear();
     const thresholdDay = settings.dueDay + 2;
 
-    return students.map(student => {
+    return students.filter(student => {
+      if (restrictedLevels.length > 0 && !restrictedLevels.includes(student.level)) return false;
+      if (restrictedGrades.length > 0 && !restrictedGrades.includes(student.grade)) return false;
+      if (restrictedGroups.length > 0 && !restrictedGroups.includes(student.group || '')) return false;
+      return true;
+    }).map(student => {
       const debtStatus = calculateStudentDebts(student, payments, currentCycle, settings, cycles);
       
       if (!debtStatus.hasDebt) return null;
