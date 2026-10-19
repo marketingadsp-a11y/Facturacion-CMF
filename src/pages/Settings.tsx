@@ -91,7 +91,7 @@ export default function Settings() {
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger' | 'parentPortal'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger' | 'parentPortal' | 'attendanceLists'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [gradeLocks, setGradeLocks] = useState<BimestreLock[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -426,7 +426,7 @@ export default function Settings() {
           {(activeTab === 'general' ? hasPermission('settings', 'editGeneral') : 
             activeTab === 'cycles' ? hasPermission('settings', 'editCycles') : 
             activeTab === 'billing' ? hasPermission('settings', 'editRules') : 
-            ['academic', 'reception'].includes(activeTab)) && (
+            ['academic', 'reception', 'attendanceLists'].includes(activeTab)) && (
             <button
               onClick={handleSave}
               className="bg-slate-950 hover:bg-slate-900 text-white px-6 py-3 rounded-2xl flex items-center gap-2 font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-200 transition-all active:scale-95 disabled:opacity-50"
@@ -489,6 +489,13 @@ export default function Settings() {
           >
             <CreditCard size={18} className={activeTab === 'charges' ? 'text-purple-400' : 'text-slate-400 group-hover:text-purple-500'} />
             <span className="text-sm font-bold">Cobros Extra</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('attendanceLists')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'attendanceLists' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            <FileText size={18} className={activeTab === 'attendanceLists' ? 'text-sky-400' : 'text-slate-400 group-hover:text-sky-500'} />
+            <span className="text-sm font-bold">Listas de Asistencia</span>
           </button>
 
           <div className="px-4 py-2 mt-6 mb-2 border-t border-slate-100 pt-6">
@@ -664,6 +671,15 @@ export default function Settings() {
                         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white"
                       />
                     </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Dirección del Plantel (para encabezados de listas)</label>
+                      <input
+                        placeholder="Ej. Av. Hidalgo #123, Col. Centro, C.P. 49000"
+                        value={settings.schoolAddress || ''}
+                        onChange={(e) => setSettings({...settings, schoolAddress: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white text-xs"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -687,6 +703,24 @@ export default function Settings() {
                           <p className="text-[9px] text-slate-400 mt-2 font-medium">Se recomienda fondo transparente.</p>
                         </div>
                       </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Teléfono Institucional</label>
+                      <input
+                        placeholder="Ej. (341) 412 0000"
+                        value={settings.schoolPhone || ''}
+                        onChange={(e) => setSettings({...settings, schoolPhone: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Sitio Web / Correo Institucional</label>
+                      <input
+                        placeholder="Ej. www.cmfranciscano.mx"
+                        value={settings.schoolWebsite || ''}
+                        onChange={(e) => setSettings({...settings, schoolWebsite: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all focus:bg-white text-xs"
+                      />
                     </div>
                   </div>
                 </div>
@@ -935,6 +969,251 @@ export default function Settings() {
                         <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
                         <p className="text-[10px] text-red-700 font-bold leading-tight">Esta configuración afecta la experiencia de usuario cuando intentan acceder a una página restringida o inexistente.</p>
                      </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'attendanceLists' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+              {/* Header Card */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-600 flex items-center justify-center text-white shadow-lg shadow-sky-200">
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Listas de Asistencia Oficiales</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Personalización de encabezados, columnas y formato para PDF y Excel</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Column settings */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-2">
+                      <LayoutList size={14} className="text-sky-600" /> Columnas del Alumno
+                    </h3>
+                    
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200/80">
+                      <div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Número de Lista (No.)</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5">Muestra la columna consecutiva numerada (1, 2, 3...)</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.attendanceListShowNo !== false}
+                        onChange={(e) => setSettings({ ...settings, attendanceListShowNo: e.target.checked })}
+                        className="w-5 h-5 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200/80">
+                      <div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Matrícula Escolar</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5">Muestra la clave o matrícula oficial de cada alumno</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.attendanceListShowMatricula !== false}
+                        onChange={(e) => setSettings({ ...settings, attendanceListShowMatricula: e.target.checked })}
+                        className="w-5 h-5 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80">
+                      <label className="block text-xs font-black text-slate-800 uppercase tracking-tight mb-1">
+                        Casillas de Asistencia por Hoja
+                      </label>
+                      <p className="text-[10px] text-slate-500 font-medium mb-3">
+                        Número de columnas cuadriculadas en blanco numeradas (1 al N) para el pase de lista o fechas del mes
+                      </p>
+                      <select
+                        value={settings.attendanceListColumns ?? 31}
+                        onChange={(e) => setSettings({ ...settings, attendanceListColumns: parseInt(e.target.value) || 31 })}
+                        className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs uppercase cursor-pointer"
+                      >
+                        <option value={20}>20 Casillas (Días hábiles promedio del mes)</option>
+                        <option value={25}>25 Casillas</option>
+                        <option value={30}>30 Casillas</option>
+                        <option value={31}>31 Casillas (Mes completo - Recomendado)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Pie de Página Oficial (PDF)</label>
+                      <input
+                        value={settings.pdfFooter || ''}
+                        onChange={(e) => setSettings({ ...settings, pdfFooter: e.target.value })}
+                        placeholder="Ej. DOCUMENTO OFICIAL GENERADO POR CONTROL ESCOLAR"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs text-slate-800 transition-all focus:bg-white uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Institution info on list headers */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-2">
+                      <Globe size={14} className="text-sky-600" /> Membrete Institucional (PDF / Excel)
+                    </h3>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Nombre Comercial del Colegio</label>
+                      <input
+                        value={settings.schoolName}
+                        onChange={(e) => setSettings({ ...settings, schoolName: e.target.value })}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs text-slate-800 transition-all focus:bg-white uppercase"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Razón Social</label>
+                      <input
+                        value={settings.legalName}
+                        onChange={(e) => setSettings({ ...settings, legalName: e.target.value })}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs text-slate-800 transition-all focus:bg-white uppercase"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Dirección del Plantel</label>
+                      <input
+                        placeholder="Ej. Av. Hidalgo #123, Col. Centro, C.P. 49000"
+                        value={settings.schoolAddress || ''}
+                        onChange={(e) => setSettings({ ...settings, schoolAddress: e.target.value })}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs text-slate-800 transition-all focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Teléfono</label>
+                        <input
+                          placeholder="Ej. (341) 412 0000"
+                          value={settings.schoolPhone || ''}
+                          onChange={(e) => setSettings({ ...settings, schoolPhone: e.target.value })}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Web / Correo</label>
+                        <input
+                          placeholder="Ej. www.colegio.edu.mx"
+                          value={settings.schoolWebsite || ''}
+                          onChange={(e) => setSettings({ ...settings, schoolWebsite: e.target.value })}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-xs text-slate-800 transition-all focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Visual preview of attendance list format */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye size={16} className="text-slate-500" />
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Vista Previa de Estructura Institucional</h3>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 bg-sky-100 text-sky-800 rounded-full">
+                    Formato PDF Landscape & Excel
+                  </span>
+                </div>
+
+                <div className="p-8 bg-slate-100/60">
+                  <div className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden p-6 max-w-4xl mx-auto">
+                    {/* Header Strip */}
+                    <div className="bg-slate-950 -m-6 mb-4 p-5 text-white flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded bg-white p-1 flex items-center justify-center shrink-0">
+                          {settings.logoUrl ? (
+                            <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                          ) : (
+                            <ImageIcon className="text-slate-400" size={24} />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-black uppercase tracking-wide">{settings.schoolName || 'COLEGIO MÉXICO FRANCISCANO'}</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{settings.legalName || 'ASOCIACION EDUCADORA DEL SUR DE JALISCO'}</p>
+                        </div>
+                      </div>
+                      <div className="text-right text-[9px] text-slate-300 font-medium space-y-0.5">
+                        {settings.schoolAddress && <p>{settings.schoolAddress}</p>}
+                        {settings.schoolPhone && <p>Tel. {settings.schoolPhone}</p>}
+                        {settings.schoolWebsite && <p>{settings.schoolWebsite}</p>}
+                      </div>
+                    </div>
+
+                    {/* Title bar */}
+                    <div className="bg-blue-900 -mx-6 px-6 py-2 text-white flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-4">
+                      <span>Lista de Asistencia Oficial</span>
+                      <span className="text-blue-200">PRIMARIA • 1RO A • CICLO 2026-2027</span>
+                    </div>
+
+                    {/* Meta cards */}
+                    <div className="grid grid-cols-5 gap-2 mb-4 text-[9px]">
+                      <div className="bg-slate-50 border border-slate-200 p-2 rounded">
+                        <span className="block text-[7px] text-slate-400 font-black uppercase tracking-wider">Nivel</span>
+                        <span className="font-bold text-slate-800">Primaria</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 p-2 rounded">
+                        <span className="block text-[7px] text-slate-400 font-black uppercase tracking-wider">Grado y Grupo</span>
+                        <span className="font-bold text-slate-800">1ro — A</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 p-2 rounded">
+                        <span className="block text-[7px] text-slate-400 font-black uppercase tracking-wider">Ciclo</span>
+                        <span className="font-bold text-slate-800">2026-2027</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 p-2 rounded">
+                        <span className="block text-[7px] text-slate-400 font-black uppercase tracking-wider">Docente</span>
+                        <span className="font-bold text-slate-800">Prof. Juan Pérez</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 p-2 rounded">
+                        <span className="block text-[7px] text-slate-400 font-black uppercase tracking-wider">Total</span>
+                        <span className="font-bold text-blue-600">28 Alumnos</span>
+                      </div>
+                    </div>
+
+                    {/* Mini table preview */}
+                    <div className="border border-slate-200 rounded overflow-hidden text-[9px] mb-4">
+                      <div className="bg-slate-900 text-white flex font-bold uppercase text-[8px] py-1.5 px-2">
+                        {settings.attendanceListShowNo !== false && <span className="w-8 text-center">No.</span>}
+                        {settings.attendanceListShowMatricula !== false && <span className="w-20 text-center">Matrícula</span>}
+                        <span className="flex-1 px-2">Nombre Completo del Alumno</span>
+                        <span className="w-48 text-center tracking-widest text-slate-400">Casillas 1 ... {settings.attendanceListColumns ?? 31}</span>
+                      </div>
+                      <div className="bg-white py-1.5 px-2 flex border-b border-slate-100 font-medium">
+                        {settings.attendanceListShowNo !== false && <span className="w-8 text-center text-blue-700 font-bold">1</span>}
+                        {settings.attendanceListShowMatricula !== false && <span className="w-20 text-center text-slate-400">PRI-2026-001</span>}
+                        <span className="flex-1 px-2 font-bold uppercase text-slate-800">GARCÍA HERNÁNDEZ, MATÍAS</span>
+                        <span className="w-48 flex justify-between px-2 text-slate-300">
+                          {Array.from({ length: 10 }).map((_, i) => (
+                            <span key={i} className="inline-block w-3.5 h-3.5 border border-slate-200 rounded-xs text-[7px] text-center">{i + 1}</span>
+                          ))}
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 py-1.5 px-2 flex font-medium">
+                        {settings.attendanceListShowNo !== false && <span className="w-8 text-center text-blue-700 font-bold">2</span>}
+                        {settings.attendanceListShowMatricula !== false && <span className="w-20 text-center text-slate-400">PRI-2026-002</span>}
+                        <span className="flex-1 px-2 font-bold uppercase text-slate-800">LÓPEZ MORALES, SOFÍA</span>
+                        <span className="w-48 flex justify-between px-2 text-slate-300">
+                          {Array.from({ length: 10 }).map((_, i) => (
+                            <span key={i} className="inline-block w-3.5 h-3.5 border border-slate-200 rounded-xs text-[7px] text-center">{i + 1}</span>
+                          ))}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Signature block */}
+                    <div className="grid grid-cols-3 gap-6 pt-6 text-center text-[7.5px] font-black text-slate-700 uppercase tracking-wider">
+                      <div className="border-t border-slate-800 pt-1.5">FIRMA DEL DOCENTE RESPONSABLE</div>
+                      <div className="border-t border-slate-800 pt-1.5">DIRECTOR/A DE NIVEL</div>
+                      <div className="border-t border-slate-800 pt-1.5">SELLO INSTITUCIONAL</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4485,7 +4764,8 @@ export default function Settings() {
             <div className="flex-1" />
             {(activeTab === 'general' ? hasPermission('settings', 'editGeneral') : 
               activeTab === 'cycles' ? hasPermission('settings', 'editCycles') : 
-              activeTab === 'billing' ? hasPermission('settings', 'editRules') : false) && (
+              activeTab === 'billing' ? hasPermission('settings', 'editRules') : 
+              ['academic', 'reception', 'attendanceLists'].includes(activeTab)) && (
               <button
                 onClick={handleSave}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-blue-100 transition-all active:scale-95"

@@ -321,6 +321,14 @@ export interface AppSettings {
   levelPeriods?: Record<string, { label: string; time: string; isBreak?: boolean }[]>;
   studentAttendanceTrackExit?: boolean;
   levelEvaluationConfig?: Record<string, LevelEvaluationConfig>;
+  // School contact info (for PDF/Excel lists)
+  schoolAddress?: string;
+  schoolPhone?: string;
+  schoolWebsite?: string;
+  // Attendance list configuration
+  attendanceListColumns?: number; // number of blank attendance columns (default 31)
+  attendanceListShowMatricula?: boolean;
+  attendanceListShowNo?: boolean;
 }
 
 export interface LevelEvaluationConfig {

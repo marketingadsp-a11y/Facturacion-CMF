@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject } from '../types';
+import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject, AppUser } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -12,6 +12,7 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import OfficialListPDF from '../components/OfficialListPDF';
+import { exportAttendanceExcel, exportAttendanceExcelAllGroups } from '../lib/attendanceExcel';
 import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
 import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
@@ -26,6 +27,7 @@ export default function AcademicControl() {
   const [grades, setGrades] = useState<StudentGrade[]>([]);
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   
@@ -33,6 +35,14 @@ export default function AcademicControl() {
   const [filterLevel, setFilterLevel] = useState('');
   const [filterGrade, setFilterGrade] = useState('');
   const [filterGroup, setFilterGroup] = useState('');
+
+  // Attendance List Export States
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<'current' | 'allInLevel'>('current');
+  const [exportLevel, setExportLevel] = useState('');
+  const [exportGrade, setExportGrade] = useState('');
+  const [exportGroup, setExportGroup] = useState('');
+  const [exportTeacherName, setExportTeacherName] = useState('');
 
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -104,6 +114,10 @@ export default function AcademicControl() {
       setSubjects(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject)));
     });
 
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppUser)));
+    });
+
     return () => {
       unsubEnrollments();
       unsubStudents();
@@ -112,8 +126,23 @@ export default function AcademicControl() {
       unsubGrades();
       unsubCycles();
       unsubSubjects();
+      unsubUsers();
     };
   }, []);
+
+  useEffect(() => {
+    if (exportLevel && exportGrade && exportGroup) {
+      const match = users.find(u => 
+        u.role === 'Docente' && 
+        u.assignedLevel === exportLevel && 
+        (!u.assignedGrade || u.assignedGrade === exportGrade) && 
+        (!u.assignedGroup || u.assignedGroup === exportGroup)
+      );
+      if (match) {
+        setExportTeacherName(match.name);
+      }
+    }
+  }, [exportLevel, exportGrade, exportGroup, users]);
 
   useEffect(() => {
     if (settings?.currentCycleId && !filterCycleId) {
@@ -444,6 +473,72 @@ export default function AcademicControl() {
     return nameA.localeCompare(nameB);
   });
 
+  // Groups data for multi-group level export
+  const levelGroupsData = useMemo(() => {
+    const targetLevel = exportLevel || filterLevel || (availableLevels.length > 0 ? availableLevels[0] : '');
+    if (!targetLevel) return [];
+    
+    const levelStudents = students.filter(s => {
+      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+      if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+
+      const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
+      return s.level === targetLevel && matchesCycle;
+    });
+
+    const map = new Map<string, { level: string; grade: string; group: string; students: Student[]; teacherName?: string }>();
+    
+    levelStudents.forEach(s => {
+      const key = `${s.grade}__${s.group || 'Sin Grupo'}`;
+      if (!map.has(key)) {
+        const teacher = users.find(u => 
+          u.role === 'Docente' && 
+          u.assignedLevel === targetLevel && 
+          u.assignedGrade === s.grade && 
+          (!u.assignedGroup || u.assignedGroup === s.group)
+        );
+        map.set(key, {
+          level: targetLevel,
+          grade: s.grade,
+          group: s.group || '',
+          students: [],
+          teacherName: teacher?.name || '',
+        });
+      }
+      map.get(key)!.students.push(s);
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const gComp = a.grade.localeCompare(b.grade, undefined, { numeric: true });
+      if (gComp !== 0) return gComp;
+      return a.group.localeCompare(b.group);
+    });
+  }, [students, exportLevel, filterLevel, filterCycleId, settings?.currentCycleId, users, availableLevels, restrictedLevels, restrictedGrades, restrictedGroups]);
+
+  // Students for single group export in modal
+  const exportStudentsList = useMemo(() => {
+    const tLevel = exportLevel || filterLevel;
+    const tGrade = exportGrade || filterGrade;
+    const tGroup = exportGroup || filterGroup;
+
+    return students.filter(s => {
+      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+      if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+
+      const matchesLevel = !tLevel || s.level === tLevel;
+      const matchesGrade = !tGrade || s.grade === tGrade;
+      const matchesGroup = !tGroup || s.group === tGroup;
+      const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
+      return matchesLevel && matchesGrade && matchesGroup && matchesCycle;
+    }).sort((a, b) => {
+      const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [students, exportLevel, filterLevel, exportGrade, filterGrade, exportGroup, filterGroup, filterCycleId, settings?.currentCycleId, restrictedLevels, restrictedGrades, restrictedGroups]);
+
   return (
     <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
       {/* Compact Header */}
@@ -497,29 +592,19 @@ export default function AcademicControl() {
               Materias
             </button>
           </div>
-          {activeTab === 'studentList' && filterLevel && filterGrade && filterGroup && (
-            <PDFDownloadLink
-              document={
-                <OfficialListPDF 
-                  students={filteredStudents}
-                  settings={settings}
-                  level={filterLevel}
-                  grade={filterGrade}
-                  group={filterGroup}
-                  cycleName={currentCycle?.name || 'ACTUAL'}
-                />
-              }
-              fileName={`LISTA_${filterLevel}_${filterGrade}_${filterGroup}.pdf`}
-              className="bg-slate-950 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-slate-200 transition-all active:scale-95"
+          {activeTab === 'studentList' && (
+            <button
+              onClick={() => {
+                setExportLevel(filterLevel || (availableLevels[0] || ''));
+                setExportGrade(filterGrade || (availableGrades[0] || ''));
+                setExportGroup(filterGroup || (availableGroups[0] || ''));
+                setIsExportModalOpen(true);
+              }}
+              className="bg-slate-950 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-slate-200 transition-all active:scale-95 cursor-pointer"
             >
-              {/* @ts-ignore */}
-              {({ loading }: any) => (
-                <>
-                  <Printer size={14} />
-                  {loading ? 'Generando...' : 'Imprimir Lista'}
-                </>
-              )}
-            </PDFDownloadLink>
+              <FileSpreadsheet size={14} className="text-emerald-400" />
+              Exportar Listas (PDF / Excel)
+            </button>
           )}
           {activeTab === 'enrollments' && (
             <button
@@ -662,6 +747,17 @@ export default function AcademicControl() {
                 className="bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
               >
                 <Calendar size={12} className="text-blue-500" /> Migrar Alumnos
+              </button>
+              <button
+                onClick={() => {
+                  setExportLevel(filterLevel || (availableLevels[0] || ''));
+                  setExportGrade(filterGrade || (availableGrades[0] || ''));
+                  setExportGroup(filterGroup || (availableGroups[0] || ''));
+                  setIsExportModalOpen(true);
+                }}
+                className="bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
+              >
+                <FileSpreadsheet size={12} className="text-emerald-600" /> Exportar Listas
               </button>
 
               <select
@@ -994,6 +1090,319 @@ export default function AcademicControl() {
                     Confirmar Seleccion
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Export Attendance Lists Modal */}
+      <AnimatePresence>
+        {isExportModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
+              onClick={() => setIsExportModalOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden border border-slate-200"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-slate-950 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-slate-200">
+                    <FileSpreadsheet size={22} className="text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 tracking-tight uppercase">Exportar Lista de Asistencia</h2>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Formatos Oficiales Institucionales</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 rounded-xl transition-all cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6 max-h-[calc(85vh-140px)] overflow-y-auto">
+                {/* Scope selector */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2.5">
+                    1. Alcance de la Exportación
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setExportScope('current')}
+                      className={cn(
+                        "p-4 rounded-2xl border text-left transition-all cursor-pointer relative",
+                        exportScope === 'current'
+                          ? "bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-200"
+                          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-white"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Users size={16} className={exportScope === 'current' ? "text-sky-400" : "text-slate-400"} />
+                        <span className="text-xs font-black uppercase tracking-tight">Un Solo Grupo</span>
+                      </div>
+                      <p className={cn("text-[9px] font-medium leading-relaxed", exportScope === 'current' ? "text-slate-300" : "text-slate-500")}>
+                        Exporta la lista de un grado y grupo en específico.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setExportScope('allInLevel')}
+                      className={cn(
+                        "p-4 rounded-2xl border text-left transition-all cursor-pointer relative",
+                        exportScope === 'allInLevel'
+                          ? "bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-200"
+                          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-white"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Layers size={16} className={exportScope === 'allInLevel' ? "text-emerald-400" : "text-slate-400"} />
+                        <span className="text-xs font-black uppercase tracking-tight">Todos los Grupos</span>
+                      </div>
+                      <p className={cn("text-[9px] font-medium leading-relaxed", exportScope === 'allInLevel' ? "text-slate-300" : "text-slate-500")}>
+                        Exporta todos los grupos del nivel en un solo archivo.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filters according to scope */}
+                {exportScope === 'current' ? (
+                  <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-1">Nivel</label>
+                        <select
+                          value={exportLevel}
+                          onChange={(e) => setExportLevel(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none uppercase focus:border-slate-900"
+                        >
+                          <option value="">SELECCIONE</option>
+                          {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-1">Grado</label>
+                        <select
+                          value={exportGrade}
+                          onChange={(e) => setExportGrade(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none uppercase focus:border-slate-900"
+                        >
+                          <option value="">SELECCIONE</option>
+                          {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-1">Grupo</label>
+                        <select
+                          value={exportGroup}
+                          onChange={(e) => setExportGroup(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none uppercase focus:border-slate-900"
+                        >
+                          <option value="">SELECCIONE</option>
+                          {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-1">
+                        Docente Responsable / Titular
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Nombre del docente asignado al grupo"
+                        value={exportTeacherName}
+                        onChange={(e) => setExportTeacherName(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none uppercase focus:border-slate-900"
+                      />
+                      <p className="text-[9px] text-slate-400 mt-1 font-medium italic">
+                        * Detectado automáticamente de usuarios colaboradores o puedes escribirlo manualmente.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Alumnos en este grupo:</span>
+                      <span className="px-2.5 py-1 bg-blue-100 text-blue-900 font-black text-xs rounded-lg">
+                        {exportStudentsList.length} Alumnos
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-1">Nivel Educativo</label>
+                      <select
+                        value={exportLevel}
+                        onChange={(e) => setExportLevel(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none uppercase focus:border-slate-900"
+                      >
+                        <option value="">SELECCIONE NIVEL</option>
+                        {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="text-slate-600">Grupos detectados:</span>
+                        <span className="font-black text-slate-900">{levelGroupsData.length} Grupos</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="text-slate-600">Total de alumnos en el nivel:</span>
+                        <span className="font-black text-emerald-600">
+                          {levelGroupsData.reduce((acc, g) => acc + g.students.length, 0)} Alumnos
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[9px] text-slate-500 leading-normal">
+                      ℹ️ <strong>En PDF:</strong> Se generará un documento con una página apaisada para cada grupo con membrete institucional y firmas.
+                      <br />
+                      ℹ️ <strong>En Excel:</strong> Se generará un libro de cálculo con una pestaña individual para cada grupo.
+                    </p>
+                  </div>
+                )}
+
+                {/* Export Action Buttons */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2.5">
+                    2. Selecciona el Formato de Descarga
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* PDF Button via PDFDownloadLink */}
+                    {exportScope === 'current' ? (
+                      <PDFDownloadLink
+                        document={
+                          <OfficialListPDF
+                            students={exportStudentsList}
+                            settings={settings}
+                            level={exportLevel}
+                            grade={exportGrade}
+                            group={exportGroup}
+                            cycleName={currentCycle?.name || 'ACTUAL'}
+                            teacherName={exportTeacherName}
+                          />
+                        }
+                        fileName={`LISTA_${exportLevel}_${exportGrade}_${exportGroup}_${currentCycle?.name || 'ACTUAL'}.pdf`.replace(/\s+/g, '_')}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-4 rounded-2xl bg-slate-950 hover:bg-black text-white text-center transition-all shadow-xl shadow-slate-200 active:scale-95 cursor-pointer",
+                          (!exportLevel || !exportGrade || !exportGroup) && "opacity-50 pointer-events-none"
+                        )}
+                      >
+                        {/* @ts-ignore */}
+                        {({ loading }: any) => (
+                          <>
+                            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center mb-2">
+                              <Printer size={20} className="text-rose-400" />
+                            </div>
+                            <span className="text-xs font-black uppercase tracking-wider">
+                              {loading ? 'Generando PDF...' : 'Descargar PDF Oficial'}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-medium mt-0.5">
+                              Landscape con membrete y firmas
+                            </span>
+                          </>
+                        )}
+                      </PDFDownloadLink>
+                    ) : (
+                      <PDFDownloadLink
+                        document={
+                          <OfficialListPDF
+                            groups={levelGroupsData}
+                            settings={settings}
+                            level={exportLevel}
+                            cycleName={currentCycle?.name || 'ACTUAL'}
+                          />
+                        }
+                        fileName={`LISTAS_${exportLevel}_TODOS_LOS_GRUPOS_${currentCycle?.name || 'ACTUAL'}.pdf`.replace(/\s+/g, '_')}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-4 rounded-2xl bg-slate-950 hover:bg-black text-white text-center transition-all shadow-xl shadow-slate-200 active:scale-95 cursor-pointer",
+                          (!exportLevel || levelGroupsData.length === 0) && "opacity-50 pointer-events-none"
+                        )}
+                      >
+                        {/* @ts-ignore */}
+                        {({ loading }: any) => (
+                          <>
+                            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center mb-2">
+                              <Printer size={20} className="text-rose-400" />
+                            </div>
+                            <span className="text-xs font-black uppercase tracking-wider">
+                              {loading ? 'Generando PDF...' : 'Descargar PDF (Todos)'}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-medium mt-0.5">
+                              {levelGroupsData.length} grupos en un solo PDF
+                            </span>
+                          </>
+                        )}
+                      </PDFDownloadLink>
+                    )}
+
+                    {/* Excel Button */}
+                    <button
+                      type="button"
+                      disabled={
+                        exportScope === 'current'
+                          ? (!exportLevel || !exportGrade || !exportGroup)
+                          : (!exportLevel || levelGroupsData.length === 0)
+                      }
+                      onClick={() => {
+                        if (exportScope === 'current') {
+                          exportAttendanceExcel({
+                            students: exportStudentsList,
+                            settings,
+                            level: exportLevel,
+                            grade: exportGrade,
+                            group: exportGroup,
+                            cycle: currentCycle || null,
+                            teacherName: exportTeacherName,
+                          });
+                        } else {
+                          exportAttendanceExcelAllGroups({
+                            groups: levelGroupsData,
+                            settings,
+                            level: exportLevel,
+                            cycle: currentCycle || null,
+                          });
+                        }
+                      }}
+                      className="flex flex-col items-center justify-center p-4 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-center transition-all shadow-xl shadow-emerald-100 active:scale-95 cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center mb-2">
+                        <FileSpreadsheet size={20} className="text-emerald-200" />
+                      </div>
+                      <span className="text-xs font-black uppercase tracking-wider">Descargar Excel (.xlsx)</span>
+                      <span className="text-[9px] text-emerald-200 font-medium mt-0.5">
+                        {exportScope === 'current' ? 'Hoja con membrete y casillas' : `${levelGroupsData.length} pestañas por grupo`}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200/60 transition-all cursor-pointer"
+                >
+                  Cerrar
+                </button>
               </div>
             </motion.div>
           </div>
