@@ -295,7 +295,8 @@ export default function Settings() {
     role: 'Cajero',
     permissions: DEFAULT_PERMISSIONS['Cajero'],
     teacherSubjectAccess: 'all',
-    assignedSubjects: []
+    assignedSubjects: [],
+    teacherGradeGroups: {}
   });
 
   // New Cycle Form
@@ -2592,6 +2593,7 @@ export default function Settings() {
                           assignedSubjects: [],
                           teacherSubjectGrades: {},
                           teacherSubjectGroups: {},
+                          teacherGradeGroups: {},
                           teacherGroupAccess: 'single',
                           restrictedLevels: [],
                           restrictedGrades: [],
@@ -2964,6 +2966,7 @@ export default function Settings() {
                                             assignedSubjects: user.assignedSubjects || [],
                                             teacherSubjectGrades: user.teacherSubjectGrades || {},
                                             teacherSubjectGroups: user.teacherSubjectGroups || {},
+                                            teacherGradeGroups: user.teacherGradeGroups || {},
                                             teacherGroupAccess: user.teacherGroupAccess || (
                                               (user.restrictedLevels && user.restrictedLevels.length > 1) ||
                                               (user.restrictedGrades && user.restrictedGrades.length > 1) ||
@@ -3094,6 +3097,7 @@ export default function Settings() {
                                         assignedSubjects: user.assignedSubjects || [],
                                         teacherSubjectGrades: user.teacherSubjectGrades || {},
                                         teacherSubjectGroups: user.teacherSubjectGroups || {},
+                                        teacherGradeGroups: user.teacherGradeGroups || {},
                                         teacherGroupAccess: user.teacherGroupAccess || (
                                           (user.restrictedLevels && user.restrictedLevels.length > 1) ||
                                           (user.restrictedGrades && user.restrictedGrades.length > 1) ||
@@ -3565,11 +3569,19 @@ export default function Settings() {
                                   const allLvls = settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
                                   const allGrds = settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
                                   const allGrps = settings.academicGroups || ['A', 'B', 'C'];
+                                  const newGradeGroups: Record<string, string[]> = {};
+                                  allGrds.forEach(g => {
+                                    newGradeGroups[g] = allGrps;
+                                    allLvls.forEach(l => {
+                                      newGradeGroups[`${l}__${g}`] = allGrps;
+                                    });
+                                  });
                                   setUserFormData({
                                     ...userFormData,
                                     restrictedLevels: allLvls,
                                     restrictedGrades: allGrds,
                                     restrictedGroups: allGrps,
+                                    teacherGradeGroups: newGradeGroups,
                                     assignedLevel: allLvls[0],
                                     assignedGrade: allGrds[0],
                                     assignedGroup: allGrps[0]
@@ -3598,7 +3610,7 @@ export default function Settings() {
                                     {(userFormData.restrictedLevels || []).length === (settings.academicLevels || []).length ? 'Desmarcar' : 'Todos'}
                                   </button>
                                 </div>
-                                <div className="space-y-1 max-h-36 overflow-y-auto">
+                                <div className="space-y-1 max-h-56 overflow-y-auto">
                                   {(settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato']).map(lvl => (
                                     <label key={lvl} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-blue-700">
                                       <input
@@ -3626,14 +3638,46 @@ export default function Settings() {
                                     onClick={() => {
                                       const all = settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
                                       const isAll = (userFormData.restrictedGrades || []).length === all.length;
-                                      setUserFormData({ ...userFormData, restrictedGrades: isAll ? [] : all, assignedGrade: isAll ? '' : all[0] });
+                                      const nextGrades = isAll ? [] : all;
+                                      const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                      if (isAll) {
+                                        all.forEach(g => {
+                                          delete newGradeGroups[g];
+                                          (userFormData.restrictedLevels || []).forEach(l => delete newGradeGroups[`${l}__${g}`]);
+                                        });
+                                      } else {
+                                        const defaultGrps = (userFormData.restrictedGroups && userFormData.restrictedGroups.length > 0)
+                                          ? userFormData.restrictedGroups
+                                          : (settings.academicGroups || ['A', 'B', 'C']);
+                                        all.forEach(g => {
+                                          if (!newGradeGroups[g] || newGradeGroups[g].length === 0) {
+                                            newGradeGroups[g] = defaultGrps;
+                                            (userFormData.restrictedLevels || []).forEach(l => {
+                                              newGradeGroups[`${l}__${g}`] = defaultGrps;
+                                            });
+                                          }
+                                        });
+                                      }
+                                      const unionSet = new Set<string>();
+                                      Object.values(newGradeGroups).forEach(arr => {
+                                        if (Array.isArray(arr)) arr.forEach(g => unionSet.add(g));
+                                      });
+                                      const unionArr = Array.from(unionSet);
+                                      setUserFormData({ 
+                                        ...userFormData, 
+                                        restrictedGrades: nextGrades, 
+                                        teacherGradeGroups: newGradeGroups,
+                                        restrictedGroups: unionArr,
+                                        assignedGrade: nextGrades[0] || '',
+                                        assignedGroup: unionArr[0] || ''
+                                      });
                                     }}
                                     className="text-[9px] font-bold text-blue-600 hover:underline"
                                   >
                                     {(userFormData.restrictedGrades || []).length === (settings.academicGrades || []).length ? 'Desmarcar' : 'Todos'}
                                   </button>
                                 </div>
-                                <div className="space-y-1 max-h-36 overflow-y-auto">
+                                <div className="space-y-1 max-h-56 overflow-y-auto">
                                   {(settings.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to']).map(grd => (
                                     <label key={grd} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-blue-700">
                                       <input
@@ -3642,7 +3686,34 @@ export default function Settings() {
                                         onChange={(e) => {
                                           const current = userFormData.restrictedGrades || [];
                                           const next = e.target.checked ? [...current, grd] : current.filter(g => g !== grd);
-                                          setUserFormData({ ...userFormData, restrictedGrades: next, assignedGrade: next[0] || '' });
+                                          const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                          if (e.target.checked) {
+                                            if (!newGradeGroups[grd] || newGradeGroups[grd].length === 0) {
+                                              const defaultGrps = (userFormData.restrictedGroups && userFormData.restrictedGroups.length > 0)
+                                                ? userFormData.restrictedGroups
+                                                : [settings.academicGroups?.[0] || 'A'];
+                                              newGradeGroups[grd] = defaultGrps;
+                                              (userFormData.restrictedLevels || []).forEach(l => {
+                                                newGradeGroups[`${l}__${grd}`] = defaultGrps;
+                                              });
+                                            }
+                                          } else {
+                                            delete newGradeGroups[grd];
+                                            (userFormData.restrictedLevels || []).forEach(l => delete newGradeGroups[`${l}__${grd}`]);
+                                          }
+                                          const unionSet = new Set<string>();
+                                          next.forEach(g => {
+                                            (newGradeGroups[g] || []).forEach(grp => unionSet.add(grp));
+                                          });
+                                          const unionArr = Array.from(unionSet);
+                                          setUserFormData({ 
+                                            ...userFormData, 
+                                            restrictedGrades: next, 
+                                            teacherGradeGroups: newGradeGroups,
+                                            restrictedGroups: unionArr,
+                                            assignedGrade: next[0] || '',
+                                            assignedGroup: unionArr[0] || ''
+                                          });
                                         }}
                                         className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
                                       />
@@ -3652,41 +3723,204 @@ export default function Settings() {
                                 </div>
                               </div>
 
-                              {/* Grupos */}
+                              {/* Grupos por Grado */}
                               <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                                 <div className="flex items-center justify-between">
-                                  <label className="text-[10px] font-black text-slate-600 uppercase">Grupos ({userFormData.restrictedGroups?.length || 0})</label>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const all = settings.academicGroups || ['A', 'B', 'C'];
-                                      const isAll = (userFormData.restrictedGroups || []).length === all.length;
-                                      setUserFormData({ ...userFormData, restrictedGroups: isAll ? [] : all, assignedGroup: isAll ? '' : all[0] });
-                                    }}
-                                    className="text-[9px] font-bold text-blue-600 hover:underline"
-                                  >
-                                    {(userFormData.restrictedGroups || []).length === (settings.academicGroups || []).length ? 'Desmarcar' : 'Todos'}
-                                  </button>
-                                </div>
-                                <div className="space-y-1 max-h-36 overflow-y-auto">
-                                  {(settings.academicGroups || ['A', 'B', 'C']).map(grp => (
-                                    <label key={grp} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer hover:text-blue-700">
-                                      <input
-                                        type="checkbox"
-                                        checked={(userFormData.restrictedGroups || []).includes(grp)}
-                                        onChange={(e) => {
-                                          const current = userFormData.restrictedGroups || [];
-                                          const next = e.target.checked ? [...current, grp] : current.filter(g => g !== grp);
-                                          setUserFormData({ ...userFormData, restrictedGroups: next, assignedGroup: next[0] || '' });
+                                  <label className="text-[10px] font-black text-slate-600 uppercase">Grupos por Grado</label>
+                                  {(userFormData.restrictedGrades || []).length > 0 && (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const allGrps = settings.academicGroups || ['A', 'B', 'C'];
+                                          const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                          (userFormData.restrictedGrades || []).forEach(g => {
+                                            newGradeGroups[g] = allGrps;
+                                            (userFormData.restrictedLevels || []).forEach(lvl => {
+                                              newGradeGroups[`${lvl}__${g}`] = allGrps;
+                                            });
+                                          });
+                                          setUserFormData({
+                                            ...userFormData,
+                                            teacherGradeGroups: newGradeGroups,
+                                            restrictedGroups: allGrps,
+                                            assignedGroup: allGrps[0] || ''
+                                          });
                                         }}
-                                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
-                                      />
-                                      Grupo {grp}
-                                    </label>
-                                  ))}
+                                        className="text-[9px] font-bold text-blue-600 hover:underline cursor-pointer"
+                                      >
+                                        Todos
+                                      </button>
+                                      <span className="text-slate-300 text-[9px]">•</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                          (userFormData.restrictedGrades || []).forEach(g => {
+                                            newGradeGroups[g] = [];
+                                            (userFormData.restrictedLevels || []).forEach(lvl => {
+                                              newGradeGroups[`${lvl}__${g}`] = [];
+                                            });
+                                          });
+                                          setUserFormData({
+                                            ...userFormData,
+                                            teacherGradeGroups: newGradeGroups,
+                                            restrictedGroups: [],
+                                            assignedGroup: ''
+                                          });
+                                        }}
+                                        className="text-[9px] font-bold text-slate-400 hover:text-slate-600 hover:underline cursor-pointer"
+                                      >
+                                        Ninguno
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                                  {(userFormData.restrictedGrades || []).length === 0 ? (
+                                    <div className="p-4 text-center text-slate-400 bg-white rounded-lg border border-dashed border-slate-200">
+                                      <p className="text-[10px] font-medium leading-tight">
+                                        Selecciona al menos un grado en la columna izquierda para configurar sus grupos independientes.
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    (userFormData.restrictedGrades || []).map(grd => {
+                                      const gg = userFormData.teacherGradeGroups || {};
+                                      const currentGroupsForGrade: string[] = Array.isArray(gg[grd])
+                                        ? gg[grd]
+                                        : (userFormData.restrictedGroups || []);
+
+                                      return (
+                                        <div key={grd} className="p-2 bg-white rounded-lg border border-slate-200 space-y-1.5 shadow-2xs">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-black text-slate-800 uppercase flex items-center gap-1.5">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                              Grado {grd}:
+                                            </span>
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const allGrps = settings.academicGroups || ['A', 'B', 'C'];
+                                                  const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                                  newGradeGroups[grd] = allGrps;
+                                                  (userFormData.restrictedLevels || []).forEach(lvl => {
+                                                    newGradeGroups[`${lvl}__${grd}`] = allGrps;
+                                                  });
+                                                  const unionSet = new Set<string>();
+                                                  (userFormData.restrictedGrades || []).forEach(g => {
+                                                    const list = g === grd ? allGrps : (newGradeGroups[g] || (userFormData.restrictedGroups || []));
+                                                    list.forEach(item => unionSet.add(item));
+                                                  });
+                                                  const unionArr = Array.from(unionSet);
+                                                  setUserFormData({
+                                                    ...userFormData,
+                                                    teacherGradeGroups: newGradeGroups,
+                                                    restrictedGroups: unionArr,
+                                                    assignedGroup: unionArr[0] || ''
+                                                  });
+                                                }}
+                                                className="text-[8px] font-bold text-blue-600 hover:underline"
+                                              >
+                                                Todos
+                                              </button>
+                                              <span className="text-slate-300 text-[8px]">•</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                                  newGradeGroups[grd] = [];
+                                                  (userFormData.restrictedLevels || []).forEach(lvl => {
+                                                    newGradeGroups[`${lvl}__${grd}`] = [];
+                                                  });
+                                                  const unionSet = new Set<string>();
+                                                  (userFormData.restrictedGrades || []).forEach(g => {
+                                                    const list = g === grd ? [] : (newGradeGroups[g] || (userFormData.restrictedGroups || []));
+                                                    list.forEach(item => unionSet.add(item));
+                                                  });
+                                                  const unionArr = Array.from(unionSet);
+                                                  setUserFormData({
+                                                    ...userFormData,
+                                                    teacherGradeGroups: newGradeGroups,
+                                                    restrictedGroups: unionArr,
+                                                    assignedGroup: unionArr[0] || ''
+                                                  });
+                                                }}
+                                                className="text-[8px] font-bold text-slate-400 hover:text-slate-600 hover:underline"
+                                              >
+                                                Ninguno
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            {(settings.academicGroups || ['A', 'B', 'C']).map(grp => {
+                                              const isChecked = currentGroupsForGrade.includes(grp);
+                                              return (
+                                                <button
+                                                  key={grp}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const next = isChecked
+                                                      ? currentGroupsForGrade.filter(g => g !== grp)
+                                                      : [...currentGroupsForGrade, grp];
+
+                                                    const newGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                                                    newGradeGroups[grd] = next;
+                                                    (userFormData.restrictedLevels || []).forEach(lvl => {
+                                                      newGradeGroups[`${lvl}__${grd}`] = next;
+                                                    });
+
+                                                    const unionSet = new Set<string>();
+                                                    (userFormData.restrictedGrades || []).forEach(g => {
+                                                      const list = g === grd ? next : (newGradeGroups[g] || (userFormData.restrictedGroups || []));
+                                                      list.forEach(item => unionSet.add(item));
+                                                    });
+
+                                                    const unionArr = Array.from(unionSet);
+                                                    setUserFormData({
+                                                      ...userFormData,
+                                                      teacherGradeGroups: newGradeGroups,
+                                                      restrictedGroups: unionArr,
+                                                      assignedGroup: unionArr[0] || ''
+                                                    });
+                                                  }}
+                                                  className={cn(
+                                                    "px-2.5 py-1 rounded-md text-[10px] font-black transition-all cursor-pointer border flex items-center gap-1",
+                                                    isChecked
+                                                      ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                                                      : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                                                  )}
+                                                >
+                                                  {isChecked && <Check size={11} strokeWidth={3} />}
+                                                  Grupo {grp}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
                                 </div>
                               </div>
                             </div>
+
+                            {/* Resumen de Asignación por Grado */}
+                            {(userFormData.restrictedGrades || []).length > 0 && (
+                              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] font-black uppercase text-slate-500 mr-1">Asignados:</span>
+                                {(userFormData.restrictedGrades || []).map(g => {
+                                  const grps = (userFormData.teacherGradeGroups?.[g] || userFormData.restrictedGroups || []);
+                                  return (
+                                    <span key={g} className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                                      {g}: {grps.length > 0 ? grps.map(grp => `Grupo ${grp}`).join(', ') : 'Sin grupo'}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {/* Nivel Principal por defecto */}
                             <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
@@ -4925,11 +5159,25 @@ export default function Settings() {
                           }
                         }
 
+                        // Also include groups from per-grade assignments if configured
+                        if (userFormData.role === 'Docente' && userFormData.teacherGradeGroups) {
+                          const ggGroups = new Set<string>();
+                          Object.values(userFormData.teacherGradeGroups).forEach(arr => {
+                            if (Array.isArray(arr)) {
+                              arr.forEach(g => ggGroups.add(g));
+                            }
+                          });
+                          if (ggGroups.size > 0) {
+                            finalRestrictedGroups = Array.from(new Set([...finalRestrictedGroups, ...Array.from(ggGroups)]));
+                          }
+                        }
+
                         const isMultiGroup = userFormData.role === 'Docente' && (
                           userFormData.teacherGroupAccess === 'multiple' ||
                           finalRestrictedGroups.length > 1 ||
                           finalRestrictedLevels.length > 1 ||
-                          finalRestrictedGrades.length > 1
+                          finalRestrictedGrades.length > 1 ||
+                          Object.keys(userFormData.teacherGradeGroups || {}).length > 0
                         );
 
                         await setDoc(userRef, {
@@ -4944,6 +5192,9 @@ export default function Settings() {
                             : {},
                           teacherSubjectGroups: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
                             ? (userFormData.teacherSubjectGroups || {})
+                            : {},
+                          teacherGradeGroups: userFormData.role === 'Docente'
+                            ? (userFormData.teacherGradeGroups || {})
                             : {},
                           teacherGroupAccess: isMultiGroup ? 'multiple' : (userFormData.teacherGroupAccess || 'single'),
                           restrictedLevels: finalRestrictedLevels.length > 0 ? finalRestrictedLevels : (userFormData.restrictedLevels || []),
@@ -5131,9 +5382,14 @@ export default function Settings() {
                         <div>
                           <span className="text-blue-600/80 block text-[10px] font-bold uppercase">Grados y Grupos:</span>
                           <span className="font-black text-blue-950">
-                            {selectedUserDetail.teacherGroupAccess === 'multiple' || (selectedUserDetail.restrictedGrades && selectedUserDetail.restrictedGrades.length > 1)
-                              ? `Grados: ${selectedUserDetail.restrictedGrades?.join(', ') || 'Todos'} | Grupos: ${selectedUserDetail.restrictedGroups?.join(', ') || 'Todos'}`
-                              : (selectedUserDetail.assignedGrade ? `${selectedUserDetail.assignedGrade} "${selectedUserDetail.assignedGroup || 'A'}"` : 'General')}
+                            {selectedUserDetail.teacherGradeGroups && Object.keys(selectedUserDetail.teacherGradeGroups).length > 0
+                              ? Object.entries(selectedUserDetail.teacherGradeGroups)
+                                  .filter(([_, grps]) => Array.isArray(grps) && grps.length > 0)
+                                  .map(([grdKey, grps]) => `${grdKey.replace(/.*__/, '')}: [${grps.join(', ')}]`)
+                                  .join(' | ') || 'Sin grupos'
+                              : (selectedUserDetail.teacherGroupAccess === 'multiple' || (selectedUserDetail.restrictedGrades && selectedUserDetail.restrictedGrades.length > 1)
+                                  ? `Grados: ${selectedUserDetail.restrictedGrades?.join(', ') || 'Todos'} | Grupos: ${selectedUserDetail.restrictedGroups?.join(', ') || 'Todos'}`
+                                  : (selectedUserDetail.assignedGrade ? `${selectedUserDetail.assignedGrade} "${selectedUserDetail.assignedGroup || 'A'}"` : 'General'))}
                           </span>
                         </div>
                         <div>
@@ -5328,7 +5584,8 @@ export default function Settings() {
                           ...targetUser,
                           password: '',
                           teacherSubjectAccess: targetUser.teacherSubjectAccess || 'all',
-                          assignedSubjects: targetUser.assignedSubjects || []
+                          assignedSubjects: targetUser.assignedSubjects || [],
+                          teacherGradeGroups: targetUser.teacherGradeGroups || {}
                         });
                         setShowCurrentPassword(false);
                         setShowNewPassword(false);

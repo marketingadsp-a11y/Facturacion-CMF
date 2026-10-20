@@ -216,6 +216,7 @@ export interface AppUser {
   assignedSubjects?: string[];
   teacherSubjectGrades?: Record<string, string[]>;
   teacherSubjectGroups?: Record<string, string[]>;
+  teacherGradeGroups?: Record<string, string[]>;
   teacherGroupAccess?: 'single' | 'multiple';
   createdAt: Timestamp;
   updatedAt?: Timestamp;

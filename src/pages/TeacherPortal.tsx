@@ -207,7 +207,23 @@ export default function TeacherPortal() {
     const all = settings?.academicGroups && settings.academicGroups.length > 0
       ? settings.academicGroups
       : ['A', 'B', 'C', 'D'];
-    const baseGroups = restrictedGroups.length > 0 ? all.filter(grp => restrictedGroups.includes(grp)) : all;
+    let baseGroups = restrictedGroups.length > 0 ? all.filter(grp => restrictedGroups.includes(grp)) : all;
+
+    // Filter baseGroups if teacher has per-grade group assignments (teacherGradeGroups)
+    if (userProfile?.role === 'Docente' && userProfile.teacherGradeGroups && activeGrade) {
+      const levelGradeKey = activeLevel ? `${activeLevel}__${activeGrade}` : '';
+      const specificForGrade = (levelGradeKey && userProfile.teacherGradeGroups[levelGradeKey]) 
+        || userProfile.teacherGradeGroups[activeGrade];
+
+      if (specificForGrade && Array.isArray(specificForGrade)) {
+        if (!specificForGrade.includes('all')) {
+          baseGroups = all.filter(grp => specificForGrade.includes(grp));
+        }
+      } else if (Object.keys(userProfile.teacherGradeGroups).length > 0) {
+        // If teacherGradeGroups has mappings for this teacher, but this grade has none assigned
+        baseGroups = [];
+      }
+    }
 
     // For specific subject access teachers, dynamically calculate valid groups for activeLevel and activeGrade
     if (isSpecificTeacher) {
@@ -270,7 +286,7 @@ export default function TeacherPortal() {
       if (hasAll) {
         return baseGroups;
       }
-      return all.filter(grp => gradeGroupsSet.has(grp));
+      return baseGroups.filter(grp => gradeGroupsSet.has(grp));
     }
 
     return baseGroups;
@@ -287,6 +303,7 @@ export default function TeacherPortal() {
   const isMultiGroupTeacher = userProfile?.role === 'Docente' && (
     userProfile.teacherGroupAccess === 'multiple' ||
     userProfile.teacherSubjectAccess === 'specific' ||
+    (userProfile.teacherGradeGroups && Object.keys(userProfile.teacherGradeGroups).length > 0) ||
     (userProfile.restrictedLevels && userProfile.restrictedLevels.length > 1) ||
     (userProfile.restrictedGrades && userProfile.restrictedGrades.length > 1) ||
     (userProfile.restrictedGroups && userProfile.restrictedGroups.length > 1) ||
@@ -407,6 +424,11 @@ export default function TeacherPortal() {
       if (!availableGrades.includes(activeGrade)) return [];
       if (!availableGroups.includes(activeGroup)) return [];
       if (activeLevelSubjects.length === 0) return [];
+    } else if (userProfile?.role === 'Docente') {
+      if (!activeLevel || !activeGrade || !activeGroup) return [];
+      if (availableLevels.length > 0 && !availableLevels.includes(activeLevel)) return [];
+      if (availableGrades.length > 0 && !availableGrades.includes(activeGrade)) return [];
+      if (availableGroups.length > 0 && !availableGroups.includes(activeGroup)) return [];
     }
 
     let list = [...allStudents];
