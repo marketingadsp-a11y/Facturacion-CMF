@@ -109,6 +109,7 @@ export default function Settings() {
   const [isResetEmailSending, setIsResetEmailSending] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [expandedSubjectLevels, setExpandedSubjectLevels] = useState<Record<string, boolean>>({});
+  const [customGradeGroupSubjs, setCustomGradeGroupSubjs] = useState<Record<string, boolean>>({});
 
   const [selectedScheduleLevel, setSelectedScheduleLevel] = useState<string>('');
 
@@ -3879,6 +3880,11 @@ export default function Settings() {
                               delete newGroups[subjKey];
                               delete newGroups[subj.name];
                               delete newGroups[subj.id];
+                              Object.keys(newGroups).forEach(k => {
+                                if (k.startsWith(`${subjKey}__`) || k.startsWith(`${subj.name}__`) || k.startsWith(`${subj.id}__`)) {
+                                  delete newGroups[k];
+                                }
+                              });
                             }
 
                             setUserFormData({
@@ -3927,6 +3933,11 @@ export default function Settings() {
                               delete newGroups[subjKey];
                               delete newGroups[s.name];
                               delete newGroups[s.id];
+                              Object.keys(newGroups).forEach(k => {
+                                if (k.startsWith(`${subjKey}__`) || k.startsWith(`${s.name}__`) || k.startsWith(`${s.id}__`)) {
+                                  delete newGroups[k];
+                                }
+                              });
                             });
 
                             setUserFormData({
@@ -4091,14 +4102,33 @@ export default function Settings() {
                                                   const grades = userFormData.teacherSubjectGrades?.[subjKey] 
                                                     || userFormData.teacherSubjectGrades?.[s.name];
                                                   const hasSpecificGrades = grades && grades.length > 0 && !grades.includes('all');
+                                                  
+                                                  const perGradeSummary: string[] = [];
+                                                  if (hasSpecificGrades) {
+                                                    grades!.forEach(grd => {
+                                                      const gGrp = userFormData.teacherSubjectGroups?.[`${subjKey}__${grd}`]
+                                                        || userFormData.teacherSubjectGroups?.[`${s.name}__${grd}`]
+                                                        || userFormData.teacherSubjectGroups?.[`${s.id}__${grd}`];
+                                                      if (gGrp && gGrp.length > 0 && !gGrp.includes('all')) {
+                                                        perGradeSummary.push(`${grd}: ${gGrp.join(',')}`);
+                                                      }
+                                                    });
+                                                  }
+
                                                   const groups = userFormData.teacherSubjectGroups?.[subjKey] 
                                                     || userFormData.teacherSubjectGroups?.[s.name];
                                                   const hasSpecificGroups = groups && groups.length > 0 && !groups.includes('all');
                                                   return (
                                                     <span key={s.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800">
                                                       {s.name}
-                                                      {hasSpecificGrades ? ` (${grades!.join(',')})` : ''}
-                                                      {hasSpecificGroups ? ` [Grp: ${groups!.join(',')}]` : ''}
+                                                      {perGradeSummary.length > 0 ? (
+                                                        ` [${perGradeSummary.join(' | ')}]`
+                                                      ) : (
+                                                        <>
+                                                          {hasSpecificGrades ? ` (${grades!.join(',')})` : ''}
+                                                          {hasSpecificGroups ? ` [Grp: ${groups!.join(',')}]` : ''}
+                                                        </>
+                                                      )}
                                                     </span>
                                                   );
                                                 })}
@@ -4167,12 +4197,131 @@ export default function Settings() {
                                                   || userFormData.teacherSubjectGrades?.[subj.name] 
                                                   || ['all'];
                                                 const isAllGrades = currentGrades.includes('all') || currentGrades.length === 0;
+                                                const activeSubjectGrades = isAllGrades ? effectiveGrades : currentGrades;
+                                                const isPerGradeGroups = !isAllGrades || !!customGradeGroupSubjs[subjKey];
 
-                                                const currentGroups = userFormData.teacherSubjectGroups?.[subjKey] 
+                                                // Helper to get groups for a specific grade
+                                                const getGradeGroups = (grd: string) => {
+                                                  const specific = userFormData.teacherSubjectGroups?.[`${subjKey}__${grd}`]
+                                                    || userFormData.teacherSubjectGroups?.[`${subj.name}__${grd}`]
+                                                    || userFormData.teacherSubjectGroups?.[`${subj.id}__${grd}`];
+                                                  if (specific && specific.length > 0) return specific;
+                                                  const general = userFormData.teacherSubjectGroups?.[subjKey]
+                                                    || userFormData.teacherSubjectGroups?.[subj.name]
+                                                    || userFormData.teacherSubjectGroups?.[subj.id];
+                                                  return (general && general.length > 0) ? general : ['all'];
+                                                };
+
+                                                const handleSetGradeGroups = (grd: string, groups: string[]) => {
+                                                  const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                  newGroups[`${subjKey}__${grd}`] = groups;
+                                                  newGroups[`${subj.name}__${grd}`] = groups;
+                                                  newGroups[`${subj.id}__${grd}`] = groups;
+
+                                                  // Recompute general summary union for this subject across activeSubjectGrades
+                                                  const unionSet = new Set<string>();
+                                                  let hasAnyAll = false;
+                                                  activeSubjectGrades.forEach(g => {
+                                                    const gList = (g === grd) ? groups : getGradeGroups(g);
+                                                    if (gList.includes('all') || gList.length === 0) {
+                                                      hasAnyAll = true;
+                                                    } else {
+                                                      gList.forEach(item => unionSet.add(item));
+                                                    }
+                                                  });
+
+                                                  const unionArr = hasAnyAll ? ['all'] : (unionSet.size > 0 ? Array.from(unionSet) : ['all']);
+                                                  newGroups[subjKey] = unionArr;
+                                                  newGroups[subj.name] = unionArr;
+                                                  newGroups[subj.id] = unionArr;
+
+                                                  setUserFormData({ ...userFormData, teacherSubjectGroups: newGroups });
+                                                };
+
+                                                const handleToggleGradeGroup = (grd: string, grp: string) => {
+                                                  const currentGrdGroups = getGradeGroups(grd);
+                                                  const isGrdAll = currentGrdGroups.includes('all') || currentGrdGroups.length === 0;
+                                                  let nextGrdGroups: string[];
+                                                  if (isGrdAll) {
+                                                    nextGrdGroups = [grp];
+                                                  } else if (currentGrdGroups.includes(grp)) {
+                                                    nextGrdGroups = currentGrdGroups.filter(g => g !== grp);
+                                                    if (nextGrdGroups.length === 0) nextGrdGroups = ['all'];
+                                                  } else {
+                                                    nextGrdGroups = [...currentGrdGroups, grp];
+                                                    if (defaultLevelGroups.every(g => nextGrdGroups.includes(g))) {
+                                                      nextGrdGroups = ['all'];
+                                                    }
+                                                  }
+                                                  handleSetGradeGroups(grd, nextGrdGroups);
+                                                };
+
+                                                const handleApplyGroupToAllActiveGrades = (grpOrAll: string) => {
+                                                  const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                  const targetVal = [grpOrAll];
+                                                  newGroups[subjKey] = targetVal;
+                                                  newGroups[subj.name] = targetVal;
+                                                  newGroups[subj.id] = targetVal;
+
+                                                  activeSubjectGrades.forEach(g => {
+                                                    newGroups[`${subjKey}__${g}`] = targetVal;
+                                                    newGroups[`${subj.name}__${g}`] = targetVal;
+                                                    newGroups[`${subj.id}__${g}`] = targetVal;
+                                                  });
+
+                                                  setUserFormData({ ...userFormData, teacherSubjectGroups: newGroups });
+                                                };
+
+                                                // General groups (used when not configuring per grade)
+                                                const currentGeneralGroups = userFormData.teacherSubjectGroups?.[subjKey] 
                                                   || userFormData.teacherSubjectGroups?.[subj.name] 
                                                   || userFormData.teacherSubjectGroups?.[subj.id]
                                                   || ['all'];
-                                                const isAllGroups = currentGroups.includes('all') || currentGroups.length === 0;
+                                                const isAllGeneralGroups = currentGeneralGroups.includes('all') || currentGeneralGroups.length === 0;
+
+                                                const handleToggleGeneralGroup = (grp: string) => {
+                                                  let nextGroups: string[];
+                                                  if (isAllGeneralGroups) {
+                                                    nextGroups = [grp];
+                                                  } else if (currentGeneralGroups.includes(grp)) {
+                                                    nextGroups = currentGeneralGroups.filter(g => g !== grp);
+                                                    if (nextGroups.length === 0) nextGroups = ['all'];
+                                                  } else {
+                                                    nextGroups = [...currentGeneralGroups, grp];
+                                                    if (defaultLevelGroups.every(g => nextGroups.includes(g))) {
+                                                      nextGroups = ['all'];
+                                                    }
+                                                  }
+
+                                                  const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                  newGroups[subjKey] = nextGroups;
+                                                  newGroups[subj.name] = nextGroups;
+                                                  newGroups[subj.id] = nextGroups;
+
+                                                  // Clear grade overrides so general applies to all
+                                                  Object.keys(newGroups).forEach(k => {
+                                                    if (k.startsWith(`${subjKey}__`) || k.startsWith(`${subj.name}__`) || k.startsWith(`${subj.id}__`)) {
+                                                      delete newGroups[k];
+                                                    }
+                                                  });
+
+                                                  setUserFormData({ ...userFormData, teacherSubjectGroups: newGroups });
+                                                };
+
+                                                const handleSetAllGeneralGroups = () => {
+                                                  const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                  newGroups[subjKey] = ['all'];
+                                                  newGroups[subj.name] = ['all'];
+                                                  newGroups[subj.id] = ['all'];
+
+                                                  Object.keys(newGroups).forEach(k => {
+                                                    if (k.startsWith(`${subjKey}__`) || k.startsWith(`${subj.name}__`) || k.startsWith(`${subj.id}__`)) {
+                                                      delete newGroups[k];
+                                                    }
+                                                  });
+
+                                                  setUserFormData({ ...userFormData, teacherSubjectGroups: newGroups });
+                                                };
 
                                                 return (
                                                   <div 
@@ -4262,7 +4411,24 @@ export default function Settings() {
                                                                     newMap[subjKey] = nextGrades;
                                                                     newMap[subj.name] = nextGrades;
                                                                     newMap[subj.id] = nextGrades;
-                                                                    setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
+
+                                                                    // Clean up groups for any grades that were removed
+                                                                    const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                                    if (!nextGrades.includes('all')) {
+                                                                      effectiveGrades.forEach(g => {
+                                                                        if (!nextGrades.includes(g)) {
+                                                                          delete newGroups[`${subjKey}__${g}`];
+                                                                          delete newGroups[`${subj.name}__${g}`];
+                                                                          delete newGroups[`${subj.id}__${g}`];
+                                                                        }
+                                                                      });
+                                                                    }
+
+                                                                    setUserFormData({ 
+                                                                      ...userFormData, 
+                                                                      teacherSubjectGrades: newMap,
+                                                                      teacherSubjectGroups: newGroups
+                                                                    });
                                                                   }}
                                                                   className={cn(
                                                                     "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
@@ -4280,72 +4446,159 @@ export default function Settings() {
                                                           </div>
                                                         </div>
 
-                                                        {/* Grupos en el nivel */}
-                                                        <div className="pt-1.5 border-t border-slate-100 space-y-1">
-                                                          <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
-                                                            <span>Grupos en {lvl}:</span>
-                                                            <span className="text-blue-700 font-black">
-                                                              {isAllGroups ? 'Todos los grupos' : currentGroups.map(g => `Grupo ${g}`).join(', ')}
-                                                            </span>
-                                                          </div>
-                                                          <div className="flex flex-wrap items-center gap-1">
-                                                            <button
-                                                              type="button"
-                                                              onClick={() => {
-                                                                const newMap = { ...(userFormData.teacherSubjectGroups || {}) };
-                                                                newMap[subjKey] = ['all'];
-                                                                newMap[subj.name] = ['all'];
-                                                                newMap[subj.id] = ['all'];
-                                                                setUserFormData({ ...userFormData, teacherSubjectGroups: newMap });
-                                                              }}
-                                                              className={cn(
-                                                                "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                                                                isAllGroups
-                                                                  ? "bg-blue-600 text-white shadow-xs"
-                                                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                        {/* Grupos selector: por cada grado específico o general */}
+                                                        <div className="pt-2 border-t border-indigo-200/60 space-y-2">
+                                                          {isPerGradeGroups ? (
+                                                            <div className="space-y-1.5">
+                                                              <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+                                                                <span className="text-slate-700 font-extrabold flex items-center gap-1">
+                                                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
+                                                                  Grupos asignados por grado:
+                                                                </span>
+                                                                {activeSubjectGrades.length > 1 && (
+                                                                  <div className="flex items-center gap-1 text-[8px] text-slate-400">
+                                                                    <span>Copiar a todos:</span>
+                                                                    <button
+                                                                      type="button"
+                                                                      onClick={() => handleApplyGroupToAllActiveGrades('all')}
+                                                                      className="px-1 py-0.2 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer"
+                                                                    >
+                                                                      Todos
+                                                                    </button>
+                                                                    {defaultLevelGroups.map(g => (
+                                                                      <button
+                                                                        key={g}
+                                                                        type="button"
+                                                                        onClick={() => handleApplyGroupToAllActiveGrades(g)}
+                                                                        className="px-1 py-0.2 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold cursor-pointer"
+                                                                      >
+                                                                        {g}
+                                                                      </button>
+                                                                    ))}
+                                                                  </div>
+                                                                )}
+                                                              </div>
+
+                                                              <div className="space-y-1.5">
+                                                                {activeSubjectGrades.map(grd => {
+                                                                  const grdGroups = getGradeGroups(grd);
+                                                                  const isGrdAll = grdGroups.includes('all') || grdGroups.length === 0;
+
+                                                                  return (
+                                                                    <div 
+                                                                      key={grd} 
+                                                                      className="p-1.5 rounded-lg bg-slate-50/90 border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                                                    >
+                                                                      <div className="flex items-center gap-1.5 min-w-0">
+                                                                        <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 font-black text-[9px] shadow-2xs">
+                                                                          {grd}
+                                                                        </span>
+                                                                        <span className="text-[9px] text-blue-700 font-bold truncate">
+                                                                          {isGrdAll ? 'Todos los grupos' : grdGroups.map(g => `Grupo ${g}`).join(', ')}
+                                                                        </span>
+                                                                      </div>
+
+                                                                      <div className="flex flex-wrap items-center gap-1">
+                                                                        <button
+                                                                          type="button"
+                                                                          onClick={() => handleSetGradeGroups(grd, ['all'])}
+                                                                          className={cn(
+                                                                            "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                                                            isGrdAll
+                                                                              ? "bg-blue-600 text-white shadow-xs"
+                                                                              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                          )}
+                                                                        >
+                                                                          Todos
+                                                                        </button>
+                                                                        {defaultLevelGroups.map(grp => {
+                                                                          const isGroupActive = !isGrdAll && grdGroups.includes(grp);
+                                                                          return (
+                                                                            <button
+                                                                              key={grp}
+                                                                              type="button"
+                                                                              onClick={() => handleToggleGradeGroup(grd, grp)}
+                                                                              className={cn(
+                                                                                "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
+                                                                                isGroupActive
+                                                                                  ? "bg-blue-600 text-white font-black shadow-xs"
+                                                                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                              )}
+                                                                            >
+                                                                              Grupo {grp}
+                                                                            </button>
+                                                                          );
+                                                                        })}
+                                                                      </div>
+                                                                    </div>
+                                                                  );
+                                                                })}
+                                                              </div>
+
+                                                              {isAllGrades && (
+                                                                <div className="pt-1 flex justify-end">
+                                                                  <button
+                                                                    type="button"
+                                                                    onClick={() => setCustomGradeGroupSubjs(prev => ({ ...prev, [subjKey]: false }))}
+                                                                    className="text-[8px] text-slate-400 hover:text-indigo-600 font-bold underline cursor-pointer"
+                                                                  >
+                                                                    ← Volver a grupos generales para todos los grados
+                                                                  </button>
+                                                                </div>
                                                               )}
-                                                            >
-                                                              Todos
-                                                            </button>
-                                                            {defaultLevelGroups.map(grp => {
-                                                              const isGroupActive = !isAllGroups && currentGroups.includes(grp);
-                                                              return (
+                                                            </div>
+                                                          ) : (
+                                                            <div className="space-y-1">
+                                                              <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+                                                                <span>Grupos en {lvl} (todos los grados):</span>
+                                                                <span className="text-blue-700 font-black">
+                                                                  {isAllGeneralGroups ? 'Todos los grupos' : currentGeneralGroups.map(g => `Grupo ${g}`).join(', ')}
+                                                                </span>
+                                                              </div>
+                                                              <div className="flex flex-wrap items-center gap-1">
                                                                 <button
-                                                                  key={grp}
                                                                   type="button"
-                                                                  onClick={() => {
-                                                                    const newMap = { ...(userFormData.teacherSubjectGroups || {}) };
-                                                                    let nextGroups: string[];
-                                                                    if (isAllGroups) {
-                                                                      nextGroups = [grp];
-                                                                    } else if (currentGroups.includes(grp)) {
-                                                                      nextGroups = currentGroups.filter(g => g !== grp);
-                                                                      if (nextGroups.length === 0) nextGroups = ['all'];
-                                                                    } else {
-                                                                      nextGroups = [...currentGroups, grp];
-                                                                      if (defaultLevelGroups.every(g => nextGroups.includes(g))) {
-                                                                        nextGroups = ['all'];
-                                                                      }
-                                                                    }
-                                                                    newMap[subjKey] = nextGroups;
-                                                                    newMap[subj.name] = nextGroups;
-                                                                    newMap[subj.id] = nextGroups;
-                                                                    setUserFormData({ ...userFormData, teacherSubjectGroups: newMap });
-                                                                  }}
+                                                                  onClick={handleSetAllGeneralGroups}
                                                                   className={cn(
-                                                                    "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
-                                                                    isGroupActive
-                                                                      ? "bg-blue-600 text-white font-black shadow-xs"
-                                                                      : isAllGroups
-                                                                        ? "bg-blue-50 text-blue-900 border border-blue-200 hover:bg-blue-100"
-                                                                        : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                    "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                                                    isAllGeneralGroups
+                                                                      ? "bg-blue-600 text-white shadow-xs"
+                                                                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
                                                                   )}
                                                                 >
-                                                                  Grupo {grp}
+                                                                  Todos
                                                                 </button>
-                                                              );
-                                                            })}
-                                                          </div>
+                                                                {defaultLevelGroups.map(grp => {
+                                                                  const isGroupActive = !isAllGeneralGroups && currentGeneralGroups.includes(grp);
+                                                                  return (
+                                                                    <button
+                                                                      key={grp}
+                                                                      type="button"
+                                                                      onClick={() => handleToggleGeneralGroup(grp)}
+                                                                      className={cn(
+                                                                        "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
+                                                                        isGroupActive
+                                                                          ? "bg-blue-600 text-white font-black shadow-xs"
+                                                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                      )}
+                                                                    >
+                                                                      Grupo {grp}
+                                                                    </button>
+                                                                  );
+                                                                })}
+                                                              </div>
+
+                                                              <div className="pt-1 flex justify-end">
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => setCustomGradeGroupSubjs(prev => ({ ...prev, [subjKey]: true }))}
+                                                                  className="text-[8px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                                                                >
+                                                                  Personalizar grupos por cada grado →
+                                                                </button>
+                                                              </div>
+                                                            </div>
+                                                          )}
                                                         </div>
                                                       </div>
                                                     )}
@@ -4630,15 +4883,43 @@ export default function Settings() {
                           ? userFormData.password.trim()
                           : (editingUser?.currentPassword || '');
                         
-                        // If specific subjects with groups are configured, ensure restrictedGroups covers them
+                        // If specific subjects with groups are configured, ensure restrictedLevels, restrictedGrades, and restrictedGroups cover them
                         let finalRestrictedGroups = userFormData.restrictedGroups || [];
+                        let finalRestrictedGrades = userFormData.restrictedGrades || [];
+                        let finalRestrictedLevels = userFormData.restrictedLevels || [];
+
                         if (userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific') {
                           const subjGroups = new Set<string>();
+                          const subjGrades = new Set<string>();
+                          const subjLevels = new Set<string>();
+
+                          (userFormData.assignedSubjects || []).forEach(subj => {
+                            if (subj.includes('__')) {
+                              const parts = subj.split('__');
+                              if (parts[1]) subjLevels.add(parts[1]);
+                            }
+                            const subjObj = subjects.find(s => s.id === subj);
+                            if (subjObj?.level) subjLevels.add(subjObj.level);
+                          });
+
+                          Object.values(userFormData.teacherSubjectGrades || {}).forEach(arr => {
+                            if (Array.isArray(arr)) {
+                              arr.filter(g => g !== 'all').forEach(g => subjGrades.add(g));
+                            }
+                          });
+
                           Object.values(userFormData.teacherSubjectGroups || {}).forEach(arr => {
                             if (Array.isArray(arr)) {
                               arr.filter(g => g !== 'all').forEach(g => subjGroups.add(g));
                             }
                           });
+
+                          if (subjLevels.size > 0) {
+                            finalRestrictedLevels = Array.from(new Set([...finalRestrictedLevels, ...Array.from(subjLevels)]));
+                          }
+                          if (subjGrades.size > 0) {
+                            finalRestrictedGrades = Array.from(new Set([...finalRestrictedGrades, ...Array.from(subjGrades)]));
+                          }
                           if (subjGroups.size > 0) {
                             finalRestrictedGroups = Array.from(new Set([...finalRestrictedGroups, ...Array.from(subjGroups)]));
                           }
@@ -4647,8 +4928,8 @@ export default function Settings() {
                         const isMultiGroup = userFormData.role === 'Docente' && (
                           userFormData.teacherGroupAccess === 'multiple' ||
                           finalRestrictedGroups.length > 1 ||
-                          (userFormData.restrictedLevels && userFormData.restrictedLevels.length > 1) ||
-                          (userFormData.restrictedGrades && userFormData.restrictedGrades.length > 1)
+                          finalRestrictedLevels.length > 1 ||
+                          finalRestrictedGrades.length > 1
                         );
 
                         await setDoc(userRef, {
@@ -4665,9 +4946,11 @@ export default function Settings() {
                             ? (userFormData.teacherSubjectGroups || {})
                             : {},
                           teacherGroupAccess: isMultiGroup ? 'multiple' : (userFormData.teacherGroupAccess || 'single'),
+                          restrictedLevels: finalRestrictedLevels.length > 0 ? finalRestrictedLevels : (userFormData.restrictedLevels || []),
+                          restrictedGrades: finalRestrictedGrades.length > 0 ? finalRestrictedGrades : (userFormData.restrictedGrades || []),
                           restrictedGroups: finalRestrictedGroups,
-                          assignedLevel: userFormData.assignedLevel || (userFormData.restrictedLevels?.[0] || 'General'),
-                          assignedGrade: userFormData.assignedGrade || (userFormData.restrictedGrades?.[0] || ''),
+                          assignedLevel: userFormData.assignedLevel || (finalRestrictedLevels[0] || 'General'),
+                          assignedGrade: userFormData.assignedGrade || (finalRestrictedGrades[0] || ''),
                           assignedGroup: userFormData.assignedGroup || (finalRestrictedGroups[0] || ''),
                           id: uid,
                           createdAt: editingUser ? editingUser.createdAt : serverTimestamp(),
@@ -4876,7 +5159,7 @@ export default function Settings() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {(() => {
                                     const seen = new Set<string>();
-                                    const itemsToRender: { id: string; name: string; level?: string; grades?: string[]; groups?: string[] }[] = [];
+                                    const itemsToRender: { id: string; name: string; level?: string; grades?: string[]; groups?: string[]; uniqueKey: string }[] = [];
 
                                     (selectedUserDetail.assignedSubjects || []).forEach(subj => {
                                       const subjObj = subjects.find(s => s.id === subj || `${s.name}__${s.level}` === subj || s.name === subj);
@@ -4894,13 +5177,26 @@ export default function Settings() {
                                           || (subjObj && selectedUserDetail.teacherSubjectGroups?.[subjObj.id])
                                           || selectedUserDetail.teacherSubjectGroups?.[name]
                                           || selectedUserDetail.teacherSubjectGroups?.[subj];
-                                        itemsToRender.push({ id: subjObj?.id || subj, name, level, grades, groups });
+                                        itemsToRender.push({ id: subjObj?.id || subj, name, level, grades, groups, uniqueKey });
                                       }
                                     });
 
                                     return itemsToRender.map(item => {
                                       const hasSpecificGrades = item.grades && item.grades.length > 0 && !item.grades.includes('all');
                                       const hasSpecificGroups = item.groups && item.groups.length > 0 && !item.groups.includes('all');
+
+                                      const perGradeGroups: { grade: string; groups: string[] }[] = [];
+                                      if (hasSpecificGrades) {
+                                        item.grades!.forEach(grd => {
+                                          const grdGrp = selectedUserDetail.teacherSubjectGroups?.[`${item.uniqueKey}__${grd}`]
+                                            || (item.id && selectedUserDetail.teacherSubjectGroups?.[`${item.id}__${grd}`])
+                                            || selectedUserDetail.teacherSubjectGroups?.[`${item.name}__${grd}`];
+                                          if (grdGrp && grdGrp.length > 0 && !grdGrp.includes('all')) {
+                                            perGradeGroups.push({ grade: grd, groups: grdGrp });
+                                          }
+                                        });
+                                      }
+
                                       return (
                                         <span key={item.id} className="bg-white border border-blue-200 text-blue-900 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5 shadow-2xs">
                                           <span>{item.name}</span>
@@ -4909,15 +5205,26 @@ export default function Settings() {
                                               {item.level}
                                             </span>
                                           )}
-                                          {hasSpecificGrades && (
-                                            <span className="text-[9px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 rounded font-black">
-                                              Grados: {item.grades!.join(', ')}
-                                            </span>
-                                          )}
-                                          {hasSpecificGroups && (
+                                          {perGradeGroups.length > 0 ? (
                                             <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 rounded font-black">
-                                              Grupos: {item.groups!.join(', ')}
+                                              {item.grades!.map(grd => {
+                                                const match = perGradeGroups.find(p => p.grade === grd);
+                                                return match ? `${grd}: Grupo ${match.groups.join(',')}` : `${grd}: Todos`;
+                                              }).join(' | ')}
                                             </span>
+                                          ) : (
+                                            <>
+                                              {hasSpecificGrades && (
+                                                <span className="text-[9px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 rounded font-black">
+                                                  Grados: {item.grades!.join(', ')}
+                                                </span>
+                                              )}
+                                              {hasSpecificGroups && (
+                                                <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 rounded font-black">
+                                                  Grupos: {item.groups!.join(', ')}
+                                                </span>
+                                              )}
+                                            </>
                                           )}
                                         </span>
                                       );

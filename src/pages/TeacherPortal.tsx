@@ -119,6 +119,14 @@ export default function TeacherPortal() {
     return all;
   }, [settings?.academicLevels, restrictedLevels]);
 
+  const activeLevel = useMemo(() => {
+    if (selectedLevel && availableLevels.includes(selectedLevel)) return selectedLevel;
+    if (userProfile?.role === 'Docente' && userProfile.assignedLevel && availableLevels.includes(userProfile.assignedLevel)) {
+      return userProfile.assignedLevel;
+    }
+    return availableLevels[0] || '';
+  }, [selectedLevel, availableLevels, userProfile]);
+
   const availableGrades = useMemo(() => {
     const all = settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
     if (restrictedGrades.length > 0) {
@@ -127,15 +135,89 @@ export default function TeacherPortal() {
     return all;
   }, [settings?.academicGrades, restrictedGrades]);
 
+  const activeGrade = useMemo(() => {
+    if (selectedGrade && availableGrades.includes(selectedGrade)) return selectedGrade;
+    if (userProfile?.role === 'Docente' && userProfile.assignedGrade && availableGrades.includes(userProfile.assignedGrade)) {
+      return userProfile.assignedGrade;
+    }
+    return availableGrades[0] || '';
+  }, [selectedGrade, availableGrades, userProfile]);
+
   const availableGroups = useMemo(() => {
     const all = settings?.academicGroups && settings.academicGroups.length > 0
       ? settings.academicGroups
       : ['A', 'B', 'C', 'D'];
+
+    // For specific subject access teachers, dynamically calculate valid groups for the active level and grade
+    if (userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific' && activeGrade) {
+      const allowed = userProfile.assignedSubjects || [];
+      const currentLevelSubjs = subjects.filter(s => 
+        s.level && activeLevel && s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
+      );
+      
+      const teacherSubjsInLevel = currentLevelSubjs.filter(s => {
+        const keyWithLevel = `${s.name}__${s.level}`;
+        return allowed.some(a => 
+          a === s.id || 
+          a.toLowerCase().trim() === keyWithLevel.toLowerCase().trim() ||
+          a.toLowerCase().trim() === s.name.toLowerCase().trim()
+        );
+      });
+
+      // Filter to subjects that teach activeGrade
+      const validForGrade = teacherSubjsInLevel.filter(s => {
+        const keyWithLevel = `${s.name}__${s.level}`;
+        const gradeList = userProfile.teacherSubjectGrades?.[keyWithLevel] 
+          || userProfile.teacherSubjectGrades?.[s.name] 
+          || userProfile.teacherSubjectGrades?.[s.id];
+        return !gradeList || gradeList.length === 0 || gradeList.includes('all') || gradeList.includes(activeGrade);
+      });
+
+      if (validForGrade.length > 0) {
+        const gradeGroupsSet = new Set<string>();
+        let hasAll = false;
+
+        validForGrade.forEach(s => {
+          const keyWithLevel = `${s.name}__${s.level}`;
+          const gradeGroupList = (
+            userProfile.teacherSubjectGroups?.[`${keyWithLevel}__${activeGrade}`] ||
+            userProfile.teacherSubjectGroups?.[`${s.name}__${activeGrade}`] ||
+            userProfile.teacherSubjectGroups?.[`${s.id}__${activeGrade}`]
+          );
+          const list = (gradeGroupList && gradeGroupList.length > 0) 
+            ? gradeGroupList
+            : (
+                userProfile.teacherSubjectGroups?.[keyWithLevel] ||
+                userProfile.teacherSubjectGroups?.[s.name] ||
+                userProfile.teacherSubjectGroups?.[s.id]
+              );
+
+          if (!list || list.length === 0 || list.includes('all')) {
+            hasAll = true;
+          } else {
+            list.forEach(g => gradeGroupsSet.add(g));
+          }
+        });
+
+        if (!hasAll && gradeGroupsSet.size > 0) {
+          return all.filter(grp => gradeGroupsSet.has(grp));
+        }
+      }
+    }
+
     if (restrictedGroups.length > 0) {
       return all.filter(grp => restrictedGroups.includes(grp));
     }
     return all;
-  }, [settings?.academicGroups, restrictedGroups]);
+  }, [settings?.academicGroups, restrictedGroups, userProfile, activeLevel, activeGrade, subjects]);
+
+  const activeGroup = useMemo(() => {
+    if (selectedGroup && availableGroups.includes(selectedGroup)) return selectedGroup;
+    if (userProfile?.role === 'Docente' && userProfile.assignedGroup && availableGroups.includes(userProfile.assignedGroup)) {
+      return userProfile.assignedGroup;
+    }
+    return availableGroups[0] || 'A';
+  }, [selectedGroup, availableGroups, userProfile]);
 
   const isMultiGroupTeacher = userProfile?.role === 'Docente' && (
     userProfile.teacherGroupAccess === 'multiple' ||
@@ -148,30 +230,6 @@ export default function TeacherPortal() {
   );
 
   const canFilterGroups = userProfile?.role !== 'Docente' || isMultiGroupTeacher;
-
-  const activeLevel = useMemo(() => {
-    if (selectedLevel && availableLevels.includes(selectedLevel)) return selectedLevel;
-    if (userProfile?.role === 'Docente' && userProfile.assignedLevel && availableLevels.includes(userProfile.assignedLevel)) {
-      return userProfile.assignedLevel;
-    }
-    return availableLevels[0] || '';
-  }, [selectedLevel, availableLevels, userProfile]);
-
-  const activeGrade = useMemo(() => {
-    if (selectedGrade && availableGrades.includes(selectedGrade)) return selectedGrade;
-    if (userProfile?.role === 'Docente' && userProfile.assignedGrade && availableGrades.includes(userProfile.assignedGrade)) {
-      return userProfile.assignedGrade;
-    }
-    return availableGrades[0] || '';
-  }, [selectedGrade, availableGrades, userProfile]);
-
-  const activeGroup = useMemo(() => {
-    if (selectedGroup && availableGroups.includes(selectedGroup)) return selectedGroup;
-    if (userProfile?.role === 'Docente' && userProfile.assignedGroup && availableGroups.includes(userProfile.assignedGroup)) {
-      return userProfile.assignedGroup;
-    }
-    return availableGroups[0] || 'A';
-  }, [selectedGroup, availableGroups, userProfile]);
 
   const students = useMemo(() => {
     let list = [...allStudents];
@@ -237,10 +295,18 @@ export default function TeacherPortal() {
           }
         }
 
-        // Check if group-restricted for this subject
-        const groupList = userProfile.teacherSubjectGroups?.[keyWithLevel]
-          || userProfile.teacherSubjectGroups?.[s.name]
-          || userProfile.teacherSubjectGroups?.[s.id];
+        // Check if group-restricted for this subject (grade-specific first, fallback to general)
+        const gradeGroupList = (activeGrade && (
+          userProfile.teacherSubjectGroups?.[`${keyWithLevel}__${activeGrade}`] ||
+          userProfile.teacherSubjectGroups?.[`${s.name}__${activeGrade}`] ||
+          userProfile.teacherSubjectGroups?.[`${s.id}__${activeGrade}`]
+        )) || undefined;
+
+        const groupList = gradeGroupList || (
+          userProfile.teacherSubjectGroups?.[keyWithLevel] ||
+          userProfile.teacherSubjectGroups?.[s.name] ||
+          userProfile.teacherSubjectGroups?.[s.id]
+        );
 
         if (groupList && groupList.length > 0 && !groupList.includes('all')) {
           if (activeGroup && !groupList.includes(activeGroup)) {
