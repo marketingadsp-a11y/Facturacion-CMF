@@ -2960,7 +2960,19 @@ export default function Settings() {
                                             ...user,
                                             password: '',
                                             teacherSubjectAccess: user.teacherSubjectAccess || 'all',
-                                            assignedSubjects: user.assignedSubjects || []
+                                            assignedSubjects: user.assignedSubjects || [],
+                                            teacherSubjectGrades: user.teacherSubjectGrades || {},
+                                            teacherSubjectGroups: user.teacherSubjectGroups || {},
+                                            teacherGroupAccess: user.teacherGroupAccess || (
+                                              (user.restrictedLevels && user.restrictedLevels.length > 1) ||
+                                              (user.restrictedGrades && user.restrictedGrades.length > 1) ||
+                                              (user.restrictedGroups && user.restrictedGroups.length > 1)
+                                                ? 'multiple'
+                                                : 'single'
+                                            ),
+                                            restrictedLevels: user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : []),
+                                            restrictedGrades: user.restrictedGrades || (user.assignedGrade ? [user.assignedGrade] : []),
+                                            restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : [])
                                           });
                                           setShowCurrentPassword(false);
                                           setShowNewPassword(false);
@@ -3810,15 +3822,29 @@ export default function Settings() {
                             return (subjLevel || '').trim().toLowerCase() === (targetLevel || '').trim().toLowerCase();
                           };
 
-                          const totalAvailableCount = subjects.filter(s => 
-                            levelsList.some(lvl => lvlMatches(s.level, lvl))
-                          ).length;
-
                           const isSubjectSelected = (subj: Subject) => {
-                            const subjKey = `${subj.name}__${subj.level}`;
+                            const subjKey = `${subj.name}__${subj.level}`.toLowerCase().trim();
+                            const normName = subj.name.toLowerCase().trim();
                             const list = userFormData.assignedSubjects || [];
-                            return list.includes(subj.id) || list.includes(subjKey) || list.includes(subj.name);
+                            return list.some(x => {
+                              if (x === subj.id) return true;
+                              const normX = x.toLowerCase().trim();
+                              if (normX === subjKey) return true;
+                              if (normX === normName) return true;
+                              return false;
+                            });
                           };
+
+                          const totalAvailableCount = levelsList.reduce((acc, lvl) => {
+                            const rawLvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                            const seen = new Set<string>();
+                            return acc + rawLvlSubjs.filter(s => {
+                              const norm = s.name.toLowerCase().trim();
+                              if (seen.has(norm)) return false;
+                              seen.add(norm);
+                              return true;
+                            }).length;
+                          }, 0);
 
                           const totalSelectedCount = subjects.filter(s => 
                             levelsList.some(lvl => lvlMatches(s.level, lvl)) && isSubjectSelected(s)
@@ -3827,29 +3853,48 @@ export default function Settings() {
                           const handleToggleSubject = (subj: Subject, checked: boolean) => {
                             const current = userFormData.assignedSubjects || [];
                             const subjKey = `${subj.name}__${subj.level}`;
+                            const normName = subj.name.toLowerCase().trim();
+                            const normKey = subjKey.toLowerCase().trim();
+
                             let next: string[];
                             if (checked) {
-                              next = Array.from(new Set([...current, subj.id, subjKey, subj.name]));
+                              next = Array.from(new Set([...current, subj.id, subjKey]));
                             } else {
-                              next = current.filter(x => x !== subj.id && x !== subjKey);
-                              const anotherWithSameName = subjects.some(other => 
-                                other.id !== subj.id && 
-                                other.name.toLowerCase() === subj.name.toLowerCase() && 
-                                (next.includes(other.id) || next.includes(`${other.name}__${other.level}`))
-                              );
-                              if (!anotherWithSameName) {
-                                next = next.filter(x => x !== subj.name);
-                              }
+                              next = current.filter(x => {
+                                if (x === subj.id) return false;
+                                const normX = x.toLowerCase().trim();
+                                if (normX === normKey) return false;
+                                if (normX === normName) return false;
+                                return true;
+                              });
                             }
-                            setUserFormData({ ...userFormData, assignedSubjects: next });
+
+                            const newGrades = { ...(userFormData.teacherSubjectGrades || {}) };
+                            const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+
+                            if (!checked) {
+                              delete newGrades[subjKey];
+                              delete newGrades[subj.name];
+                              delete newGrades[subj.id];
+                              delete newGroups[subjKey];
+                              delete newGroups[subj.name];
+                              delete newGroups[subj.id];
+                            }
+
+                            setUserFormData({
+                              ...userFormData,
+                              assignedSubjects: next,
+                              teacherSubjectGrades: newGrades,
+                              teacherSubjectGroups: newGroups
+                            });
                           };
 
                           const handleSelectAllInLevel = (lvl: string) => {
-                            const lvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                            const rawLvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
                             const current = userFormData.assignedSubjects || [];
                             const additions: string[] = [];
-                            lvlSubjs.forEach(s => {
-                              additions.push(s.id, `${s.name}__${s.level}`, s.name);
+                            rawLvlSubjs.forEach(s => {
+                              additions.push(s.id, `${s.name}__${s.level}`);
                             });
                             setUserFormData({
                               ...userFormData,
@@ -3858,22 +3903,38 @@ export default function Settings() {
                           };
 
                           const handleClearLevel = (lvl: string) => {
-                            const lvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
-                            const lvlIds = new Set(lvlSubjs.map(s => s.id));
-                            const lvlKeys = new Set(lvlSubjs.map(s => `${s.name}__${s.level}`));
+                            const rawLvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                            const lvlIds = new Set(rawLvlSubjs.map(s => s.id));
+                            const lvlKeys = new Set(rawLvlSubjs.map(s => `${s.name}__${s.level}`.toLowerCase().trim()));
+                            const lvlNames = new Set(rawLvlSubjs.map(s => s.name.toLowerCase().trim()));
                             const current = userFormData.assignedSubjects || [];
-                            let next = current.filter(x => !lvlIds.has(x) && !lvlKeys.has(x));
-                            lvlSubjs.forEach(s => {
-                              const remainingHasSameName = subjects.some(other => 
-                                !lvlIds.has(other.id) && 
-                                other.name.toLowerCase() === s.name.toLowerCase() && 
-                                (next.includes(other.id) || next.includes(`${other.name}__${other.level}`))
-                              );
-                              if (!remainingHasSameName) {
-                                next = next.filter(x => x !== s.name);
-                              }
+
+                            const next = current.filter(x => {
+                              if (lvlIds.has(x)) return false;
+                              const normX = x.toLowerCase().trim();
+                              if (lvlKeys.has(normX)) return false;
+                              if (lvlNames.has(normX)) return false;
+                              return true;
                             });
-                            setUserFormData({ ...userFormData, assignedSubjects: next });
+
+                            const newGrades = { ...(userFormData.teacherSubjectGrades || {}) };
+                            const newGroups = { ...(userFormData.teacherSubjectGroups || {}) };
+                            rawLvlSubjs.forEach(s => {
+                              const subjKey = `${s.name}__${s.level}`;
+                              delete newGrades[subjKey];
+                              delete newGrades[s.name];
+                              delete newGrades[s.id];
+                              delete newGroups[subjKey];
+                              delete newGroups[s.name];
+                              delete newGroups[s.id];
+                            });
+
+                            setUserFormData({
+                              ...userFormData,
+                              assignedSubjects: next,
+                              teacherSubjectGrades: newGrades,
+                              teacherSubjectGroups: newGroups
+                            });
                           };
 
                           const handleExpandAll = (expand: boolean) => {
@@ -3927,7 +3988,7 @@ export default function Settings() {
                                       const allAdditions: string[] = [];
                                       subjects.forEach(s => {
                                         if (levelsList.some(lvl => lvlMatches(s.level, lvl))) {
-                                          allAdditions.push(s.id, `${s.name}__${s.level}`, s.name);
+                                          allAdditions.push(s.id, `${s.name}__${s.level}`);
                                         }
                                       });
                                       setUserFormData({ ...userFormData, assignedSubjects: Array.from(new Set(allAdditions)) });
@@ -3939,7 +4000,7 @@ export default function Settings() {
                                   <span className="text-slate-300">•</span>
                                   <button
                                     type="button"
-                                    onClick={() => setUserFormData({ ...userFormData, assignedSubjects: [] })}
+                                    onClick={() => setUserFormData({ ...userFormData, assignedSubjects: [], teacherSubjectGrades: {}, teacherSubjectGroups: {} })}
                                     className="text-slate-500 hover:text-slate-700 underline cursor-pointer"
                                   >
                                     Limpiar
@@ -3950,7 +4011,15 @@ export default function Settings() {
                               {/* Table / List of Levels */}
                               <div className="divide-y divide-slate-200">
                                 {levelsList.map((lvl) => {
-                                  const lvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                                  const rawLvlSubjs = subjects.filter(s => lvlMatches(s.level, lvl));
+                                  // Deduplicate subjects within this level by normalized name so no duplicates appear
+                                  const seenLvlNames = new Set<string>();
+                                  const lvlSubjs = rawLvlSubjs.filter(s => {
+                                    const norm = s.name.toLowerCase().trim();
+                                    if (seenLvlNames.has(norm)) return false;
+                                    seenLvlNames.add(norm);
+                                    return true;
+                                  });
                                   const selectedInLvl = lvlSubjs.filter(s => isSubjectSelected(s));
                                   const selectedCount = selectedInLvl.length;
                                   const isExpanded = expandedSubjectLevels[lvl] !== undefined
@@ -3965,6 +4034,12 @@ export default function Settings() {
                                     ? defaultLevelGrades.filter(g => userFormData.restrictedGrades?.includes(g))
                                     : defaultLevelGrades;
                                   const effectiveGrades = finalGrades.length > 0 ? finalGrades : defaultLevelGrades;
+
+                                  const defaultLevelGroups = (userFormData.restrictedGroups && userFormData.restrictedGroups.length > 0)
+                                    ? userFormData.restrictedGroups
+                                    : (settings.academicGroups && settings.academicGroups.length > 0)
+                                      ? settings.academicGroups
+                                      : ['A', 'B', 'C'];
 
                                   return (
                                     <div key={lvl} className="transition-all">
@@ -4016,9 +4091,14 @@ export default function Settings() {
                                                   const grades = userFormData.teacherSubjectGrades?.[subjKey] 
                                                     || userFormData.teacherSubjectGrades?.[s.name];
                                                   const hasSpecificGrades = grades && grades.length > 0 && !grades.includes('all');
+                                                  const groups = userFormData.teacherSubjectGroups?.[subjKey] 
+                                                    || userFormData.teacherSubjectGroups?.[s.name];
+                                                  const hasSpecificGroups = groups && groups.length > 0 && !groups.includes('all');
                                                   return (
                                                     <span key={s.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800">
-                                                      {s.name} {hasSpecificGrades ? `(${grades.join(',')})` : ''}
+                                                      {s.name}
+                                                      {hasSpecificGrades ? ` (${grades!.join(',')})` : ''}
+                                                      {hasSpecificGroups ? ` [Grp: ${groups!.join(',')}]` : ''}
                                                     </span>
                                                   );
                                                 })}
@@ -4088,6 +4168,12 @@ export default function Settings() {
                                                   || ['all'];
                                                 const isAllGrades = currentGrades.includes('all') || currentGrades.length === 0;
 
+                                                const currentGroups = userFormData.teacherSubjectGroups?.[subjKey] 
+                                                  || userFormData.teacherSubjectGroups?.[subj.name] 
+                                                  || userFormData.teacherSubjectGroups?.[subj.id]
+                                                  || ['all'];
+                                                const isAllGroups = currentGroups.includes('all') || currentGroups.length === 0;
+
                                                 return (
                                                   <div 
                                                     key={subj.id}
@@ -4126,67 +4212,140 @@ export default function Settings() {
                                                       </div>
                                                     </div>
 
-                                                    {/* Grade assignment selector per subject */}
+                                                    {/* Grade and Group assignment selector per subject */}
                                                     {isSelected && (
-                                                      <div className="pt-2 border-t border-indigo-200/60 space-y-1 bg-white/80 p-1.5 rounded-lg">
-                                                        <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
-                                                          <span>Grados en {lvl}:</span>
-                                                          <span className="text-indigo-700 font-black">
-                                                            {isAllGrades ? 'Todos los grados' : currentGrades.join(', ')}
-                                                          </span>
+                                                      <div className="pt-2 border-t border-indigo-200/60 space-y-2 bg-white/80 p-1.5 rounded-lg">
+                                                        {/* Grados */}
+                                                        <div className="space-y-1">
+                                                          <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+                                                            <span>Grados en {lvl}:</span>
+                                                            <span className="text-indigo-700 font-black">
+                                                              {isAllGrades ? 'Todos los grados' : currentGrades.join(', ')}
+                                                            </span>
+                                                          </div>
+                                                          <div className="flex flex-wrap items-center gap-1">
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => {
+                                                                const newMap = { ...(userFormData.teacherSubjectGrades || {}) };
+                                                                newMap[subjKey] = ['all'];
+                                                                newMap[subj.name] = ['all'];
+                                                                newMap[subj.id] = ['all'];
+                                                                setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
+                                                              }}
+                                                              className={cn(
+                                                                "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                                                isAllGrades
+                                                                  ? "bg-indigo-600 text-white shadow-xs"
+                                                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                              )}
+                                                            >
+                                                              Todos
+                                                            </button>
+                                                            {effectiveGrades.map(grd => {
+                                                              const isGradeActive = !isAllGrades && currentGrades.includes(grd);
+                                                              return (
+                                                                <button
+                                                                  key={grd}
+                                                                  type="button"
+                                                                  onClick={() => {
+                                                                    const newMap = { ...(userFormData.teacherSubjectGrades || {}) };
+                                                                    let nextGrades: string[];
+                                                                    if (isAllGrades) {
+                                                                      nextGrades = [grd];
+                                                                    } else if (currentGrades.includes(grd)) {
+                                                                      nextGrades = currentGrades.filter(g => g !== grd);
+                                                                      if (nextGrades.length === 0) nextGrades = ['all'];
+                                                                    } else {
+                                                                      nextGrades = [...currentGrades, grd];
+                                                                    }
+                                                                    newMap[subjKey] = nextGrades;
+                                                                    newMap[subj.name] = nextGrades;
+                                                                    newMap[subj.id] = nextGrades;
+                                                                    setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
+                                                                  }}
+                                                                  className={cn(
+                                                                    "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
+                                                                    isGradeActive
+                                                                      ? "bg-indigo-600 text-white font-black shadow-xs"
+                                                                      : isAllGrades
+                                                                        ? "bg-indigo-100 text-indigo-900 border border-indigo-200 hover:bg-indigo-200"
+                                                                        : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                  )}
+                                                                >
+                                                                  {grd}
+                                                                </button>
+                                                              );
+                                                            })}
+                                                          </div>
                                                         </div>
-                                                        <div className="flex flex-wrap items-center gap-1">
-                                                          <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                              const newMap = { ...(userFormData.teacherSubjectGrades || {}) };
-                                                              newMap[subjKey] = ['all'];
-                                                              newMap[subj.name] = ['all'];
-                                                              setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
-                                                            }}
-                                                            className={cn(
-                                                              "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                                                              isAllGrades
-                                                                ? "bg-indigo-600 text-white shadow-xs"
-                                                                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                                                            )}
-                                                          >
-                                                            Todos
-                                                          </button>
-                                                          {effectiveGrades.map(grd => {
-                                                            const isGradeActive = !isAllGrades && currentGrades.includes(grd);
-                                                            return (
-                                                              <button
-                                                                key={grd}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                  const newMap = { ...(userFormData.teacherSubjectGrades || {}) };
-                                                                  let nextGrades: string[];
-                                                                  if (isAllGrades) {
-                                                                    nextGrades = [grd];
-                                                                  } else if (currentGrades.includes(grd)) {
-                                                                    nextGrades = currentGrades.filter(g => g !== grd);
-                                                                    if (nextGrades.length === 0) nextGrades = ['all'];
-                                                                  } else {
-                                                                    nextGrades = [...currentGrades, grd];
-                                                                  }
-                                                                  newMap[subjKey] = nextGrades;
-                                                                  newMap[subj.name] = nextGrades;
-                                                                  setUserFormData({ ...userFormData, teacherSubjectGrades: newMap });
-                                                                }}
-                                                                className={cn(
-                                                                  "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
-                                                                  isGradeActive
-                                                                    ? "bg-indigo-600 text-white font-black shadow-xs"
-                                                                    : isAllGrades
-                                                                      ? "bg-indigo-100 text-indigo-900 border border-indigo-200 hover:bg-indigo-200"
-                                                                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                                                                )}
-                                                              >
-                                                                {grd}
-                                                              </button>
-                                                            );
-                                                          })}
+
+                                                        {/* Grupos en el nivel */}
+                                                        <div className="pt-1.5 border-t border-slate-100 space-y-1">
+                                                          <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+                                                            <span>Grupos en {lvl}:</span>
+                                                            <span className="text-blue-700 font-black">
+                                                              {isAllGroups ? 'Todos los grupos' : currentGroups.map(g => `Grupo ${g}`).join(', ')}
+                                                            </span>
+                                                          </div>
+                                                          <div className="flex flex-wrap items-center gap-1">
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => {
+                                                                const newMap = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                                newMap[subjKey] = ['all'];
+                                                                newMap[subj.name] = ['all'];
+                                                                newMap[subj.id] = ['all'];
+                                                                setUserFormData({ ...userFormData, teacherSubjectGroups: newMap });
+                                                              }}
+                                                              className={cn(
+                                                                "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                                                isAllGroups
+                                                                  ? "bg-blue-600 text-white shadow-xs"
+                                                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                              )}
+                                                            >
+                                                              Todos
+                                                            </button>
+                                                            {defaultLevelGroups.map(grp => {
+                                                              const isGroupActive = !isAllGroups && currentGroups.includes(grp);
+                                                              return (
+                                                                <button
+                                                                  key={grp}
+                                                                  type="button"
+                                                                  onClick={() => {
+                                                                    const newMap = { ...(userFormData.teacherSubjectGroups || {}) };
+                                                                    let nextGroups: string[];
+                                                                    if (isAllGroups) {
+                                                                      nextGroups = [grp];
+                                                                    } else if (currentGroups.includes(grp)) {
+                                                                      nextGroups = currentGroups.filter(g => g !== grp);
+                                                                      if (nextGroups.length === 0) nextGroups = ['all'];
+                                                                    } else {
+                                                                      nextGroups = [...currentGroups, grp];
+                                                                      if (defaultLevelGroups.every(g => nextGroups.includes(g))) {
+                                                                        nextGroups = ['all'];
+                                                                      }
+                                                                    }
+                                                                    newMap[subjKey] = nextGroups;
+                                                                    newMap[subj.name] = nextGroups;
+                                                                    newMap[subj.id] = nextGroups;
+                                                                    setUserFormData({ ...userFormData, teacherSubjectGroups: newMap });
+                                                                  }}
+                                                                  className={cn(
+                                                                    "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer",
+                                                                    isGroupActive
+                                                                      ? "bg-blue-600 text-white font-black shadow-xs"
+                                                                      : isAllGroups
+                                                                        ? "bg-blue-50 text-blue-900 border border-blue-200 hover:bg-blue-100"
+                                                                        : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                                  )}
+                                                                >
+                                                                  Grupo {grp}
+                                                                </button>
+                                                              );
+                                                            })}
+                                                          </div>
                                                         </div>
                                                       </div>
                                                     )}
@@ -4471,12 +4630,33 @@ export default function Settings() {
                           ? userFormData.password.trim()
                           : (editingUser?.currentPassword || '');
                         
+                        // If specific subjects with groups are configured, ensure restrictedGroups covers them
+                        let finalRestrictedGroups = userFormData.restrictedGroups || [];
+                        if (userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific') {
+                          const subjGroups = new Set<string>();
+                          Object.values(userFormData.teacherSubjectGroups || {}).forEach(arr => {
+                            if (Array.isArray(arr)) {
+                              arr.filter(g => g !== 'all').forEach(g => subjGroups.add(g));
+                            }
+                          });
+                          if (subjGroups.size > 0) {
+                            finalRestrictedGroups = Array.from(new Set([...finalRestrictedGroups, ...Array.from(subjGroups)]));
+                          }
+                        }
+
+                        const isMultiGroup = userFormData.role === 'Docente' && (
+                          userFormData.teacherGroupAccess === 'multiple' ||
+                          finalRestrictedGroups.length > 1 ||
+                          (userFormData.restrictedLevels && userFormData.restrictedLevels.length > 1) ||
+                          (userFormData.restrictedGrades && userFormData.restrictedGrades.length > 1)
+                        );
+
                         await setDoc(userRef, {
                           ...firestoreData,
                           ...(finalPassword ? { currentPassword: finalPassword } : {}),
                           teacherSubjectAccess: userFormData.role === 'Docente' ? (userFormData.teacherSubjectAccess || 'all') : 'all',
                           assignedSubjects: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
-                            ? (userFormData.assignedSubjects || [])
+                            ? Array.from(new Set(userFormData.assignedSubjects || []))
                             : [],
                           teacherSubjectGrades: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
                             ? (userFormData.teacherSubjectGrades || {})
@@ -4484,10 +4664,11 @@ export default function Settings() {
                           teacherSubjectGroups: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
                             ? (userFormData.teacherSubjectGroups || {})
                             : {},
-                          teacherGroupAccess: userFormData.role === 'Docente' ? (userFormData.teacherGroupAccess || 'single') : 'single',
+                          teacherGroupAccess: isMultiGroup ? 'multiple' : (userFormData.teacherGroupAccess || 'single'),
+                          restrictedGroups: finalRestrictedGroups,
                           assignedLevel: userFormData.assignedLevel || (userFormData.restrictedLevels?.[0] || 'General'),
                           assignedGrade: userFormData.assignedGrade || (userFormData.restrictedGrades?.[0] || ''),
-                          assignedGroup: userFormData.assignedGroup || (userFormData.restrictedGroups?.[0] || ''),
+                          assignedGroup: userFormData.assignedGroup || (finalRestrictedGroups[0] || ''),
                           id: uid,
                           createdAt: editingUser ? editingUser.createdAt : serverTimestamp(),
                           updatedAt: serverTimestamp()
@@ -4695,7 +4876,7 @@ export default function Settings() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {(() => {
                                     const seen = new Set<string>();
-                                    const itemsToRender: { id: string; name: string; level?: string; grades?: string[] }[] = [];
+                                    const itemsToRender: { id: string; name: string; level?: string; grades?: string[]; groups?: string[] }[] = [];
 
                                     (selectedUserDetail.assignedSubjects || []).forEach(subj => {
                                       const subjObj = subjects.find(s => s.id === subj || `${s.name}__${s.level}` === subj || s.name === subj);
@@ -4709,12 +4890,17 @@ export default function Settings() {
                                           || (subjObj && selectedUserDetail.teacherSubjectGrades?.[subjObj.id])
                                           || selectedUserDetail.teacherSubjectGrades?.[name]
                                           || selectedUserDetail.teacherSubjectGrades?.[subj];
-                                        itemsToRender.push({ id: subjObj?.id || subj, name, level, grades });
+                                        const groups = selectedUserDetail.teacherSubjectGroups?.[uniqueKey]
+                                          || (subjObj && selectedUserDetail.teacherSubjectGroups?.[subjObj.id])
+                                          || selectedUserDetail.teacherSubjectGroups?.[name]
+                                          || selectedUserDetail.teacherSubjectGroups?.[subj];
+                                        itemsToRender.push({ id: subjObj?.id || subj, name, level, grades, groups });
                                       }
                                     });
 
                                     return itemsToRender.map(item => {
                                       const hasSpecificGrades = item.grades && item.grades.length > 0 && !item.grades.includes('all');
+                                      const hasSpecificGroups = item.groups && item.groups.length > 0 && !item.groups.includes('all');
                                       return (
                                         <span key={item.id} className="bg-white border border-blue-200 text-blue-900 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5 shadow-2xs">
                                           <span>{item.name}</span>
@@ -4726,6 +4912,11 @@ export default function Settings() {
                                           {hasSpecificGrades && (
                                             <span className="text-[9px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 rounded font-black">
                                               Grados: {item.grades!.join(', ')}
+                                            </span>
+                                          )}
+                                          {hasSpecificGroups && (
+                                            <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 rounded font-black">
+                                              Grupos: {item.groups!.join(', ')}
                                             </span>
                                           )}
                                         </span>

@@ -128,12 +128,14 @@ export default function TeacherPortal() {
   }, [settings?.academicGrades, restrictedGrades]);
 
   const availableGroups = useMemo(() => {
-    const all = ['A', 'B', 'C', 'D'];
+    const all = settings?.academicGroups && settings.academicGroups.length > 0
+      ? settings.academicGroups
+      : ['A', 'B', 'C', 'D'];
     if (restrictedGroups.length > 0) {
       return all.filter(grp => restrictedGroups.includes(grp));
     }
     return all;
-  }, [restrictedGroups]);
+  }, [settings?.academicGroups, restrictedGroups]);
 
   const isMultiGroupTeacher = userProfile?.role === 'Docente' && (
     userProfile.teacherGroupAccess === 'multiple' ||
@@ -217,7 +219,11 @@ export default function TeacherPortal() {
       const allowed = userProfile.assignedSubjects || [];
       list = list.filter(s => {
         const keyWithLevel = `${s.name}__${s.level}`;
-        const isSubjectAllowed = allowed.includes(s.id) || allowed.includes(keyWithLevel) || allowed.includes(s.name);
+        const isSubjectAllowed = allowed.some(a => 
+          a === s.id || 
+          a.toLowerCase().trim() === keyWithLevel.toLowerCase().trim() ||
+          a.toLowerCase().trim() === s.name.toLowerCase().trim()
+        );
         if (!isSubjectAllowed) return false;
 
         // Check if grade-restricted for this subject
@@ -245,6 +251,16 @@ export default function TeacherPortal() {
         return true;
       });
     }
+
+    // CRITICAL: Deduplicate subjects by normalized name within the same level
+    // This strictly guarantees no subject is ever duplicated in the grading table
+    const seenNames = new Set<string>();
+    list = list.filter(s => {
+      const norm = s.name.toLowerCase().trim();
+      if (seenNames.has(norm)) return false;
+      seenNames.add(norm);
+      return true;
+    });
 
     return list;
   }, [subjects, activeLevel, activeGrade, activeGroup, userProfile]);

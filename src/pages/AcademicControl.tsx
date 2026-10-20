@@ -2291,7 +2291,13 @@ function DetailItem({ label, value, span = 1 }: { label: string; value?: string 
 }
 
 function SubjectsManagement({ subjects, settings, availableLevels }: { subjects: Subject[]; settings: AppSettings | null; availableLevels?: string[] }) {
-  const [newSubject, setNewSubject] = useState({ name: '', level: '', category: 'Académica' as const, linkedSubjectName: '', isAttendanceCount: false });
+  const [newSubject, setNewSubject] = useState<{
+    name: string;
+    level: string;
+    category: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos';
+    linkedSubjectName: string;
+    isAttendanceCount: boolean;
+  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
@@ -2315,11 +2321,21 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
       alert("Por favor completa el nombre y selecciona un nivel.");
       return;
     }
+    const cleanName = newSubject.name.trim();
+    const cleanLevel = newSubject.level.trim();
+    const alreadyExists = subjects.some(s => 
+      (s.level || '').toLowerCase().trim() === cleanLevel.toLowerCase() &&
+      s.name.toLowerCase().trim() === cleanName.toLowerCase()
+    );
+    if (alreadyExists) {
+      alert(`La materia "${cleanName}" ya está registrada en el nivel ${cleanLevel}. No se pueden duplicar materias en el mismo nivel.`);
+      return;
+    }
     setIsSaving(true);
     try {
       await addDoc(collection(db, 'subjects'), {
-        name: newSubject.name.trim(),
-        level: newSubject.level,
+        name: cleanName,
+        level: cleanLevel,
         category: newSubject.category,
         linkedSubjectName: newSubject.category === 'Autonomía Curricular' ? (newSubject.linkedSubjectName || null) : null,
         isAttendanceCount: (newSubject.category === 'Desarrollo Personal' || newSubject.category === 'Aspectos Formativos') ? !!newSubject.isAttendanceCount : false,
@@ -2336,11 +2352,22 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
 
   const handleUpdateSubject = async () => {
     if (!editingSubject || !editingSubject.name || !editingSubject.level) return;
+    const cleanName = editingSubject.name.trim();
+    const cleanLevel = editingSubject.level.trim();
+    const alreadyExists = subjects.some(s => 
+      s.id !== editingSubject.id &&
+      (s.level || '').toLowerCase().trim() === cleanLevel.toLowerCase() &&
+      s.name.toLowerCase().trim() === cleanName.toLowerCase()
+    );
+    if (alreadyExists) {
+      alert(`Ya existe otra materia llamada "${cleanName}" en el nivel ${cleanLevel}.`);
+      return;
+    }
     setIsSaving(true);
     try {
       await updateDoc(doc(db, 'subjects', editingSubject.id), {
-        name: editingSubject.name.trim(),
-        level: editingSubject.level,
+        name: cleanName,
+        level: cleanLevel,
         category: editingSubject.category || 'Académica',
         linkedSubjectName: editingSubject.category === 'Autonomía Curricular' ? (editingSubject.linkedSubjectName || null) : null,
         isAttendanceCount: (editingSubject.category === 'Desarrollo Personal' || editingSubject.category === 'Aspectos Formativos') ? !!editingSubject.isAttendanceCount : false,
@@ -2375,11 +2402,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
       return;
     }
     const targetSubjectNames = subjects
-      .filter(s => s.level === targetLevel)
-      .map(s => `${s.name}__${s.category || 'Académica'}`);
+      .filter(s => (s.level || '').toLowerCase().trim() === targetLevel.toLowerCase().trim())
+      .map(s => s.name.toLowerCase().trim());
 
     const toCreate = sourceSubjects.filter(
-      s => !targetSubjectNames.includes(`${s.name}__${s.category || 'Académica'}`)
+      s => !targetSubjectNames.includes(s.name.toLowerCase().trim())
     );
 
     if (toCreate.length === 0) {
