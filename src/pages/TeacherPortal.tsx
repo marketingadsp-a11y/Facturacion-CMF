@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
-import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -39,7 +39,8 @@ import {
   School,
   IdCard,
   QrCode,
-  FileBadge
+  FileBadge,
+  X
 } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -66,6 +67,12 @@ export default function TeacherPortal() {
   const [grades, setGrades] = useState<Record<string, StudentGrade>>({});
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
+  const [cycleAbsences, setCycleAbsences] = useState<Attendance[]>([]);
+  const [justificationModal, setJustificationModal] = useState<{
+    student: Student;
+    currentReason?: string;
+  } | null>(null);
+  const [justificationReason, setJustificationReason] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'horario' | 'credencial'>('attendance');
   const [teachers, setTeachers] = useState<AppUser[]>([]);
@@ -92,6 +99,8 @@ export default function TeacherPortal() {
   const [isLocking, setIsLocking] = useState(false);
   const [savedStatus, setSavedStatus] = useState<string | null>(null);
   const [isBimestreLocked, setIsBimestreLocked] = useState(false);
+  const [lockedPeriods, setLockedPeriods] = useState<Record<number, boolean>>({});
+  const hasManuallySelectedPeriodRef = useRef(false);
   const [selectedLevel, setSelectedLevel] = useState<string>('');
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
@@ -183,12 +192,18 @@ export default function TeacherPortal() {
     if (activeGroup) {
       list = list.filter(s => s.group === activeGroup);
     }
-    return list.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+    return list.sort((a, b) => {
+      const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
+      const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }, [allStudents, restrictedLevels, restrictedGrades, restrictedGroups, activeLevel, activeGrade, activeGroup]);
 
   const evalConfig = useMemo(() => {
     return getLevelEvaluationConfig(settings, activeLevel);
   }, [settings, activeLevel]);
+
+  const gradingScale = evalConfig.gradingScale || 'numeric_10';
 
   // Subjects for the current active level
   const activeLevelSubjects = useMemo(() => {
@@ -410,22 +425,63 @@ export default function TeacherPortal() {
     return () => unsubGrades();
   }, [selectedBimestre, currentCycleId]);
 
-  // Fetch lock status
+  // Fetch lock status for all periods of current class
   useEffect(() => {
     if (!currentCycleId || !activeLevel || !activeGrade) {
+      setLockedPeriods({});
       setIsBimestreLocked(false);
       return;
     }
-    
-    const lockId = `${selectedBimestre}_${activeLevel}_${activeGrade}_${activeGroup || ''}_${currentCycleId}`;
-    const unsubLock = onSnapshot(doc(db, 'bimestreLocks', lockId), (snap) => {
-      setIsBimestreLocked(snap.exists() && snap.data().locked);
-    }, (error) => {
-      console.error("Error reading lock status:", error);
+
+    const unsubs = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1).map((b) => {
+      const lockId = `${b}_${activeLevel}_${activeGrade}_${activeGroup || ''}_${currentCycleId}`;
+      return onSnapshot(doc(db, 'bimestreLocks', lockId), (snap) => {
+        const isLocked = snap.exists() && !!snap.data()?.locked;
+        setLockedPeriods(prev => {
+          if (prev[b] === isLocked) return prev;
+          return { ...prev, [b]: isLocked };
+        });
+      }, (error) => {
+        console.error("Error reading lock status:", error);
+      });
     });
 
-    return () => unsubLock();
-  }, [activeLevel, activeGrade, activeGroup, selectedBimestre, currentCycleId]);
+    return () => {
+      unsubs.forEach(unsub => unsub());
+    };
+  }, [activeLevel, activeGrade, activeGroup, currentCycleId, evalConfig.periodCount]);
+
+  // Keep isBimestreLocked in sync with selected period
+  useEffect(() => {
+    setIsBimestreLocked(!!lockedPeriods[selectedBimestre]);
+  }, [lockedPeriods, selectedBimestre]);
+
+  // Reset manual selection when switching tabs or class selection
+  useEffect(() => {
+    hasManuallySelectedPeriodRef.current = false;
+  }, [activeTab, activeLevel, activeGrade, activeGroup]);
+
+  // Auto-advance to the next available (unlocked) period when entering grading or when locks update
+  useEffect(() => {
+    if (activeTab !== 'grading') return;
+    if (hasManuallySelectedPeriodRef.current) return;
+    if (!currentCycleId || !activeLevel || !activeGrade) return;
+
+    // Find the first period that is NOT locked
+    const firstAvailable = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1)
+      .find(b => !lockedPeriods[b]);
+
+    if (firstAvailable) {
+      if (selectedBimestre !== firstAvailable) {
+        setSelectedBimestre(firstAvailable as Bimestre);
+      }
+    } else if (Object.keys(lockedPeriods).length >= evalConfig.periodCount) {
+      // If all periods are finalized/locked, stay on the last period
+      if (selectedBimestre !== evalConfig.periodCount) {
+        setSelectedBimestre(evalConfig.periodCount as Bimestre);
+      }
+    }
+  }, [activeTab, lockedPeriods, evalConfig.periodCount, currentCycleId, activeLevel, activeGrade, selectedBimestre]);
 
   // Fetch attendance for selected date
   useEffect(() => {
@@ -453,6 +509,39 @@ export default function TeacherPortal() {
     return () => unsubAttendance();
   }, [selectedDate, currentCycleId, activeTab]);
 
+  // Fetch all 'Falta' records in the active cycle to calculate cumulative inasistencias per period
+  useEffect(() => {
+    if (!currentCycleId) {
+      setCycleAbsences([]);
+      return;
+    }
+
+    const unsubAbsences = onSnapshot(
+      query(
+        collection(db, 'attendance'),
+        where('cycleId', '==', currentCycleId),
+        where('status', '==', 'Falta')
+      ),
+      (snap) => {
+        const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Attendance));
+        setCycleAbsences(list);
+      },
+      (error) => {
+        console.error("Error loading cycle absences:", error);
+      }
+    );
+
+    return () => unsubAbsences();
+  }, [currentCycleId]);
+
+  const getStudentAbsenceCount = (studentId: string, period: number): number => {
+    return cycleAbsences.filter(att => {
+      if (att.studentId !== studentId) return false;
+      const attPeriod = att.period || getPeriodForDate(att.date, evalConfig.periodCount);
+      return attPeriod === period;
+    }).length;
+  };
+
   const handleGradeChange = (studentId: string, field: string, value: any, isSubject: boolean = false) => {
     if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
     setGrades(prev => {
@@ -472,21 +561,49 @@ export default function TeacherPortal() {
       };
 
       if (isSubject) {
-        const next = {
-          ...current,
-          subjects: {
-            ...current.subjects,
-            [field]: parseFloat(value) || 0
+        let parsedVal: number | string = value;
+        if (gradingScale === 'letters') {
+          parsedVal = value ? String(value).toUpperCase().trim() : '';
+        } else if (value === '' || value === null || value === undefined) {
+          parsedVal = '';
+        } else {
+          const num = parseFloat(value);
+          parsedVal = isNaN(num) ? 0 : num;
+        }
+
+        const nextSubjects = { ...current.subjects };
+        if (parsedVal === '') {
+          delete nextSubjects[field];
+        } else {
+          nextSubjects[field] = parsedVal;
+        }
+
+        return {
+          ...prev,
+          [studentId]: {
+            ...current,
+            subjects: nextSubjects
           }
         };
-        return { ...prev, [studentId]: next };
       }
 
-      const next = {
-        ...current,
-        [field]: parseFloat(value) || 0
+      let parsedFieldVal: any = value;
+      if (gradingScale === 'letters') {
+        parsedFieldVal = value ? String(value).toUpperCase().trim() : '';
+      } else if (value === '' || value === null || value === undefined) {
+        parsedFieldVal = 0;
+      } else {
+        const num = parseFloat(value);
+        parsedFieldVal = isNaN(num) ? 0 : num;
+      }
+
+      return {
+        ...prev,
+        [studentId]: {
+          ...current,
+          [field]: parsedFieldVal
+        }
       };
-      return { ...prev, [studentId]: next };
     });
   };
 
@@ -494,15 +611,47 @@ export default function TeacherPortal() {
     if (!hasPermission('grading', 'manage')) return;
     setIsSaving(true);
     try {
-      const promises = Object.values(grades).map(grade => {
-        const id = `${grade.studentId}_B${selectedBimestre}_${currentCycleId}`;
+      const trackerSubj = personalDevLevelSubjects.find(isAttendanceTrackingSubject);
+
+      const promises = students.map(student => {
+        const grade = grades[student.id] || {
+          studentId: student.id,
+          bimestre: selectedBimestre,
+          cycleId: currentCycleId,
+          subjects: {},
+          conduct: 0,
+          uniform: 0,
+          attendance: 0,
+          tasksNotDone: 0,
+          tardies: 0,
+          cleanliness: 0,
+          updatedAt: serverTimestamp() as any,
+          createdBy: userProfile?.id || 'system'
+        };
+
+        const autoFaltas = trackerSubj ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
+        const finalAttendance = autoFaltas !== null 
+          ? (grade.attendance !== undefined && grade.attendance !== '' ? grade.attendance : autoFaltas)
+          : grade.attendance;
+
+        const updatedSubjects = { ...(grade.subjects || {}) };
+        if (trackerSubj && autoFaltas !== null) {
+          if (updatedSubjects[trackerSubj.name] === undefined || updatedSubjects[trackerSubj.name] === '') {
+            updatedSubjects[trackerSubj.name] = autoFaltas;
+          }
+        }
+
+        const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
         return setDoc(doc(db, 'grades', id), {
           ...grade,
+          attendance: finalAttendance,
+          subjects: updatedSubjects,
           cycleId: currentCycleId,
           updatedAt: serverTimestamp(),
           createdBy: userProfile?.id || 'system'
-        });
+        }, { merge: true });
       });
+
       await Promise.all(promises);
       setSavedStatus('¡Calificaciones guardadas!');
       setTimeout(() => setSavedStatus(null), 3000);
@@ -540,7 +689,15 @@ export default function TeacherPortal() {
         lockedAt: serverTimestamp(),
         lockedBy: userProfile.id
       });
-      setSavedStatus(`¡${periodLabel} finalizado y bloqueado!`);
+
+      hasManuallySelectedPeriodRef.current = false;
+      if (selectedBimestre < evalConfig.periodCount) {
+        const nextB = (selectedBimestre + 1) as Bimestre;
+        setSelectedBimestre(nextB);
+        setSavedStatus(`¡${periodLabel} finalizado! Se avanzó automáticamente al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
+      } else {
+        setSavedStatus(`¡${periodLabel} finalizado y bloqueado! Se han completado todos los periodos.`);
+      }
     } catch (error) {
       console.error("Error locking bimestre:", error);
       alert("Error al finalizar el periodo");
@@ -549,22 +706,123 @@ export default function TeacherPortal() {
     }
   };
 
-  const handleAttendanceToggle = async (studentId: string, newStatus: AttendanceStatus) => {
+  const handleAttendanceToggle = async (studentId: string, newStatus: AttendanceStatus, justification?: string) => {
     if (!userProfile || !currentCycleId) return;
 
     const attId = `${studentId}_${selectedDate}`;
+    const targetPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+
     try {
       await setDoc(doc(db, 'attendance', attId), {
         studentId,
         cycleId: currentCycleId,
         date: selectedDate,
         status: newStatus,
+        justificationReason: newStatus === 'Justificado' ? (justification || 'Justificado con autorización') : null,
+        period: targetPeriod,
         updatedAt: serverTimestamp(),
         createdBy: userProfile.id
       });
+
+      // Recalculate absence count for targetPeriod and sync with grades
+      const otherAbsences = cycleAbsences.filter(a => !(a.studentId === studentId && a.date === selectedDate));
+      const newAbsenceCount = otherAbsences.filter(a => {
+        if (a.studentId !== studentId) return false;
+        const p = a.period || getPeriodForDate(a.date, evalConfig.periodCount);
+        return p === targetPeriod;
+      }).length + (newStatus === 'Falta' ? 1 : 0);
+
+      const trackerSubj = personalDevLevelSubjects.find(isAttendanceTrackingSubject);
+      const gradeId = `${studentId}_B${targetPeriod}_${currentCycleId}`;
+      const updateData: Record<string, any> = {
+        studentId,
+        cycleId: currentCycleId,
+        bimestre: targetPeriod,
+        attendance: newAbsenceCount,
+        updatedAt: serverTimestamp(),
+        createdBy: userProfile.id
+      };
+      if (trackerSubj) {
+        updateData[`subjects.${trackerSubj.name}`] = newAbsenceCount;
+      }
+      await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
+
+      // Update local grades state if targetPeriod is currently viewed
+      if (selectedBimestre === targetPeriod) {
+        setGrades(prev => {
+          const cur = prev[studentId] || {
+            studentId,
+            bimestre: targetPeriod,
+            cycleId: currentCycleId,
+            subjects: {},
+            conduct: 0,
+            uniform: 0,
+            attendance: 0,
+            tasksNotDone: 0,
+            tardies: 0,
+            cleanliness: 0,
+            updatedAt: serverTimestamp() as any,
+            createdBy: userProfile.id
+          };
+          return {
+            ...prev,
+            [studentId]: {
+              ...cur,
+              attendance: newAbsenceCount,
+              subjects: {
+                ...(cur.subjects || {}),
+                ...(trackerSubj ? { [trackerSubj.name]: newAbsenceCount } : {})
+              }
+            }
+          };
+        });
+      }
     } catch (error) {
       console.error("Error saving attendance:", error);
     }
+  };
+
+  const handleMarkAllPresent = async () => {
+    if (!userProfile || !currentCycleId || students.length === 0) return;
+    setIsSaving(true);
+    try {
+      const batch = writeBatch(db);
+      const targetPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+      students.forEach(student => {
+        const attId = `${student.id}_${selectedDate}`;
+        const ref = doc(db, 'attendance', attId);
+        batch.set(ref, {
+          studentId: student.id,
+          cycleId: currentCycleId,
+          date: selectedDate,
+          status: 'Asistió',
+          period: targetPeriod,
+          updatedAt: serverTimestamp(),
+          createdBy: userProfile.id
+        });
+      });
+      await batch.commit();
+      setSavedStatus('¡Todos los alumnos confirmados como Asistió!');
+      setTimeout(() => setSavedStatus(null), 3000);
+    } catch (err) {
+      console.error("Error marking all present:", err);
+      alert("Error al confirmar asistencia");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openJustificationModal = (student: Student, currentReason?: string) => {
+    setJustificationModal({ student, currentReason: currentReason || '' });
+    setJustificationReason(currentReason || '');
+  };
+
+  const handleSaveJustification = async () => {
+    if (!justificationModal) return;
+    const reason = justificationReason.trim() || 'Justificado con autorización';
+    await handleAttendanceToggle(justificationModal.student.id, 'Justificado', reason);
+    setJustificationModal(null);
+    setJustificationReason('');
   };
 
   const filteredStudents = students.filter(s => {
@@ -576,8 +834,8 @@ export default function TeacherPortal() {
       s.matricula
     ], searchTerm);
   }).sort((a, b) => {
-    const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
-    const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
+    const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
+    const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
     return nameA.localeCompare(nameB);
   });
 
@@ -866,8 +1124,12 @@ export default function TeacherPortal() {
     );
   }
 
-  const presentCount = Object.values(attendance).filter(a => a.status === 'Asistió' || a.status === 'Retardo').length;
-  const attendancePercentage = students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0;
+  const studentAttendanceStatuses = students.map(s => attendance[s.id]?.status || 'Asistió');
+  const presentCount = studentAttendanceStatuses.filter(st => st === 'Asistió' || st === 'Retardo' || st === 'Justificado').length;
+  const attendancePercentage = students.length > 0 ? Math.round((presentCount / students.length) * 100) : 100;
+  const faltaCount = studentAttendanceStatuses.filter(st => st === 'Falta').length;
+  const retardoCount = studentAttendanceStatuses.filter(st => st === 'Retardo').length;
+  const justificadoCount = studentAttendanceStatuses.filter(st => st === 'Justificado').length;
 
 
 
@@ -1129,15 +1391,21 @@ export default function TeacherPortal() {
                   key={b}
                   type="button"
                   title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
-                  onClick={() => setSelectedBimestre(b)}
+                  onClick={() => {
+                    hasManuallySelectedPeriodRef.current = true;
+                    setSelectedBimestre(b);
+                  }}
                   className={cn(
-                    "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center",
+                    "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1",
                     selectedBimestre === b 
                       ? "bg-slate-900 text-white shadow-sm" 
-                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                      : lockedPeriods[b]
+                        ? "text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-600"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   )}
                 >
-                  {evalConfig.periodType.charAt(0)}{b}
+                  <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                  {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
                 </button>
               ))}
             </div>
@@ -1156,19 +1424,19 @@ export default function TeacherPortal() {
           {/* Category badges legend bar */}
           <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold">
             <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 mr-1">Categorías:</span>
-            {(!isSpecificTeacher || pureAcademicSubjects.length > 0) && (
+            {pureAcademicSubjects.length > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-blue-50 text-blue-800 border border-blue-200 shadow-xs">
                 <span>Académica: <strong className="font-black text-blue-900">{pureAcademicSubjects.length}</strong></span>
               </span>
             )}
-            {(!isSpecificTeacher || autonomyCurricularSubjects.length > 0) && (
+            {autonomyCurricularSubjects.length > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200 shadow-xs">
                 <span>Autonomía Curricular: <strong className="font-black text-amber-900">{autonomyCurricularSubjects.length}</strong></span>
               </span>
             )}
-            {(!isSpecificTeacher || personalDevLevelSubjects.length > 0) && (
+            {personalDevLevelSubjects.length > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-xs">
-                <span>Desarrollo Personal: <strong className="font-black text-indigo-900">{personalDevLevelSubjects.length > 0 ? personalDevLevelSubjects.length : 6}</strong></span>
+                <span>Desarrollo Personal: <strong className="font-black text-indigo-900">{personalDevLevelSubjects.length}</strong></span>
               </span>
             )}
             {isSpecificTeacher && (
@@ -1176,6 +1444,17 @@ export default function TeacherPortal() {
                 <span>Modo: <strong className="font-black text-purple-900">Materias Específicas ({activeLevelSubjects.length})</strong></span>
               </span>
             )}
+            <span className={cn(
+              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded border shadow-xs sm:ml-auto",
+              gradingScale === 'letters' ? "bg-emerald-50 text-emerald-800 border-emerald-300" :
+              gradingScale === 'numeric_100' ? "bg-purple-50 text-purple-800 border-purple-300" :
+              "bg-blue-50 text-blue-800 border-blue-300"
+            )}>
+              <span>Escala: <strong className="font-black">{
+                gradingScale === 'letters' ? 'Letras (A, B, C, D)' :
+                gradingScale === 'numeric_100' ? 'Numérica (0 a 100)' : 'Numérica (0 a 10)'
+              }</strong></span>
+            </span>
           </div>
 
           {/* If specific teacher and no subjects assigned in this level */}
@@ -1199,14 +1478,17 @@ export default function TeacherPortal() {
                         rowSpan={2} 
                         className="px-4 py-3 sticky left-0 bg-slate-100/95 z-20 w-56 border-r-[3px] border-r-slate-300 border-b border-slate-200 backdrop-blur-sm text-slate-700 shadow-[2px_0_4px_rgba(0,0,0,0.03)]"
                       >
-                        <span>Identidad Alumno</span>
+                        <span>Nombre Alumno</span>
                       </th>
 
                       {/* Grupo: Académica */}
                       {pureAcademicSubjects.length > 0 ? (
                         <th 
                           colSpan={pureAcademicSubjects.length} 
-                          className="py-2.5 px-3 text-center bg-blue-50/90 text-blue-900 border-b border-blue-200 border-r-[3px] border-r-slate-300 font-black"
+                          className={cn(
+                            "py-2.5 px-3 text-center bg-blue-50/90 text-blue-900 border-b border-blue-200 font-black",
+                            (autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0) ? "border-r-[3px] border-r-slate-300" : ""
+                          )}
                         >
                           <div className="flex items-center justify-center gap-1.5">
                             <span className="tracking-wider">Materias Académicas</span>
@@ -1215,12 +1497,12 @@ export default function TeacherPortal() {
                             </span>
                           </div>
                         </th>
-                      ) : !isSpecificTeacher ? (
+                      ) : (autonomyCurricularSubjects.length === 0 && personalDevLevelSubjects.length === 0) ? (
                         <th 
                           colSpan={1} 
-                          className="py-2.5 px-3 text-center bg-blue-50/60 text-blue-400 border-b border-blue-200 border-r-[3px] border-r-slate-300 font-bold italic text-[9px]"
+                          className="py-2.5 px-3 text-center bg-slate-50 text-slate-400 border-b border-slate-200 font-bold italic text-[9px]"
                         >
-                          Sin materias académicas
+                          Sin materias registradas
                         </th>
                       ) : null}
 
@@ -1230,7 +1512,7 @@ export default function TeacherPortal() {
                           colSpan={autonomyCurricularSubjects.length} 
                           className={cn(
                             "py-2.5 px-3 text-center bg-amber-50/90 text-amber-900 border-b border-amber-200 font-black",
-                            (personalDevLevelSubjects.length > 0 || !isSpecificTeacher) ? "border-r-[3px] border-r-slate-300" : ""
+                            personalDevLevelSubjects.length > 0 ? "border-r-[3px] border-r-slate-300" : ""
                           )}
                         >
                           <div className="flex items-center justify-center gap-1.5">
@@ -1243,7 +1525,7 @@ export default function TeacherPortal() {
                       )}
 
                       {/* Grupo: Desarrollo Personal */}
-                      {personalDevLevelSubjects.length > 0 ? (
+                      {personalDevLevelSubjects.length > 0 && (
                         <th 
                           colSpan={personalDevLevelSubjects.length} 
                           className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
@@ -1255,19 +1537,7 @@ export default function TeacherPortal() {
                             </span>
                           </div>
                         </th>
-                      ) : !isSpecificTeacher ? (
-                        <th 
-                          colSpan={6} 
-                          className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
-                        >
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span className="tracking-wider">Desarrollo Personal</span>
-                            <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
-                              6
-                            </span>
-                          </div>
-                        </th>
-                      ) : null}
+                      )}
                     </tr>
 
                     {/* Subject Names Sub-Header Row */}
@@ -1276,12 +1546,13 @@ export default function TeacherPortal() {
                       {pureAcademicSubjects.length > 0 ? (
                         pureAcademicSubjects.map((subj, idx) => {
                           const isLast = idx === pureAcademicSubjects.length - 1;
+                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
                           return (
                             <th 
                               key={subj.id} 
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-blue-50/30 text-blue-950",
-                                isLast ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-200"
+                                (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-200"
                               )} 
                               title={`Académica: ${subj.name}`}
                             >
@@ -1289,8 +1560,8 @@ export default function TeacherPortal() {
                             </th>
                           );
                         })
-                      ) : !isSpecificTeacher ? (
-                        <th className="px-3 py-2 text-center text-slate-400 italic text-[8px] border-r-[3px] border-r-slate-300">
+                      ) : (autonomyCurricularSubjects.length === 0 && personalDevLevelSubjects.length === 0) ? (
+                        <th className="px-3 py-2 text-center text-slate-400 italic text-[8px]">
                           -
                         </th>
                       ) : null}
@@ -1299,23 +1570,29 @@ export default function TeacherPortal() {
                       {autonomyCurricularSubjects.length > 0 && (
                         autonomyCurricularSubjects.map((subj, idx) => {
                           const isLast = idx === autonomyCurricularSubjects.length - 1;
+                          const hasNextGroup = personalDevLevelSubjects.length > 0;
                           return (
                             <th 
                               key={subj.id} 
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-amber-50/60 text-amber-950 font-black",
-                                (isLast && (personalDevLevelSubjects.length > 0 || !isSpecificTeacher)) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-200/70"
+                                (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-200/70"
                               )} 
-                              title={`Autonomía Curricular: ${subj.name}`}
+                              title={`Autonomía Curricular: ${subj.name}${subj.linkedSubjectName ? ` (Suma al promedio de: ${subj.linkedSubjectName})` : ''}`}
                             >
                               <span className="block leading-tight">{subj.name}</span>
+                              {subj.linkedSubjectName && (
+                                <span className="block text-[7px] text-amber-700 font-bold uppercase tracking-tighter mt-0.5">
+                                  🔗 Suma a: {subj.linkedSubjectName}
+                                </span>
+                              )}
                             </th>
                           );
                         })
                       )}
 
                       {/* Desarrollo Personal Subjects */}
-                      {personalDevLevelSubjects.length > 0 ? (
+                      {personalDevLevelSubjects.length > 0 && (
                         personalDevLevelSubjects.map((subj, idx) => {
                           const isLast = idx === personalDevLevelSubjects.length - 1;
                           return (
@@ -1331,17 +1608,7 @@ export default function TeacherPortal() {
                             </th>
                           );
                         })
-                      ) : !isSpecificTeacher ? (
-                        // Fallback when no Desarrollo Personal subjects have been added to this level yet
-                        <>
-                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Conducta">Cond.</th>
-                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Uniforme">Unif.</th>
-                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Inasistencia / Faltas">Falt.</th>
-                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Tareas no realizadas">Tareas</th>
-                          <th className="px-1 py-2.5 text-center border-r border-indigo-200/70 w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Retardo">Ret.</th>
-                          <th className="px-1 py-2.5 text-center w-16 bg-indigo-50/60 text-indigo-900 text-[9px] font-bold" title="Aseo">Aseo</th>
-                        </>
-                      ) : null}
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono">
@@ -1373,8 +1640,8 @@ export default function TeacherPortal() {
                                 </div>
                               )}
                               <div className="min-w-0">
-                                <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.lastName}</p>
-                                <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{student.name}</p>
+                                <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.name}</p>
+                                <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{[student.lastName, student.motherLastName].filter(Boolean).join(' ')}</p>
                               </div>
                             </div>
                           </td>
@@ -1383,31 +1650,55 @@ export default function TeacherPortal() {
                           {pureAcademicSubjects.length > 0 ? (
                             pureAcademicSubjects.map((subj, idx) => {
                               const isLast = idx === pureAcademicSubjects.length - 1;
+                              const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
+                              const rawVal = studentGrade.subjects?.[subj.name] ?? '';
                               return (
                                 <td 
                                   key={subj.id} 
                                   className={cn(
                                     "px-1 py-1.5 bg-blue-50/5",
-                                    isLast ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
+                                    (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
                                   )}
                                 >
-                                  <input
-                                    type="number"
-                                    inputMode="decimal"
-                                    min="0"
-                                    max="10"
-                                    step="0.1"
-                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                    value={studentGrade.subjects?.[subj.name] ?? ''}
-                                    onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                    className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
-                                    placeholder="-"
-                                  />
+                                  {gradingScale === 'letters' ? (
+                                    <select
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={rawVal}
+                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      className={cn(
+                                        "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                        rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                        rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                        rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                        rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                        "bg-slate-50 text-slate-400 border-transparent focus:bg-white focus:border-blue-400"
+                                      )}
+                                    >
+                                      <option value="">-</option>
+                                      <option value="A">A - Destacado</option>
+                                      <option value="B">B - Bueno</option>
+                                      <option value="C">C - Suficiente</option>
+                                      <option value="D">D - Apoyo</option>
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                      min="0"
+                                      max={gradingScale === 'numeric_100' ? "100" : "10"}
+                                      step={gradingScale === 'numeric_100' ? "1" : "0.5"}
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={rawVal}
+                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                      placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                    />
+                                  )}
                                 </td>
                               );
                             })
-                          ) : !isSpecificTeacher ? (
-                            <td className="px-1 py-1.5 border-r-[3px] border-r-slate-300 text-center text-slate-300 text-[10px] italic">
+                          ) : (autonomyCurricularSubjects.length === 0 && personalDevLevelSubjects.length === 0) ? (
+                            <td className="px-1 py-1.5 text-center text-slate-300 text-[10px] italic">
                               -
                             </td>
                           ) : null}
@@ -1416,35 +1707,62 @@ export default function TeacherPortal() {
                           {autonomyCurricularSubjects.length > 0 && (
                             autonomyCurricularSubjects.map((subj, idx) => {
                               const isLast = idx === autonomyCurricularSubjects.length - 1;
+                              const hasNextGroup = personalDevLevelSubjects.length > 0;
+                              const rawVal = studentGrade.subjects?.[subj.name] ?? '';
                               return (
                                 <td 
                                   key={subj.id} 
                                   className={cn(
                                     "px-1 py-1.5 bg-amber-50/20",
-                                    (isLast && (personalDevLevelSubjects.length > 0 || !isSpecificTeacher)) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
+                                    (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
                                   )}
                                 >
-                                  <input
-                                    type="number"
-                                    inputMode="decimal"
-                                    min="0"
-                                    max="10"
-                                    step="0.1"
-                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                    value={studentGrade.subjects?.[subj.name] ?? ''}
-                                    onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                    className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
-                                    placeholder="-"
-                                  />
+                                  {gradingScale === 'letters' ? (
+                                    <select
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={rawVal}
+                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      className={cn(
+                                        "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                        rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                        rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                        rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                        rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                        "bg-amber-50/40 text-amber-400 border-transparent focus:bg-white focus:border-amber-400"
+                                      )}
+                                    >
+                                      <option value="">-</option>
+                                      <option value="A">A - Destacado</option>
+                                      <option value="B">B - Bueno</option>
+                                      <option value="C">C - Suficiente</option>
+                                      <option value="D">D - Apoyo</option>
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                      min="0"
+                                      max={gradingScale === 'numeric_100' ? "100" : "10"}
+                                      step={gradingScale === 'numeric_100' ? "1" : "0.5"}
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={rawVal}
+                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                      placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                    />
+                                  )}
                                 </td>
                               );
                             })
                           )}
 
                           {/* Desarrollo Personal Inputs */}
-                          {personalDevLevelSubjects.length > 0 ? (
+                          {personalDevLevelSubjects.length > 0 && (
                             personalDevLevelSubjects.map((subj, idx) => {
                               const isLast = idx === personalDevLevelSubjects.length - 1;
+                              const isAttendanceTracker = isAttendanceTrackingSubject(subj);
+                              const autoAbsenceCount = isAttendanceTracker ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
+
                               const norm = subj.name.toLowerCase().trim();
                               const legacyField = (
                                 norm === 'conducta' ? 'conduct' :
@@ -1455,7 +1773,9 @@ export default function TeacherPortal() {
                                 norm === 'aseo' ? 'cleanliness' : null
                               ) as keyof StudentGrade | null;
 
-                              const gradeVal = studentGrade.subjects?.[subj.name] ?? (legacyField ? studentGrade[legacyField] : '') ?? '';
+                              const gradeVal = isAttendanceTracker
+                                ? (studentGrade.subjects?.[subj.name] ?? (studentGrade.attendance !== undefined && studentGrade.attendance !== '' ? studentGrade.attendance : (autoAbsenceCount ?? 0)))
+                                : (studentGrade.subjects?.[subj.name] ?? (legacyField ? studentGrade[legacyField] : '') ?? '');
 
                               return (
                                 <td 
@@ -1465,93 +1785,68 @@ export default function TeacherPortal() {
                                     isLast ? "" : "border-r border-indigo-100/70"
                                   )}
                                 >
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="10"
-                                    step="0.1"
-                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                    value={gradeVal}
-                                    onChange={(e) => {
-                                      handleGradeChange(student.id, subj.name, e.target.value, true);
-                                      if (legacyField) {
-                                        handleGradeChange(student.id, legacyField, e.target.value, false);
-                                      }
-                                    }}
-                                    className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                    placeholder="-"
-                                  />
+                                  {isAttendanceTracker ? (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={gradeVal}
+                                      onChange={(e) => {
+                                        handleGradeChange(student.id, subj.name, e.target.value, true);
+                                        handleGradeChange(student.id, 'attendance', e.target.value, false);
+                                      }}
+                                      className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all tabular-nums"
+                                      placeholder="0"
+                                    />
+                                  ) : gradingScale === 'letters' ? (
+                                    <select
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={gradeVal}
+                                      onChange={(e) => {
+                                        handleGradeChange(student.id, subj.name, e.target.value, true);
+                                        if (legacyField) {
+                                          handleGradeChange(student.id, legacyField, e.target.value, false);
+                                        }
+                                      }}
+                                      className={cn(
+                                        "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                        gradeVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                        gradeVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                        gradeVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                        gradeVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                        "bg-indigo-50/30 text-indigo-400 border-transparent focus:bg-white focus:border-indigo-400"
+                                      )}
+                                    >
+                                      <option value="">-</option>
+                                      <option value="A">A - Destacado</option>
+                                      <option value="B">B - Bueno</option>
+                                      <option value="C">C - Suficiente</option>
+                                      <option value="D">D - Apoyo</option>
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                      min="0"
+                                      max={gradingScale === 'numeric_100' ? "100" : "10"}
+                                      step={gradingScale === 'numeric_100' ? "1" : "0.5"}
+                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                      value={gradeVal}
+                                      onChange={(e) => {
+                                        handleGradeChange(student.id, subj.name, e.target.value, true);
+                                        if (legacyField) {
+                                          handleGradeChange(student.id, legacyField, e.target.value, false);
+                                        }
+                                      }}
+                                      className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                      placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                    />
+                                  )}
                                 </td>
                               );
                             })
-                          ) : !isSpecificTeacher ? (
-                            // Fallback inputs if no Desarrollo Personal subjects defined for this level yet
-                            <>
-                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="10"
-                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                  value={studentGrade.conduct ?? ''}
-                                  onChange={(e) => handleGradeChange(student.id, 'conduct', e.target.value)}
-                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                />
-                              </td>
-                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="10"
-                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                  value={studentGrade.uniform ?? ''}
-                                  onChange={(e) => handleGradeChange(student.id, 'uniform', e.target.value)}
-                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                />
-                              </td>
-                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                  value={studentGrade.attendance ?? ''}
-                                  onChange={(e) => handleGradeChange(student.id, 'attendance', e.target.value)}
-                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                />
-                              </td>
-                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                  value={studentGrade.tasksNotDone ?? ''}
-                                  onChange={(e) => handleGradeChange(student.id, 'tasksNotDone', e.target.value)}
-                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                />
-                              </td>
-                              <td className="px-1 py-1.5 border-r border-indigo-100/70 bg-indigo-50/15">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                  value={studentGrade.tardies ?? ''}
-                                  onChange={(e) => handleGradeChange(student.id, 'tardies', e.target.value)}
-                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                />
-                              </td>
-                              <td className="px-1 py-1.5 bg-indigo-50/15">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="10"
-                                  disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                  value={studentGrade.cleanliness ?? ''}
-                                  onChange={(e) => handleGradeChange(student.id, 'cleanliness', e.target.value)}
-                                  className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                />
-                              </td>
-                            </>
-                          ) : null}
+                          )}
                         </tr>
                       );
                     })}
@@ -1565,24 +1860,59 @@ export default function TeacherPortal() {
         <div className="space-y-4">
           {/* Attendance Controls - Compact */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Calendar size={14} className="text-slate-400" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-white border border-slate-200 rounded px-3 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
-              />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar size={14} className="text-slate-400" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-white border border-slate-200 rounded px-3 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
+                />
+              </div>
+
+              {/* Attendance Quick Stats */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] font-black uppercase px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded">
+                  Presentes: {presentCount}/{students.length} ({attendancePercentage}%)
+                </span>
+                {faltaCount > 0 && (
+                  <span className="text-[9px] font-black uppercase px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded flex items-center gap-1">
+                    <UserX size={10} className="text-slate-500" /> {faltaCount} {faltaCount === 1 ? 'Falta' : 'Faltas'}
+                  </span>
+                )}
+                {justificadoCount > 0 && (
+                  <span className="text-[9px] font-black uppercase px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded flex items-center gap-1">
+                    <ShieldCheck size={10} className="text-slate-500" /> {justificadoCount} Justif.
+                  </span>
+                )}
+                {retardoCount > 0 && (
+                  <span className="text-[9px] font-black uppercase px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded flex items-center gap-1">
+                    <ClockIcon size={10} className="text-slate-500" /> {retardoCount} Ret.
+                  </span>
+                )}
+              </div>
             </div>
             
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input
-                placeholder="Filtrar por nombre..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold w-full md:w-64 outline-none focus:ring-1 focus:ring-slate-900"
-              />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleMarkAllPresent}
+                disabled={isSaving || students.length === 0}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[9px] font-black uppercase tracking-wider transition-all border border-slate-200 flex items-center gap-1 shadow-xs"
+                title="Guarda a todos los alumnos como Asistió en esta fecha (100% Asistencia)"
+              >
+                <Check size={11} className="text-slate-700" /> Confirmar Todos Presentes
+              </button>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input
+                  placeholder="Filtrar por nombre..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold w-full md:w-56 outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
             </div>
           </div>
 
@@ -1592,7 +1922,7 @@ export default function TeacherPortal() {
                 <thead>
                   <tr className="bg-slate-50/80 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
                     <th className="px-6 py-3 w-12 text-center">RT</th>
-                    <th className="px-6 py-3">Alumno / Identidad</th>
+                    <th className="px-6 py-3">Nombre Alumno</th>
                     <th className="px-6 py-3 text-center">Registro de Asistencia</th>
                     <th className="px-6 py-3 hidden md:table-cell text-right pr-12">CURP</th>
                   </tr>
@@ -1600,6 +1930,7 @@ export default function TeacherPortal() {
                 <tbody className="divide-y divide-slate-50">
                   {filteredStudents.map((student, index) => {
                     const att = attendance[student.id]?.status || 'Asistió';
+                    const justReason = attendance[student.id]?.justificationReason;
                     
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
@@ -1617,19 +1948,24 @@ export default function TeacherPortal() {
                               />
                             ) : (
                               <div className="w-8 h-8 rounded bg-slate-100 text-slate-600 flex items-center justify-center font-black text-[10px] uppercase shadow-sm shrink-0">
-                                {student.lastName.charAt(0)}
+                                {student.name.charAt(0)}
                               </div>
                             )}
                             <div className="min-w-0">
                               <p className="text-[10px] font-black text-slate-900 tracking-tight uppercase leading-none">
-                                {student.lastName} {student.name}
+                                {student.name} {[student.lastName, student.motherLastName].filter(Boolean).join(' ')}
                               </p>
                               <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5 tracking-tighter">Matrícula: {student.id.substring(0, 8)}</p>
+                              {att === 'Justificado' && (
+                                <p className="text-[8px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded mt-1 inline-flex items-center gap-1">
+                                  <ShieldCheck size={9} className="text-slate-500" /> Justificación: {justReason || 'Autorizada'}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-3">
-                          <div className="flex items-center justify-center">
+                          <div className="flex flex-col items-center justify-center gap-1">
                             <div className="flex items-center gap-1 p-1 bg-slate-50 border border-slate-200 rounded-md w-fit shadow-inner">
                               <button
                                 onClick={() => handleAttendanceToggle(student.id, 'Asistió')}
@@ -1650,6 +1986,7 @@ export default function TeacherPortal() {
                                     ? "bg-rose-600 text-white shadow-sm" 
                                     : "text-slate-400 hover:text-slate-600"
                                 )}
+                                title="Marca Falta (suma automáticamente a inasistencias en calificaciones)"
                               >
                                 <UserX size={10} /> <span className="hidden sm:inline">Falta</span>
                               </button>
@@ -1664,7 +2001,27 @@ export default function TeacherPortal() {
                               >
                                 <ClockIcon size={10} /> <span className="hidden sm:inline">Retardo</span>
                               </button>
+                              <button
+                                onClick={() => openJustificationModal(student, justReason)}
+                                className={cn(
+                                  "px-3 py-1 rounded text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 border border-transparent",
+                                  att === 'Justificado' 
+                                    ? "bg-sky-600 text-white shadow-sm" 
+                                    : "text-slate-400 hover:text-slate-600"
+                                )}
+                                title={justReason ? `Motivo: ${justReason}` : "Marcar como Justificado (cuenta como asistencia)"}
+                              >
+                                <ShieldCheck size={10} /> <span className="hidden sm:inline">Justificado</span>
+                              </button>
                             </div>
+                            {att === 'Justificado' && (
+                              <button
+                                onClick={() => openJustificationModal(student, justReason)}
+                                className="text-[8px] font-bold text-slate-500 hover:text-slate-800 underline uppercase tracking-tight"
+                              >
+                                Editar motivo
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-3 hidden md:table-cell text-right pr-12">
@@ -2290,6 +2647,121 @@ export default function TeacherPortal() {
           )}
         </div>
       ) : null}
+
+      {/* Modal Justificación de Asistencia */}
+      <AnimatePresence>
+        {justificationModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 bg-sky-50 border-b border-sky-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-sky-600 text-white rounded-lg shadow-sm">
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-sky-950 uppercase tracking-tight">Justificar Asistencia</h3>
+                    <p className="text-[10px] text-sky-700 font-bold uppercase tracking-wider">
+                      Cuenta como asistencia en el cálculo real
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setJustificationModal(null)}
+                  className="p-1.5 text-sky-400 hover:text-sky-700 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex items-center gap-3">
+                  {justificationModal.student.photoUrl ? (
+                    <img
+                      src={justificationModal.student.photoUrl}
+                      alt=""
+                      className="w-10 h-10 rounded-lg object-cover border border-slate-200"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center font-black text-xs text-slate-600">
+                      {justificationModal.student.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-slate-900 uppercase truncate">
+                      {justificationModal.student.name} {[justificationModal.student.lastName, justificationModal.student.motherLastName].filter(Boolean).join(' ')}
+                    </p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Fecha: {selectedDate}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                    Motivo o Justificación
+                  </label>
+                  <textarea
+                    rows={3}
+                    autoFocus
+                    value={justificationReason}
+                    onChange={(e) => setJustificationReason(e.target.value)}
+                    placeholder="Ej. Cita médica con receta, permiso familiar por viaje, reposo por salud..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none transition-all resize-none"
+                  />
+                </div>
+
+                {/* Quick chip presets */}
+                <div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Opciones rápidas:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      'Cita médica / Receta',
+                      'Enfermedad / Reposo',
+                      'Permiso familiar',
+                      'Trámite oficial',
+                      'Causa de fuerza mayor'
+                    ].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setJustificationReason(chip)}
+                        className="text-[9px] font-bold px-2.5 py-1 bg-slate-100 hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200 border border-slate-200 rounded-lg text-slate-600 transition-all active:scale-95 cursor-pointer"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setJustificationModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveJustification}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                >
+                  <Check size={14} /> Guardar Justificación
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

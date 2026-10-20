@@ -11,6 +11,7 @@ import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import { calculateStudentDebts } from '../lib/paymentUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade } from '../lib/evaluationUtils';
 
 const TAX_SYSTEMS = [
   { id: '601', name: 'General de Ley Personas Morales' },
@@ -956,22 +957,44 @@ export default function ParentDashboard() {
                       .filter(s => s.category === 'Académica' || !s.category)
                       .map(s => s.name);
                     
-                    // Calculate overall average correctly: only include academic subjects
-                    const allAcademicGrades: number[] = [];
-                    studentGradeDocs.forEach(g => {
-                      if (g.subjects) {
-                        academicSubjectNames.forEach(subName => {
-                          const val = g.subjects[subName];
-                          if (typeof val === 'number') {
-                            allAcademicGrades.push(val);
-                          }
-                        });
-                      }
+                    const evalConfig = getLevelEvaluationConfig(settings, student.level);
+                    const scale = evalConfig.gradingScale || 'numeric_10';
+                    const periodCount = evalConfig.periodCount;
+                    const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
+
+                    // Calculate overall average correctly: include academic subjects with linked autonomy subjects
+                    const allAcademicPoints: number[] = [];
+                    periodIndices.forEach(b => {
+                      academicSubjectNames.forEach(subName => {
+                        const eff = getEffectiveSubjectGrade(subName, b, studentGradeDocs, studentLevelSubjects, scale);
+                        if (eff.numericValue !== null) {
+                          allAcademicPoints.push(eff.numericValue);
+                        }
+                      });
                     });
 
-                    const overallAverage = allAcademicGrades.length > 0 
-                      ? (allAcademicGrades.reduce((a, b) => a + b, 0) / allAcademicGrades.length).toFixed(1) 
+                    const overallAverage = allAcademicPoints.length > 0 
+                      ? formatAverage(allAcademicPoints.reduce((a, b) => a + b, 0), allAcademicPoints.length, scale) 
                       : '-';
+
+                    const badgeText = scale === 'letters'
+                      ? (overallAverage === '-' ? '-' : overallAverage)
+                      : (scale === 'numeric_100'
+                         ? (overallAverage === '-' ? '-' : Number(overallAverage) >= 90 ? 'A+' : Number(overallAverage) >= 80 ? 'B' : Number(overallAverage) >= 70 ? 'C' : 'D')
+                         : (overallAverage === '-' ? '-' : Number(overallAverage) >= 9 ? 'A+' : Number(overallAverage) >= 8 ? 'B' : Number(overallAverage) >= 6 ? 'C' : 'D'));
+
+                    const badgeBg = overallAverage === '-' ? "bg-slate-100 text-slate-300" :
+                      scale === 'letters'
+                        ? (overallAverage === 'A' ? "bg-emerald-500 text-white" :
+                           overallAverage === 'B' ? "bg-blue-500 text-white" :
+                           overallAverage === 'C' ? "bg-amber-500 text-white" : "bg-rose-500 text-white")
+                        : (scale === 'numeric_100'
+                           ? (Number(overallAverage) >= 90 ? "bg-emerald-500 text-white" :
+                              Number(overallAverage) >= 80 ? "bg-blue-500 text-white" :
+                              Number(overallAverage) >= 70 ? "bg-amber-500 text-white" : "bg-rose-500 text-white")
+                           : (Number(overallAverage) >= 9 ? "bg-emerald-500 text-white" :
+                              Number(overallAverage) >= 8 ? "bg-blue-500 text-white" :
+                              Number(overallAverage) >= 6 ? "bg-amber-500 text-white" : "bg-rose-500 text-white"));
 
                     return (
                       <motion.div 
@@ -1002,13 +1025,9 @@ export default function ParentDashboard() {
                             </div>
                             <div className={cn(
                               "w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px]",
-                              overallAverage === '-' ? "bg-slate-100 text-slate-300" :
-                              Number(overallAverage) >= 9 ? "bg-emerald-500 text-white" :
-                              Number(overallAverage) >= 8 ? "bg-blue-500 text-white" :
-                              Number(overallAverage) >= 6 ? "bg-amber-500 text-white" :
-                              "bg-rose-500 text-white"
+                              badgeBg
                             )}>
-                              {overallAverage === '-' ? '-' : Number(overallAverage) >= 9 ? 'A+' : Number(overallAverage) >= 8 ? 'B' : 'C'}
+                              {badgeText}
                             </div>
                           </div>
                         </div>
@@ -1018,47 +1037,87 @@ export default function ParentDashboard() {
                             <thead>
                               <tr className="bg-white text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 border-b border-slate-50">
                                 <th className="px-6 py-3 w-1/3">Materia</th>
-                                <th className="px-2 py-3 text-center w-12">B1</th>
-                                <th className="px-2 py-3 text-center w-12">B2</th>
-                                <th className="px-2 py-3 text-center w-12">B3</th>
-                                <th className="px-2 py-3 text-center w-12">B4</th>
-                                <th className="px-2 py-3 text-center w-12">B5</th>
+                                {periodIndices.map(b => (
+                                  <th key={b} className="px-2 py-3 text-center w-12">
+                                    {evalConfig.periodType === 'Trimestres' ? `T${b}` : evalConfig.periodType === 'Semestres' ? `S${b}` : `B${b}`}
+                                  </th>
+                                ))}
                                 <th className="px-6 py-3 text-right w-24">Promedio</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                               {studentLevelSubjects.length === 0 ? (
                                 <tr>
-                                  <td colSpan={7} className="px-6 py-8 text-center text-slate-400 italic text-[10px]">
+                                  <td colSpan={periodIndices.length + 2} className="px-6 py-8 text-center text-slate-400 italic text-[10px]">
                                     No hay materias configuradas para este nivel.
                                   </td>
                                 </tr>
                               ) : (
                                 studentLevelSubjects.map((sub) => {
-                                  const subjectGradesArr = studentGradeDocs.map(g => g.subjects?.[sub.name]).filter(g => typeof g === 'number');
-                                  const subAverage = subjectGradesArr.length > 0 ? (subjectGradesArr.reduce((a, b) => (a as any) + (b as any), 0) / subjectGradesArr.length).toFixed(1) : '-';
+                                  const isAcademic = sub.category === 'Académica' || !sub.category;
+                                  const subjectPoints: number[] = [];
+                                  periodIndices.forEach(b => {
+                                    if (isAcademic) {
+                                      const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale);
+                                      if (eff.numericValue !== null) subjectPoints.push(eff.numericValue);
+                                    } else {
+                                      const g = studentGradeDocs.find(doc => doc.bimestre === b)?.subjects?.[sub.name];
+                                      const pt = gradeToNumeric(g, scale);
+                                      if (pt !== null) subjectPoints.push(pt);
+                                    }
+                                  });
+                                  const subAverage = subjectPoints.length > 0
+                                    ? formatAverage(subjectPoints.reduce((a, b) => a + b, 0), subjectPoints.length, scale)
+                                    : '-';
 
                                   return (
                                     <tr key={sub.id} className="hover:bg-slate-50/50 transition-colors group">
                                       <td className="px-6 py-3">
                                         <div className="flex flex-col">
-                                          <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-none mb-1">{sub.category || 'Materia'}</span>
+                                          <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-none mb-1">
+                                            {sub.category === 'Autonomía Curricular' && sub.linkedSubjectName 
+                                              ? `Autonomía • Suma a: ${sub.linkedSubjectName}`
+                                              : (sub.category || 'Materia')}
+                                          </span>
                                           <span className="text-xs font-semibold text-slate-700 truncate">{sub.name}</span>
                                         </div>
                                       </td>
-                                      {[1, 2, 3, 4, 5].map(b => {
-                                        const grade = studentGradeDocs.find(g => g.bimestre === b)?.subjects?.[sub.name];
+                                      {periodIndices.map(b => {
+                                        let rawGrade: string | number = '—';
+                                        let hasGrade = false;
+
+                                        if (isAcademic) {
+                                          const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale);
+                                          if (eff.rawValue !== '-') {
+                                            rawGrade = eff.rawValue;
+                                            hasGrade = true;
+                                          }
+                                        } else {
+                                          const g = studentGradeDocs.find(gDoc => gDoc.bimestre === b)?.subjects?.[sub.name];
+                                          if (g !== undefined && g !== null && g !== '') {
+                                            rawGrade = g;
+                                            hasGrade = true;
+                                          }
+                                        }
+
+                                        let colorClass = "text-slate-200";
+                                        if (hasGrade) {
+                                          if (scale === 'letters') {
+                                            colorClass = rawGrade === 'A' ? "text-emerald-600 font-black" :
+                                                         rawGrade === 'B' ? "text-blue-600 font-black" :
+                                                         rawGrade === 'C' ? "text-amber-600 font-black" : "text-rose-600 font-black";
+                                          } else if (scale === 'numeric_100') {
+                                            const n = Number(rawGrade);
+                                            colorClass = n >= 90 ? "text-emerald-600 font-bold" : n >= 80 ? "text-blue-600 font-bold" : n >= 70 ? "text-amber-600 font-bold" : "text-rose-600 font-bold";
+                                          } else {
+                                            const n = Number(rawGrade);
+                                            colorClass = n >= 9 ? "text-emerald-600 font-bold" : n >= 8 ? "text-blue-600 font-bold" : n >= 6 ? "text-amber-600 font-bold" : "text-rose-600 font-bold";
+                                          }
+                                        }
                                         return (
                                           <td key={b} className="px-2 py-3 text-center">
-                                            <span className={cn(
-                                              "text-[10px] font-bold tabular-nums",
-                                              grade === undefined ? "text-slate-200" :
-                                              grade >= 9 ? "text-emerald-600" :
-                                              grade >= 8 ? "text-blue-600" :
-                                              grade >= 6 ? "text-amber-600" :
-                                              "text-rose-600"
-                                            )}>
-                                              {grade !== undefined ? grade : '—'}
+                                            <span className={cn("text-[10px] tabular-nums", colorClass)}>
+                                              {hasGrade ? rawGrade : '—'}
                                             </span>
                                           </td>
                                         );

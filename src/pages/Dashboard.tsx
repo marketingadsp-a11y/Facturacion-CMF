@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, doc, getCountFromServer, where, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, getCountFromServer, where, getDocs, setDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Payment, Expense, Announcement } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
@@ -9,7 +9,8 @@ import {
   Calendar, FileText, Download, Wallet, GraduationCap, TrendingDown,
   PieChart as PieChartIcon, LogOut, Settings as SettingsIcon, Bell,
   Plus, Edit2, Trash2, AlertTriangle, X as XIcon, User, LayoutDashboard, Save,
-  CheckCircle2, Activity, UserRound, Heart, Banknote
+  CheckCircle2, Activity, UserRound, Heart, Banknote,
+  FileBadge, ClipboardList, Presentation, SlidersHorizontal, BellRing, ArrowRight, Sparkles, Eye
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { formatCurrency, cn } from '../lib/utils';
@@ -51,21 +52,85 @@ export default function Dashboard() {
     active: true
   });
   const [schoolName, setSchoolName] = useState('Colegio México Franciscano');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [viewMode, setViewMode] = useState<'default' | 'controlEscolar'>('default');
 
   useEffect(() => {
-    // Use getCountFromServer for counts to avoid fetching all documents
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const restrictedLevels = useMemo(() => {
+    if (isSuperAdmin) return [];
+    if (userProfile?.restrictedLevels && userProfile.restrictedLevels.length > 0) {
+      return userProfile.restrictedLevels;
+    }
+    if (userProfile?.assignedLevel) {
+      return [userProfile.assignedLevel];
+    }
+    return [];
+  }, [isSuperAdmin, userProfile?.restrictedLevels, userProfile?.assignedLevel]);
+
+  const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
+  const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
+
+  useEffect(() => {
+    // Fetch counts - filtered by assigned levels if user has restrictions
     const fetchCounts = async () => {
       try {
-        const studentsSnap = await getCountFromServer(collection(db, 'students'));
-        setStudentsCount(studentsSnap.data().count);
+        let totalActiveStudents = 0;
 
-        const parentsSnap = await getCountFromServer(query(collection(db, 'users'), where('role', '==', 'Padre')));
-        setParentsCount(parentsSnap.data().count);
+        if (restrictedLevels.length > 0) {
+          const targetLevels = new Set(restrictedLevels.map(l => l.toLowerCase().trim()));
+          if (targetLevels.has('bachillerato')) targetLevels.add('preparatoria');
+          if (targetLevels.has('preparatoria')) targetLevels.add('bachillerato');
 
-        const enrollmentsSnap = await getCountFromServer(
-          query(collection(db, 'enrollments'), where('status', '==', 'Pendiente'))
-        );
-        setPendingEnrollmentsCount(enrollmentsSnap.data().count);
+          const studentsSnap = await getDocs(collection(db, 'students'));
+          const matchingStudents = studentsSnap.docs.filter(d => {
+            const data = d.data();
+            const stLevel = (data.level || '').toLowerCase().trim();
+            if (targetLevels.size > 0 && !targetLevels.has(stLevel)) return false;
+            if (restrictedGrades.length > 0 && !restrictedGrades.includes(data.grade)) return false;
+            if (restrictedGroups.length > 0 && !restrictedGroups.includes(data.group)) return false;
+            return true;
+          });
+          totalActiveStudents = matchingStudents.length;
+          setStudentsCount(totalActiveStudents);
+
+          const enrollSnap = await getDocs(query(collection(db, 'enrollments'), where('status', '==', 'Pendiente')));
+          const matchingEnrollments = enrollSnap.docs.filter(d => {
+            const data = d.data();
+            const enrLevel = (data.level || '').toLowerCase().trim();
+            if (targetLevels.size > 0 && !targetLevels.has(enrLevel)) return false;
+            if (restrictedGrades.length > 0 && !restrictedGrades.includes(data.grade)) return false;
+            if (restrictedGroups.length > 0 && !restrictedGroups.includes(data.group)) return false;
+            return true;
+          });
+          setPendingEnrollmentsCount(matchingEnrollments.length);
+
+          const parentEmails = new Set(
+            matchingStudents
+              .map(d => (d.data().parentEmail || '').toLowerCase().trim())
+              .filter(Boolean)
+          );
+          setParentsCount(parentEmails.size);
+        } else {
+          const studentsSnap = await getCountFromServer(collection(db, 'students'));
+          totalActiveStudents = studentsSnap.data().count;
+          setStudentsCount(totalActiveStudents);
+
+          const parentsSnap = await getCountFromServer(query(collection(db, 'users'), where('role', '==', 'Padre')));
+          setParentsCount(parentsSnap.data().count);
+
+          const enrollmentsSnap = await getCountFromServer(
+            query(collection(db, 'enrollments'), where('status', '==', 'Pendiente'))
+          );
+          setPendingEnrollmentsCount(enrollmentsSnap.data().count);
+        }
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -73,14 +138,10 @@ export default function Dashboard() {
           collection(db, 'reception_visits'),
           where('checkInTime', '>=', today)
         );
-        // Note: checking today's total visits
         const visitsSnap = await getDocs(visitsQuery);
         setTodayVisitsCount(visitsSnap.size);
         setPendingVisitsCount(visitsSnap.docs.filter(d => d.data().status === 'Pendiente').length);
 
-        // Fetch pending payments (debtors) - this is more complex, usually done by comparing student payments for current month
-        // For dashboard summary, we can do a quick check or use a cached metric if available.
-        // For now, we'll fetch students who haven't paid this month
         const currentMonth = new Date().getMonth();
         const currentYear = new Date().getFullYear();
         const startOfCurMonth = new Date(currentYear, currentMonth, 1);
@@ -93,13 +154,17 @@ export default function Dashboard() {
         ));
         
         const paidStudentIds = new Set(paymentsThisMonth.docs.map(d => d.data().studentId));
-        setDebtCount(studentsSnap.data().count - paidStudentIds.size);
+        setDebtCount(Math.max(0, totalActiveStudents - paidStudentIds.size));
 
       } catch (err) {
         console.error("Error fetching metrics:", err);
       }
     };
+
     fetchCounts();
+  }, [userProfile, restrictedLevels, restrictedGrades, restrictedGroups]);
+
+  useEffect(() => {
 
     // For dashboard totals, we still need the data, but we can optimize the listeners
     const paymentsUnsub = onSnapshot(
@@ -127,7 +192,9 @@ export default function Dashboard() {
 
     const settingsUnsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
       if (snap.exists()) {
-        setSchoolName(snap.data().schoolName || 'Colegio México Franciscano');
+        const data = snap.data();
+        setSchoolName(data.schoolName || 'Colegio México Franciscano');
+        setLogoUrl(data.logoUrl || '');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/general'));
 
@@ -386,6 +453,437 @@ export default function Dashboard() {
     );
   }
 
+  // Control Escolar specific dashboard
+  if (userProfile?.role === 'Control Escolar' || (isSuperAdmin && viewMode === 'controlEscolar')) {
+    const timeHoursMinutes = format(currentTime, 'hh:mm');
+    const timeSeconds = format(currentTime, 'ss');
+    const timeAmPm = format(currentTime, 'a', { locale: es }).replace(/\./g, '').toUpperCase();
+    const rawDate = format(currentTime, "EEEE, d '/' MMMM '/' yyyy", { locale: es });
+    const capitalizedDate = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
+    const currentHour = currentTime.getHours();
+    const timeGreeting = currentHour < 12 
+      ? 'Buenos días' 
+      : currentHour < 19 
+        ? 'Buenas tardes' 
+        : 'Buenas noches';
+    const firstName = userProfile?.name?.split(' ')[0] || 'Coordinador(a)';
+
+    const modules = [
+      {
+        id: 'control-escolar',
+        title: 'Control Escolar y Boletas',
+        icon: FileBadge,
+        to: '/control-escolar',
+        hasAccess: hasPermission('controlEscolar', 'view')
+      },
+      {
+        id: 'alumnos',
+        title: 'Expedientes de Alumnos',
+        icon: GraduationCap,
+        to: '/alumnos',
+        hasAccess: hasPermission('students', 'view')
+      },
+      {
+        id: 'horarios',
+        title: 'Horarios Escolares',
+        icon: Calendar,
+        to: '/horarios',
+        hasAccess: hasPermission('controlEscolar', 'view')
+      },
+      {
+        id: 'docentes',
+        title: 'Portal Docente y Evaluaciones',
+        icon: Presentation,
+        to: '/docentes',
+        hasAccess: hasPermission('grading', 'view')
+      },
+      {
+        id: 'checador-alumnos',
+        title: 'Asistencia de Alumnos',
+        icon: ClipboardList,
+        to: '/checador-alumnos',
+        hasAccess: hasPermission('timeClock', 'view')
+      },
+      {
+        id: 'padres',
+        title: 'Directorio de Familias',
+        icon: Heart,
+        to: '/padres',
+        hasAccess: hasPermission('parents', 'view')
+      },
+      {
+        id: 'recepcion',
+        title: 'Recepción y Accesos',
+        icon: BellRing,
+        to: '/recepcion',
+        hasAccess: hasPermission('reception', 'view')
+      },
+      {
+        id: 'checador-admin',
+        title: 'Checador de Personal',
+        icon: Clock,
+        to: '/checador-admin',
+        hasAccess: hasPermission('timeClock', 'view')
+      },
+      {
+        id: 'pagos',
+        title: 'Caja y Pagos',
+        icon: Banknote,
+        to: '/pagos',
+        hasAccess: hasPermission('payments', 'view')
+      },
+      {
+        id: 'gastos',
+        title: 'Gastos y Egresos',
+        icon: TrendingDown,
+        to: '/gastos',
+        hasAccess: hasPermission('expenses', 'view')
+      },
+      {
+        id: 'ajustes',
+        title: 'Ajustes y Configuración',
+        icon: SlidersHorizontal,
+        to: '/ajustes',
+        hasAccess: hasPermission('settings', 'view')
+      }
+    ];
+
+    const availableModules = modules.filter(m => m.hasAccess);
+
+    return (
+      <div className="space-y-6 pb-16 font-sans tracking-tight max-w-[1600px] mx-auto">
+        {/* Hero Banner with Welcome & Real-Time Digital Clock */}
+        <motion.div 
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="relative rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-6 sm:p-8 shadow-xl overflow-hidden border border-slate-800"
+        >
+          {/* Subtle background ambient glow */}
+          <div className="absolute -right-24 -top-24 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            {/* Left Column: Greeting with Logo */}
+            <div className="space-y-3 max-w-2xl">
+              {isSuperAdmin && (
+                <div>
+                  <button
+                    onClick={() => setViewMode('default')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-400/30 text-blue-300 hover:bg-blue-500/25 text-xs font-bold tracking-wide transition-colors cursor-pointer mb-2"
+                    title="Volver al panel general de Administrador"
+                  >
+                    <Eye size={12} />
+                    <span>Cambiar a Vista Admin</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 sm:gap-5">
+                {/* School Logo */}
+                {logoUrl ? (
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-2 sm:p-2.5 shadow-lg border border-white/20 shrink-0 flex items-center justify-center">
+                    <img 
+                      src={logoUrl} 
+                      alt={schoolName || 'Logo'} 
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 shrink-0 flex items-center justify-center shadow-lg">
+                    <GraduationCap className="w-9 h-9 sm:w-10 sm:h-10 text-blue-300" />
+                  </div>
+                )}
+
+                <div>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight">
+                    ¡{timeGreeting}, {firstName}!
+                  </h1>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Real-time Local Clock & Large Date Card */}
+            <div className="shrink-0">
+              <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-5 shadow-2xl min-w-[280px] sm:min-w-[340px]">
+                {/* AM/PM */}
+                <div className="flex items-center justify-end mb-1">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-800 text-blue-300 border border-slate-700 font-mono">
+                    {timeAmPm}
+                  </span>
+                </div>
+
+                {/* Digital Clock Display */}
+                <div className="flex items-baseline gap-1 my-1">
+                  <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono text-white tabular-nums drop-shadow-sm">
+                    {timeHoursMinutes}
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-bold font-mono text-blue-400 tabular-nums">
+                    :{timeSeconds}
+                  </span>
+                </div>
+
+                {/* Calendar / Date row - Format: Martes, 20 / octubre / 2026 */}
+                <div className="flex items-center gap-2.5 pt-3 mt-2 border-t border-slate-800">
+                  <Calendar size={18} className="text-blue-400 shrink-0" />
+                  <span className="text-base sm:text-lg font-bold text-slate-100 tracking-tight">
+                    {capitalizedDate}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Quick Stats Row - Clean Blue Tone */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Stat 1: Alumnos Activos */}
+          <Link to="/alumnos" className="block group">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition-all">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alumnos Activos</span>
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <GraduationCap size={18} />
+                </div>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">{studentsCount}</span>
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                  {restrictedLevels.length > 0 ? restrictedLevels.join(', ') : 'Todos'}
+                </span>
+              </div>
+            </div>
+          </Link>
+
+          {/* Stat 2: Solicitudes de Ingreso */}
+          <Link to="/control-escolar?tab=enrollments" className="block group">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition-all">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Solicitudes Ingreso</span>
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform relative">
+                  <Clock size={18} />
+                  {pendingEnrollmentsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">{pendingEnrollmentsCount}</span>
+                <span className={cn(
+                  "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
+                  pendingEnrollmentsCount > 0 ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-600"
+                )}>
+                  {pendingEnrollmentsCount > 0 ? 'Por revisar' : 'Al corriente'}
+                </span>
+              </div>
+            </div>
+          </Link>
+
+          {/* Stat 3: Familias */}
+          <Link to="/padres" className="block group">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition-all">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Familias Vinculadas</span>
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Users size={18} />
+                </div>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">{parentsCount}</span>
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                  {restrictedLevels.length > 0 ? `Nivel ${restrictedLevels.join(', ')}` : 'Padres'}
+                </span>
+              </div>
+            </div>
+          </Link>
+
+          {/* Stat 4: Avisos Escolares */}
+          <button 
+            type="button" 
+            onClick={() => setIsAnnModalOpen(true)}
+            className="block group text-left w-full cursor-pointer"
+          >
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition-all">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Avisos Escolares</span>
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <BellRing size={18} />
+                </div>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">{announcements.filter(a => a.active).length}</span>
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                  Circulares activas
+                </span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {/* The Grid Menu of Accessible Options - Titles Only, No Tags, No Descriptions, Unified Blue Palette */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {availableModules.map((m, index) => (
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.03 + index * 0.02 }}
+              whileHover={{ y: -2, transition: { duration: 0.15 } }}
+            >
+              <Link
+                to={m.to}
+                className="group flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition-all duration-200"
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                    <m.icon size={22} />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                    {m.title}
+                  </h3>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-slate-50 group-hover:bg-blue-50 text-slate-400 group-hover:text-blue-600 flex items-center justify-center transition-all shrink-0 ml-3 group-hover:translate-x-1">
+                  <ArrowRight size={16} />
+                </div>
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Noticeboard / Avisos Preview Section - Professional Blue Styling */}
+        {hasPermission('announcements', 'view') && (
+          <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-7 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <BellRing size={16} />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">
+                    Avisos y Circulares Escolares
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">
+                  Comunicados informativos vigentes para padres y personal escolar
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setEditingAnn(null);
+                    setAnnFormData({ title: '', content: '', type: 'info', active: true });
+                    setIsAnnModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Nuevo Aviso</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              {announcements.filter(a => a.active).length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {announcements.filter(a => a.active).slice(0, 6).map((ann) => {
+                    const ackCount = ann.acknowledgedBy?.length || 0;
+                    return (
+                      <div 
+                        key={ann.id}
+                        className="p-5 rounded-2xl border border-slate-200/90 bg-slate-50/60 hover:bg-white hover:border-blue-300 transition-all flex flex-col justify-between group shadow-xs"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 tracking-wider">
+                              {ann.type === 'important' ? 'Urgente' : ann.type === 'warning' ? 'Aviso' : 'Informativo'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd MMM yyyy', { locale: es }) : 'Reciente'}
+                            </span>
+                          </div>
+
+                          <h4 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1 mb-1">
+                            {ann.title}
+                          </h4>
+                          <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">
+                            {ann.content}
+                          </p>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                          <button
+                            onClick={() => {
+                              setSelectedMetricsAnn(ann);
+                              setIsMetricsModalOpen(true);
+                            }}
+                            className="text-[11px] font-bold text-slate-500 hover:text-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Users size={12} className="text-blue-600" />
+                            <span>{ackCount} enterados</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setEditingAnn(ann);
+                              setAnnFormData(ann);
+                              setIsAnnModalOpen(true);
+                            }}
+                            className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
+                          >
+                            Editar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <Bell size={28} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs font-bold text-slate-500">No hay comunicados publicados actualmente</p>
+                  <button
+                    onClick={() => {
+                      setEditingAnn(null);
+                      setAnnFormData({ title: '', content: '', type: 'info', active: true });
+                      setIsAnnModalOpen(true);
+                    }}
+                    className="mt-2 text-xs font-bold text-blue-600 hover:underline uppercase tracking-wider cursor-pointer"
+                  >
+                    Publicar el primer aviso
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Shared Modals */}
+        <AnnouncementManagementModal 
+          isOpen={isAnnModalOpen}
+          onClose={() => setIsAnnModalOpen(false)}
+          announcements={announcements}
+          editingAnn={editingAnn}
+          setEditingAnn={setEditingAnn}
+          annFormData={annFormData}
+          setAnnFormData={setAnnFormData}
+          onSelectMetrics={(ann) => {
+            setSelectedMetricsAnn(ann);
+            setIsMetricsModalOpen(true);
+          }}
+        />
+
+        <MetricsModal 
+          isOpen={isMetricsModalOpen} 
+          onClose={() => setIsMetricsModalOpen(false)} 
+          announcement={selectedMetricsAnn} 
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
       {/* Compact Header */}
@@ -406,13 +904,29 @@ export default function Dashboard() {
             </span>
           </h1>
         </div>
-        <div className="flex items-center gap-2">
-           <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-3">
-              <Calendar size={12} className="text-slate-400" />
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">
-                {format(new Date(), 'dd MMMM yyyy', { locale: es })}
+        <div className="flex items-center gap-3">
+          {isSuperAdmin && (
+            <button
+              onClick={() => setViewMode('controlEscolar')}
+              className="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Eye size={13} />
+              <span>Vista Control Escolar</span>
+            </button>
+          )}
+          <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-xs flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold font-mono text-slate-800">
+              <Clock size={13} className="text-blue-600" />
+              <span>{format(currentTime, 'hh:mm:ss a')}</span>
+            </div>
+            <div className="h-3 w-px bg-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <Calendar size={13} className="text-slate-400" />
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                {format(currentTime, 'dd MMMM yyyy', { locale: es })}
               </span>
-           </div>
+            </div>
+          </div>
         </div>
       </motion.div>
 
@@ -448,40 +962,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Control Escolar Metrics */}
-      {userProfile?.role === 'Control Escolar' && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            { label: 'Alumnos Inscritos', value: studentsCount, icon: GraduationCap, bg: 'bg-slate-100', text: 'text-slate-900' },
-            { label: 'Ingresos Pendientes', value: pendingEnrollmentsCount, icon: Clock, bg: 'bg-amber-50', text: 'text-amber-600', pulse: pendingEnrollmentsCount > 0 },
-            { label: 'Total Padres', value: parentsCount, icon: Users, bg: 'bg-blue-50', text: 'text-blue-600' }
-          ].map((item, i) => (
-            <motion.div
-              key={item.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="compact-card p-6 group hover:border-slate-300 transition-all"
-            >
-              <div className="flex items-center justify-between mb-6">
-                <div className={cn("w-12 h-12 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110 shadow-inner", item.bg, item.text)}>
-                  <item.icon size={20} />
-                </div>
-                {item.pulse && (
-                  <span className="flex h-3 w-3 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                  </span>
-                )}
-              </div>
-              <div>
-                <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
-                <p className="text-4xl font-black text-slate-900 tabular-nums tracking-tighter">{item.value}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
 
       {/* Recepción Metrics */}
       {userProfile?.role === 'Recepción' && (
@@ -840,296 +1320,19 @@ export default function Dashboard() {
       </div>
 
 
-      <AnimatePresence>
-        {isAnnModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.98, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98, y: 10 }}
-              className="bg-white w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-slate-200"
-            >
-              {/* Compact Header */}
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-slate-950 text-white rounded-lg flex items-center justify-center shadow-sm">
-                    <Bell size={20} />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900 leading-tight">
-                      Gestión de Avisos
-                    </h2>
-                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Panel Administrativo</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setIsAnnModalOpen(false)} 
-                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
-                >
-                  <XIcon size={20} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-                {/* Compact List Section */}
-                <div className="flex-1 overflow-y-auto bg-slate-50/50 border-r border-slate-100">
-                  <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Historial de Comunicados</h3>
-                    <div className="flex gap-2">
-                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                        {announcements.length} Total
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="min-w-full">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="bg-slate-50 sticky top-[53px] z-10 border-b border-slate-100">
-                        <tr>
-                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Aviso</th>
-                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Estado</th>
-                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Alcance</th>
-                          <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {announcements.map(ann => {
-                          const ackCount = ann.acknowledgedBy?.length || 0;
-                          return (
-                          <tr 
-                            key={ann.id} 
-                            className={cn(
-                              "group transition-colors",
-                              editingAnn?.id === ann.id ? "bg-blue-50/50" : "bg-white hover:bg-slate-50/80"
-                            )}
-                          >
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <div className={cn(
-                                  "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
-                                  ann.type === 'important' ? 'bg-red-50 text-red-600' :
-                                  ann.type === 'warning' ? 'bg-orange-50 text-orange-600' :
-                                  'bg-blue-50 text-blue-600'
-                                )}>
-                                  {ann.type === 'important' ? <AlertTriangle size={14} /> : 
-                                   ann.type === 'warning' ? <AlertCircle size={14} /> : 
-                                   <Bell size={14} />}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">{ann.title}</p>
-                                  <p className="text-[10px] text-slate-400 truncate max-w-[150px] sm:max-w-[200px]">{ann.content}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex flex-col gap-1">
-                                <span className={cn(
-                                  "inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase w-fit",
-                                  ann.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                                )}>
-                                  {ann.active ? 'Publicado' : 'Borrador'}
-                                </span>
-                                <span className="text-[8px] text-slate-300 font-medium">
-                                  {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd/MM/yy', { locale: es }) : 'Reciente'}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <button 
-                                onClick={() => {
-                                  setSelectedMetricsAnn(ann);
-                                  setIsMetricsModalOpen(true);
-                                }}
-                                className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors"
-                                title="Ver Padres Enterados"
-                              >
-                                <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-                                  <Users size={10} />
-                                </div>
-                                <div className="flex flex-col text-left">
-                                  <span className="text-[10px] font-black text-slate-700 leading-none hover:text-emerald-600 transition-colors">{ackCount}</span>
-                                  <span className="text-[8px] font-bold text-slate-400 uppercase">Enterados</span>
-                                </div>
-                              </button>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => {
-                                    setEditingAnn(ann);
-                                    setAnnFormData(ann);
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
-                                  title="Editar"
-                                >
-                                  <Edit2 size={12} />
-                                </button>
-                                <button 
-                                  onClick={async () => {
-                                    if (window.confirm('¿Eliminar?')) {
-                                      try {
-                                        const { deleteDoc } = await import('firebase/firestore');
-                                        await deleteDoc(doc(db, 'announcements', ann.id));
-                                      } catch (error) {
-                                        console.error("Error deleting announcement:", error);
-                                      }
-                                    }
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
-                                  title="Eliminar"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )})}
-                      </tbody>
-                    </table>
-                    {announcements.length === 0 && (
-                      <div className="py-20 text-center">
-                        <p className="text-slate-400 text-xs font-medium italic">No hay registros</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Compact Form Section */}
-                <div className="w-full lg:w-[320px] p-5 bg-white overflow-y-auto">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      {editingAnn ? 'Editar Registro' : 'Nuevo Registro'}
-                    </h3>
-                    {editingAnn && (
-                      <button 
-                        onClick={() => {
-                          setEditingAnn(null);
-                          setAnnFormData({ title: '', content: '', type: 'info', active: true });
-                        }}
-                        className="text-[9px] font-bold text-blue-600 hover:underline uppercase"
-                      >
-                        Nuevo
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Título del Aviso</label>
-                      <input
-                        required
-                        value={annFormData.title}
-                        onChange={(e) => setAnnFormData({...annFormData, title: e.target.value})}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-xs font-bold placeholder:text-slate-300"
-                        placeholder="Ej. Suspensión de clases"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje Detallado</label>
-                      <textarea
-                        required
-                        rows={4}
-                        value={annFormData.content}
-                        onChange={(e) => setAnnFormData({...annFormData, content: e.target.value})}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none resize-none transition-all text-xs font-medium placeholder:text-slate-300 leading-relaxed"
-                        placeholder="Escribe el mensaje aquí..."
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Prioridad</label>
-                        <div className="grid grid-cols-3 gap-1">
-                          {(['info', 'warning', 'important'] as const).map((t) => (
-                            <button
-                              key={t}
-                              type="button"
-                              onClick={() => setAnnFormData({...annFormData, type: t})}
-                              className={cn(
-                                "py-1.5 rounded-md text-[8px] font-black uppercase transition-all border",
-                                annFormData.type === t 
-                                  ? t === 'important' ? 'bg-red-600 text-white border-red-600' :
-                                    t === 'warning' ? 'bg-orange-500 text-white border-orange-500' :
-                                    'bg-blue-600 text-white border-blue-600'
-                                  : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'
-                              )}
-                            >
-                              {t === 'info' ? 'Info' : t === 'warning' ? 'Aviso' : 'Urgente'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Visibilidad</label>
-                        <button
-                          type="button"
-                          onClick={() => setAnnFormData({...annFormData, active: !annFormData.active})}
-                          className={cn(
-                            "w-full px-3 py-2 rounded-lg text-[9px] font-black uppercase transition-all border flex items-center justify-between",
-                            annFormData.active 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                              : 'bg-slate-50 text-slate-500 border-slate-100'
-                          )}
-                        >
-                          <span className="flex items-center gap-2">
-                            <div className={cn("w-1.5 h-1.5 rounded-full", annFormData.active ? "bg-emerald-500" : "bg-slate-400")} />
-                            {annFormData.active ? 'Publicado' : 'Borrador'}
-                          </span>
-                          <div className={cn(
-                            "w-6 h-3 rounded-full relative transition-colors",
-                            annFormData.active ? "bg-emerald-500" : "bg-slate-300"
-                          )}>
-                            <div className={cn(
-                              "absolute top-0.5 w-2 h-2 bg-white rounded-full transition-all",
-                              annFormData.active ? "right-0.5" : "left-0.5"
-                            )} />
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="pt-2">
-                      <button
-                        onClick={async () => {
-                          if (!annFormData.title || !annFormData.content) {
-                            alert('Completa los campos.');
-                            return;
-                          }
-                          try {
-                            const { setDoc, addDoc, serverTimestamp } = await import('firebase/firestore');
-                            if (editingAnn) {
-                              await setDoc(doc(db, 'announcements', editingAnn.id), {
-                                ...annFormData,
-                                updatedAt: serverTimestamp()
-                              }, { merge: true });
-                            } else {
-                              await addDoc(collection(db, 'announcements'), {
-                                ...annFormData,
-                                createdAt: serverTimestamp(),
-                                createdBy: auth.currentUser?.uid
-                              });
-                            }
-                            setEditingAnn(null);
-                            setAnnFormData({ title: '', content: '', type: 'info', active: true });
-                          } catch (error) {
-                            console.error("Error saving announcement:", error);
-                          }
-                        }}
-                        className="w-full py-2.5 bg-blue-600 text-white font-black text-[10px] rounded-lg shadow-md hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wider"
-                      >
-                        {editingAnn ? <Save size={12} /> : <Plus size={12} />}
-                        {editingAnn ? 'Actualizar' : 'Publicar'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <AnnouncementManagementModal 
+        isOpen={isAnnModalOpen}
+        onClose={() => setIsAnnModalOpen(false)}
+        announcements={announcements}
+        editingAnn={editingAnn}
+        setEditingAnn={setEditingAnn}
+        annFormData={annFormData}
+        setAnnFormData={setAnnFormData}
+        onSelectMetrics={(ann) => {
+          setSelectedMetricsAnn(ann);
+          setIsMetricsModalOpen(true);
+        }}
+      />
 
       <MetricsModal 
         isOpen={isMetricsModalOpen} 
@@ -1138,6 +1341,314 @@ export default function Dashboard() {
       />
 
     </div>
+  );
+}
+
+function AnnouncementManagementModal({
+  isOpen,
+  onClose,
+  announcements,
+  editingAnn,
+  setEditingAnn,
+  annFormData,
+  setAnnFormData,
+  onSelectMetrics
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  announcements: Announcement[];
+  editingAnn: Announcement | null;
+  setEditingAnn: (ann: Announcement | null) => void;
+  annFormData: Partial<Announcement>;
+  setAnnFormData: React.Dispatch<React.SetStateAction<Partial<Announcement>>>;
+  onSelectMetrics: (ann: Announcement) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.98, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 10 }}
+            className="bg-white w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-slate-200"
+          >
+            {/* Compact Header */}
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-slate-950 text-white rounded-lg flex items-center justify-center shadow-sm">
+                  <Bell size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 leading-tight">
+                    Gestión de Avisos
+                  </h2>
+                  <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Panel Administrativo</p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose} 
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+              {/* Compact List Section */}
+              <div className="flex-1 overflow-y-auto bg-slate-50/50 border-r border-slate-100">
+                <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Historial de Comunicados</h3>
+                  <div className="flex gap-2">
+                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                      {announcements.length} Total
+                    </span>
+                  </div>
+                </div>
+
+                <div className="min-w-full">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 sticky top-[53px] z-10 border-b border-slate-100">
+                      <tr>
+                        <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Aviso</th>
+                        <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Estado</th>
+                        <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider">Alcance</th>
+                        <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {announcements.map(ann => {
+                        const ackCount = ann.acknowledgedBy?.length || 0;
+                        return (
+                        <tr 
+                          key={ann.id} 
+                          className={cn(
+                            "group transition-colors",
+                            editingAnn?.id === ann.id ? "bg-blue-50/50" : "bg-white hover:bg-slate-50/80"
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
+                                ann.type === 'important' ? 'bg-red-50 text-red-600' :
+                                ann.type === 'warning' ? 'bg-orange-50 text-orange-600' :
+                                'bg-blue-50 text-blue-600'
+                              )}>
+                                {ann.type === 'important' ? <AlertTriangle size={14} /> : 
+                                 ann.type === 'warning' ? <AlertCircle size={14} /> : 
+                                 <Bell size={14} />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">{ann.title}</p>
+                                <p className="text-[10px] text-slate-400 truncate max-w-[150px] sm:max-w-[200px]">{ann.content}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <span className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase w-fit",
+                                ann.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                              )}>
+                                {ann.active ? 'Publicado' : 'Borrador'}
+                              </span>
+                              <span className="text-[8px] text-slate-300 font-medium">
+                                {ann.createdAt?.toDate ? format(ann.createdAt.toDate(), 'dd/MM/yy', { locale: es }) : 'Reciente'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button 
+                              onClick={() => onSelectMetrics(ann)}
+                              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                              title="Ver Padres Enterados"
+                            >
+                              <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                <Users size={10} />
+                              </div>
+                              <div className="flex flex-col text-left">
+                                <span className="text-[10px] font-black text-slate-700 leading-none hover:text-emerald-600 transition-colors">{ackCount}</span>
+                                <span className="text-[8px] font-bold text-slate-400 uppercase">Enterados</span>
+                              </div>
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => {
+                                  setEditingAnn(ann);
+                                  setAnnFormData(ann);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all cursor-pointer"
+                                title="Editar"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  if (window.confirm('¿Eliminar aviso?')) {
+                                    try {
+                                      await deleteDoc(doc(db, 'announcements', ann.id));
+                                    } catch (error) {
+                                      console.error("Error deleting announcement:", error);
+                                    }
+                                  }
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all cursor-pointer"
+                                title="Eliminar"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )})}
+                    </tbody>
+                  </table>
+                  {announcements.length === 0 && (
+                    <div className="py-20 text-center">
+                      <p className="text-slate-400 text-xs font-medium italic">No hay registros</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Compact Form Section */}
+              <div className="w-full lg:w-[320px] p-5 bg-white overflow-y-auto">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {editingAnn ? 'Editar Registro' : 'Nuevo Registro'}
+                  </h3>
+                  {editingAnn && (
+                    <button 
+                      onClick={() => {
+                        setEditingAnn(null);
+                        setAnnFormData({ title: '', content: '', type: 'info', active: true });
+                      }}
+                      className="text-[9px] font-bold text-blue-600 hover:underline uppercase cursor-pointer"
+                    >
+                      Nuevo
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Título del Aviso</label>
+                    <input
+                      required
+                      value={annFormData.title}
+                      onChange={(e) => setAnnFormData({...annFormData, title: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-xs font-bold placeholder:text-slate-300"
+                      placeholder="Ej. Suspensión de clases"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje Detallado</label>
+                    <textarea
+                      required
+                      rows={4}
+                      value={annFormData.content}
+                      onChange={(e) => setAnnFormData({...annFormData, content: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none resize-none transition-all text-xs font-medium placeholder:text-slate-300 leading-relaxed"
+                      placeholder="Escribe el mensaje aquí..."
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Prioridad</label>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(['info', 'warning', 'important'] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setAnnFormData({...annFormData, type: t})}
+                            className={cn(
+                              "py-1.5 rounded-md text-[8px] font-black uppercase transition-all border cursor-pointer",
+                              annFormData.type === t 
+                                ? t === 'important' ? 'bg-red-600 text-white border-red-600' :
+                                  t === 'warning' ? 'bg-orange-500 text-white border-orange-500' :
+                                  'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'
+                            )}
+                          >
+                            {t === 'info' ? 'Info' : t === 'warning' ? 'Aviso' : 'Urgente'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Visibilidad</label>
+                      <button
+                        type="button"
+                        onClick={() => setAnnFormData({...annFormData, active: !annFormData.active})}
+                        className={cn(
+                          "w-full px-3 py-2 rounded-lg text-[9px] font-black uppercase transition-all border flex items-center justify-between cursor-pointer",
+                          annFormData.active 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                            : 'bg-slate-50 text-slate-500 border-slate-100'
+                        )}
+                      >
+                        <span className="flex items-center gap-2">
+                          <div className={cn("w-1.5 h-1.5 rounded-full", annFormData.active ? "bg-emerald-500" : "bg-slate-400")} />
+                          {annFormData.active ? 'Publicado' : 'Borrador'}
+                        </span>
+                        <div className={cn(
+                          "w-6 h-3 rounded-full relative transition-colors",
+                          annFormData.active ? "bg-emerald-500" : "bg-slate-300"
+                        )}>
+                          <div className={cn(
+                            "absolute top-0.5 w-2 h-2 bg-white rounded-full transition-all",
+                            annFormData.active ? "right-0.5" : "left-0.5"
+                          )} />
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={async () => {
+                        if (!annFormData.title || !annFormData.content) {
+                          alert('Completa los campos.');
+                          return;
+                        }
+                        try {
+                          if (editingAnn) {
+                            await setDoc(doc(db, 'announcements', editingAnn.id), {
+                              ...annFormData,
+                              updatedAt: serverTimestamp()
+                            }, { merge: true });
+                          } else {
+                            await addDoc(collection(db, 'announcements'), {
+                              ...annFormData,
+                              createdAt: serverTimestamp(),
+                              createdBy: auth.currentUser?.uid
+                            });
+                          }
+                          setEditingAnn(null);
+                          setAnnFormData({ title: '', content: '', type: 'info', active: true });
+                        } catch (error) {
+                          console.error("Error saving announcement:", error);
+                        }
+                      }}
+                      className="w-full py-2.5 bg-blue-600 text-white font-black text-[10px] rounded-lg shadow-md hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer"
+                    >
+                      {editingAnn ? <Save size={12} /> : <Plus size={12} />}
+                      {editingAnn ? 'Actualizar' : 'Publicar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
 

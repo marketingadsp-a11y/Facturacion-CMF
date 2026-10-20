@@ -4,7 +4,7 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, up
 import { doc, onSnapshot, setDoc, collection, addDoc, updateDoc, serverTimestamp, query, orderBy, deleteDoc, getDocs, getDoc, writeBatch, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement, BimestreLock, LevelEvaluationConfig, Subject } from '../types';
+import { AppSettings, SchoolCycle, UserRole, AppPermissions, AppUser, Announcement, BimestreLock, LevelEvaluationConfig, Subject, GradingScale } from '../types';
 import { getLevelEvaluationConfig, generateDefaultPeriodNames } from '../lib/evaluationUtils';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
@@ -1856,9 +1856,20 @@ export default function Settings() {
                               <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
                               <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">{level}</h3>
                             </div>
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-100">
-                              {currentConfig.periodCount} {currentConfig.periodType}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                {currentConfig.periodCount} {currentConfig.periodType}
+                              </span>
+                              <span className={cn(
+                                "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border",
+                                currentConfig.gradingScale === 'letters' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                currentConfig.gradingScale === 'numeric_100' ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                "bg-blue-50 text-blue-700 border-blue-200"
+                              )}>
+                                {currentConfig.gradingScale === 'letters' ? 'Letras (A - D)' :
+                                 currentConfig.gradingScale === 'numeric_100' ? 'Escala 0 a 100' : 'Escala 0 a 10'}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end">
@@ -1877,6 +1888,7 @@ export default function Settings() {
                                   if (newType === 'Cuatrimestres' && newCount !== 3) newCount = 3;
 
                                   const updated: LevelEvaluationConfig = {
+                                    ...currentConfig,
                                     periodType: newType,
                                     periodCount: newCount,
                                     periodNames: generateDefaultPeriodNames(newType, newCount)
@@ -1937,6 +1949,89 @@ export default function Settings() {
                                     {pName}
                                   </span>
                                 ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Escala de Calificación y Promedios */}
+                          <div className="pt-3 border-t border-slate-100">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                              <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 ml-1">
+                                  Tipo de Calificación y Escala de Promedio
+                                </label>
+                                <p className="text-xs text-slate-500 font-medium">
+                                  {currentConfig.gradingScale === 'letters' && 'Cualitativa con letras: A (Destacado), B (Satisfactorio), C (Suficiente), D (Insuficiente). El promedio se calculará en letras.'}
+                                  {currentConfig.gradingScale === 'numeric_10' && 'Escala decimal estándar de 0 a 10 puntos (promedios con un decimal en rango 0 - 10).'}
+                                  {currentConfig.gradingScale === 'numeric_100' && 'Escala numérica entera de 0 a 100 puntos (promedios en rango 0 - 100 sin decimales).'}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      gradingScale: 'letters'
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    setSettings({ ...settings, levelEvaluationConfig: newMap });
+                                  }}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5",
+                                    currentConfig.gradingScale === 'letters'
+                                      ? "bg-emerald-600 text-white shadow-xs"
+                                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  )}
+                                >
+                                  <span>Letras (A - D)</span>
+                                  <span className={cn("text-[9px] px-1 rounded font-bold", currentConfig.gradingScale === 'letters' ? "bg-emerald-700 text-emerald-100" : "bg-slate-200 text-slate-600")}>Preescolar</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      gradingScale: 'numeric_10'
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    setSettings({ ...settings, levelEvaluationConfig: newMap });
+                                  }}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5",
+                                    currentConfig.gradingScale === 'numeric_10'
+                                      ? "bg-indigo-600 text-white shadow-xs"
+                                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  )}
+                                >
+                                  <span>0 a 10</span>
+                                  <span className={cn("text-[9px] px-1 rounded font-bold", currentConfig.gradingScale === 'numeric_10' ? "bg-indigo-700 text-indigo-100" : "bg-slate-200 text-slate-600")}>Primaria / Sec.</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      gradingScale: 'numeric_100'
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    setSettings({ ...settings, levelEvaluationConfig: newMap });
+                                  }}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5",
+                                    currentConfig.gradingScale === 'numeric_100'
+                                      ? "bg-slate-900 text-white shadow-xs"
+                                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  )}
+                                >
+                                  <span>0 a 100</span>
+                                  <span className={cn("text-[9px] px-1 rounded font-bold", currentConfig.gradingScale === 'numeric_100' ? "bg-slate-800 text-slate-200" : "bg-slate-200 text-slate-600")}>Prepa / 100</span>
+                                </button>
                               </div>
                             </div>
                           </div>

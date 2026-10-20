@@ -331,10 +331,13 @@ export interface AppSettings {
   attendanceListShowNo?: boolean;
 }
 
+export type GradingScale = 'letters' | 'numeric_10' | 'numeric_100';
+
 export interface LevelEvaluationConfig {
   periodCount: number; // e.g. 3 or 5
   periodType: 'Trimestres' | 'Bimestres' | 'Semestres' | 'Cuatrimestres' | 'Personalizado';
   periodNames?: string[]; // e.g. ["1er Trimestre", "2do Trimestre", "3er Trimestre"]
+  gradingScale?: GradingScale; // 'letters' (Preescolar A-D), 'numeric_10' (0-10), 'numeric_100' (0-100)
 }
 
 export interface Subject {
@@ -342,6 +345,9 @@ export interface Subject {
   name: string;
   level: string; // Preescolar, Primaria, etc.
   category?: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos';
+  linkedSubjectId?: string; // Optional: ID of an Academic subject this Autonomía Curricular subject contributes to
+  linkedSubjectName?: string; // Optional: Name of the Academic subject (e.g. "De lo Humano y lo Comunitario")
+  isAttendanceCount?: boolean; // When true, student absences (Faltas) automatically sum into this subject
   createdAt: Timestamp;
 }
 
@@ -352,13 +358,13 @@ export interface StudentGrade {
   studentId: string;
   cycleId: string;
   bimestre: Bimestre;
-  subjects: Record<string, number>;
-  conduct: number;
-  uniform: number;
-  attendance: number;
-  tasksNotDone: number;
-  tardies: number;
-  cleanliness: number;
+  subjects: Record<string, number | string>;
+  conduct: number | string;
+  uniform: number | string;
+  attendance: number | string;
+  tasksNotDone: number | string;
+  tardies: number | string;
+  cleanliness: number | string;
   updatedAt: Timestamp;
   createdBy: string;
 }
@@ -371,6 +377,8 @@ export interface Attendance {
   cycleId: string;
   date: string; // ISO format YYYY-MM-DD
   status: AttendanceStatus;
+  justificationReason?: string; // Optional motivo/justificación when status is 'Justificado'
+  period?: number; // Optional evaluation period (e.g. 1, 2, 3...)
   updatedAt: Timestamp;
   createdBy: string;
 }

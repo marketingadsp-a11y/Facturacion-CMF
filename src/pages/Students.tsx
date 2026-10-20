@@ -321,7 +321,7 @@ export default function Students() {
         return;
       }
 
-      let finalParentEmail = formData.parentEmail.toLowerCase().trim();
+      let finalParentEmail = (formData.parentEmail || '').toLowerCase().trim();
 
       // Check if registrationCode already exists for another student
       const existingWithCode = students.find(s => 
@@ -1450,7 +1450,9 @@ export default function Students() {
                     <div className="space-y-4">
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <label className="block text-[10px] font-black text-blue-600 uppercase ml-1">Correo Acceso Padres *</label>
+                          <label className="block text-[10px] font-black text-slate-700 uppercase ml-1">
+                            Correo Acceso Padres <span className="text-slate-400 font-normal text-[9px] lowercase">(opcional)</span>
+                          </label>
                           {editingStudent && formData.parentEmail && (
                             <button
                               type="button"
@@ -1469,11 +1471,10 @@ export default function Students() {
                         </div>
                         <input
                           type="email"
-                          required
                           value={formData.parentEmail}
                           onChange={(e) => setFormData({...formData, parentEmail: e.target.value})}
-                          className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg focus:bg-white focus:border-blue-600 outline-none text-xs font-bold"
-                          placeholder="obligatorio para el portal"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-slate-900 outline-none text-xs font-bold"
+                          placeholder="ej. padre@correo.com (opcional)"
                         />
                       </div>
                       

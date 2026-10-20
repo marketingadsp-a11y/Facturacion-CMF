@@ -1,7 +1,7 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
-import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade } from '../lib/evaluationUtils';
 
 const styles = StyleSheet.create({
   page: {
@@ -186,6 +186,7 @@ interface ReportCardPDFProps {
 
 export default function ReportCardPDF({ student, grades, subjects, settings, cycle }: ReportCardPDFProps) {
   const evalConfig = getLevelEvaluationConfig(settings, student.level);
+  const scale = evalConfig.gradingScale || 'numeric_10';
   const periodCount = evalConfig.periodCount;
   const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
 
@@ -205,21 +206,31 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
     .filter(s => s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal')
     .map(s => s.name);
 
-  const behaviorAspects = [
-    'Conducta', 'Uniforme', 'Inasistencia', 'Tareas no realizadas', 'Retardo', 'Aseo'
-  ];
+  const getGrade = (subject: string, bimestre: number): string | number => {
+    // If it's an academic subject, compute effective grade taking into account linked autonomy subjects
+    const isAcademic = academicSubjects.includes(subject);
+    if (isAcademic) {
+      const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale);
+      if (effective.rawValue !== '-') {
+        return effective.rawValue;
+      }
+    }
 
-  const getGrade = (subject: string, bimestre: number) => {
-    const bg = grades.find(g => g.bimestre === bimestre);
+    const bg = grades.find(g => Number(g.bimestre) === Number(bimestre));
     if (!bg) return '-';
 
     // First check in subjects dictionary
-    if (bg.subjects && bg.subjects[subject] !== undefined) {
+    if (bg.subjects && bg.subjects[subject] !== undefined && bg.subjects[subject] !== '') {
       return bg.subjects[subject];
     }
 
+    const subjectObj = subjects.find(s => s.name === subject);
+    if (subjectObj?.isAttendanceCount && bg.attendance !== undefined && bg.attendance !== null && bg.attendance !== '') {
+      return bg.attendance;
+    }
+
     // Map behavior aspect labels to their dedicated fields in StudentGrade object
-    const behaviorMap: Record<string, keyof StudentGrade> = {
+    const behaviorMap: Record<string, 'conduct' | 'uniform' | 'attendance' | 'tasksNotDone' | 'tardies' | 'cleanliness'> = {
       'conducta': 'conduct',
       'uniforme': 'uniform',
       'inasistencia': 'attendance',
@@ -235,7 +246,10 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
     if (behaviorMap[normKey]) {
       const field = behaviorMap[normKey];
       const val = bg[field];
-      return typeof val === 'number' ? val : '-';
+      if (val !== undefined && val !== null && val !== '') {
+        return val as string | number;
+      }
+      return '-';
     }
 
     return '-';
@@ -245,38 +259,52 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
     let total = 0;
     let count = 0;
     for (let i = 1; i <= periodCount; i++) {
-        const val = getGrade(subject, i);
-        if (typeof val === 'number') {
-            total += val;
-            count++;
-        }
+      const val = getGrade(subject, i);
+      const num = gradeToNumeric(val, scale);
+      if (num !== null) {
+        total += num;
+        count++;
+      }
     }
-    return count > 0 ? (total / count).toFixed(1) : '-';
+    return formatAverage(total, count, scale);
   };
 
   const getBimestreAvg = (bimestre: number) => {
-    const bg = grades.find(g => g.bimestre === bimestre);
-    if (!bg || !bg.subjects) return '-';
-    // Only include ACADEMIC subjects in the primary average
-    const numericGrades = Object.entries(bg.subjects)
-        .filter(([subj, val]) => academicSubjects.includes(subj) && typeof val === 'number')
-        .map(([_, val]) => val as number);
-    
-    if (numericGrades.length === 0) return '-';
-    return (numericGrades.reduce((a,b) => a+b, 0) / numericGrades.length).toFixed(1);
+    let total = 0;
+    let count = 0;
+    for (const subj of academicSubjects) {
+      const val = getGrade(subj, bimestre);
+      const num = gradeToNumeric(val, scale);
+      if (num !== null) {
+        total += num;
+        count++;
+      }
+    }
+
+    return formatAverage(total, count, scale);
   };
 
   const getGlobalAvg = () => {
-    let total = 0;
-    let count = 0;
+    const periodAverages: number[] = [];
     for (let i = 1; i <= periodCount; i++) {
-        const val = getBimestreAvg(i);
-        if (val !== '-') {
-            total += parseFloat(val);
-            count++;
+      let pTotal = 0;
+      let pCount = 0;
+      for (const subj of academicSubjects) {
+        const val = getGrade(subj, i);
+        const num = gradeToNumeric(val, scale);
+        if (num !== null) {
+          pTotal += num;
+          pCount++;
         }
+      }
+      if (pCount > 0) {
+        periodAverages.push(pTotal / pCount);
+      }
     }
-    return count > 0 ? (total / count).toFixed(1) : '-';
+
+    if (periodAverages.length === 0) return '-';
+    const sum = periodAverages.reduce((a, b) => a + b, 0);
+    return formatAverage(sum, periodAverages.length, scale);
   };
 
   return (
@@ -422,38 +450,74 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
                   ))}
                   <Text style={styles.tableCellHeaderAvg}>PROM</Text>
                 </View>
-                {curricularSubjects.map((subject, idx) => (
-                  <View key={idx} style={styles.tableRow}>
-                    <Text style={styles.tableCellSubject}>{subject}</Text>
-                    {periodIndices.map(num => (
-                      <Text key={num} style={styles.tableCellGrade}>{getGrade(subject, num)}</Text>
-                    ))}
-                    <View style={{ flex: 1.2, backgroundColor: '#F1F5F9', height: '100%', justifyContent: 'center' }}>
-                       <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getSubjectAvg(subject)}</Text>
+                {curricularSubjects.map((subject, idx) => {
+                  const subjObj = subjects.find(s => s.name === subject);
+                  const linkedTo = subjObj?.linkedSubjectName;
+                  return (
+                    <View key={idx} style={styles.tableRow}>
+                      <View style={{ flex: 3.5, justifyContent: 'center' }}>
+                        <Text style={styles.tableCellSubject}>{subject}</Text>
+                        {linkedTo && (
+                          <Text style={{ fontSize: 6, color: '#64748B', fontStyle: 'italic', paddingLeft: 8 }}>
+                            (Suma al promedio de: {linkedTo})
+                          </Text>
+                        )}
+                      </View>
+                      {periodIndices.map(num => (
+                        <Text key={num} style={styles.tableCellGrade}>{getGrade(subject, num)}</Text>
+                      ))}
+                      <View style={{ flex: 1.2, backgroundColor: '#F1F5F9', height: '100%', justifyContent: 'center' }}>
+                         <Text style={[styles.tableCellGrade, { fontWeight: 'bold', color: '#0F172A' }]}>{getSubjectAvg(subject)}</Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
 
-              <Text style={styles.sectionTitle}>Desarrollo Personal y Conducta</Text>
-              <View style={styles.table}>
-                <View style={[styles.tableHeaderRow, { backgroundColor: '#475569' }]}>
-                  <Text style={styles.tableCellHeaderSubject}>Aspecto / Materia</Text>
-                  {periodIndices.map(num => (
-                    <Text key={num} style={styles.tableCellHeaderGrade}>{num}º</Text>
-                  ))}
-                </View>
-                {(personalDevSubjects.length > 0 ? personalDevSubjects : behaviorAspects).map((aspect, idx) => (
-                  <View key={`dev-${idx}`} style={styles.tableRow}>
-                    <Text style={[styles.tableCellSubject, { color: '#475569' }]}>{aspect}</Text>
-                    {periodIndices.map(num => (
-                      <Text key={num} style={styles.tableCellGrade}>{getGrade(aspect, num)}</Text>
+              {personalDevSubjects.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Desarrollo Personal</Text>
+                  <View style={styles.table}>
+                    <View style={[styles.tableHeaderRow, { backgroundColor: '#475569' }]}>
+                      <Text style={styles.tableCellHeaderSubject}>Aspecto / Materia</Text>
+                      {periodIndices.map(num => (
+                        <Text key={num} style={styles.tableCellHeaderGrade}>{num}º</Text>
+                      ))}
+                    </View>
+                    {personalDevSubjects.map((aspect, idx) => (
+                      <View key={`dev-${idx}`} style={styles.tableRow}>
+                        <Text style={[styles.tableCellSubject, { color: '#475569' }]}>{aspect}</Text>
+                        {periodIndices.map(num => (
+                          <Text key={num} style={styles.tableCellGrade}>{getGrade(aspect, num)}</Text>
+                        ))}
+                      </View>
                     ))}
                   </View>
-                ))}
-              </View>
+                </>
+              )}
 
               <View style={{ marginTop: 'auto', marginBottom: 20 }}>
+                 {scale === 'letters' ? (
+                   <View style={{ marginBottom: 8, padding: 6, backgroundColor: '#F0FDF4', borderRadius: 4, borderWidth: 1, borderColor: '#DCFCE7' }}>
+                     <Text style={{ fontSize: 7, fontWeight: 'bold', color: '#166534', marginBottom: 2 }}>ESCALA DE EVALUACIÓN CUALITATIVA (PREESCOLAR):</Text>
+                     <Text style={{ fontSize: 6.5, color: '#15803D' }}>
+                       A: Destacado / Excelente  •  B: Satisfactorio / Bueno  •  C: Suficiente / En Proceso  •  D: Insuficiente / Requiere Apoyo
+                     </Text>
+                   </View>
+                 ) : scale === 'numeric_100' ? (
+                   <View style={{ marginBottom: 8, padding: 4, backgroundColor: '#FAF5FF', borderRadius: 4, borderWidth: 1, borderColor: '#F3E8FF', alignItems: 'center' }}>
+                     <Text style={{ fontSize: 6.5, color: '#6B21A8', fontWeight: 'bold' }}>
+                       ESCALA DE EVALUACIÓN: 0 A 100 PUNTOS (MÍNIMO APROBATORIO: 60)
+                     </Text>
+                   </View>
+                 ) : (
+                   <View style={{ marginBottom: 8, padding: 4, backgroundColor: '#F8FAFC', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' }}>
+                     <Text style={{ fontSize: 6.5, color: '#475569', fontWeight: 'bold' }}>
+                       ESCALA DE EVALUACIÓN: 0.0 A 10.0 PUNTOS (MÍNIMO APROBATORIO: 6.0)
+                     </Text>
+                   </View>
+                 )}
+
                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', backgroundColor: '#F8FAFC', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                    <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#475569', marginRight: 10 }}>PROMEDIO FINAL DEL CICLO:</Text>
                    <View style={{ backgroundColor: '#0F172A', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 6 }}>

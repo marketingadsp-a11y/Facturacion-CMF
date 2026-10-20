@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject, AppUser } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2 } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -15,12 +16,23 @@ import OfficialListPDF from '../components/OfficialListPDF';
 import { exportAttendanceExcel, exportAttendanceExcelAllGroups } from '../lib/attendanceExcel';
 import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
-import { getLevelEvaluationConfig } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade } from '../lib/evaluationUtils';
 import { sendWelcomeEmail } from '../services/mailService';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
-  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects'>('enrollments');
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const defaultTab = (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects') 
+    ? requestedTab 
+    : 'studentList';
+  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects'>(defaultTab);
+
+  useEffect(() => {
+    if (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects') {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -383,6 +395,7 @@ export default function AcademicControl() {
     try {
       await updateDoc(doc(db, 'students', editingStudent.id), {
         ...studentFormData,
+        parentEmail: (studentFormData.parentEmail || '').toLowerCase().trim(),
         updatedAt: serverTimestamp()
       });
       setEditingStudent(null);
@@ -853,24 +866,27 @@ export default function AcademicControl() {
                         .filter(sub => sub.level?.toLowerCase().trim() === student.level?.toLowerCase().trim() && (sub.category === 'Académica' || !sub.category))
                         .map(sub => sub.name);
 
+                      const evalConfig = getLevelEvaluationConfig(settings, displayLevel);
+                      const scale = evalConfig.gradingScale || 'numeric_10';
+
                       const getBimestreAvg = (num: number) => {
                         const bg = studentGrades.find(g => Number(g.bimestre) === num);
                         if (!bg || !bg.subjects) return null;
                         
-                        // Filter only grades for subjects that are Academic and belong to the student's level
-                        const numericGrades = Object.entries(bg.subjects)
-                          .filter(([name, val]) => academicSubjectNames.includes(name) && typeof val === 'number')
-                          .map(([_, val]) => val as number);
+                        const nums: number[] = [];
+                        for (const name of academicSubjectNames) {
+                          const result = getEffectiveSubjectGrade(name, num, studentGrades, subjects, scale);
+                          if (result.numericValue !== null) nums.push(result.numericValue);
+                        }
 
-                        if (numericGrades.length === 0) return null;
-                        return numericGrades.reduce((a, b) => a + b, 0) / numericGrades.length;
+                        if (nums.length === 0) return null;
+                        return nums.reduce((a, b) => a + b, 0) / nums.length;
                       };
 
-                      const evalConfig = getLevelEvaluationConfig(settings, student.level);
                       const periodIndices = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1);
                       const capturedAvgs = periodIndices.map(num => getBimestreAvg(num)).filter((v): v is number => v !== null);
-                      const finalAvg = capturedAvgs.length > 0 
-                        ? capturedAvgs.reduce((a, b) => a + b, 0) / capturedAvgs.length 
+                      const finalAvgDisplay = capturedAvgs.length > 0 
+                        ? formatAverage(capturedAvgs.reduce((a, b) => a + b, 0), capturedAvgs.length, scale)
                         : null;
 
                       return (
@@ -923,15 +939,22 @@ export default function AcademicControl() {
                           </td>
                           
                           <td className="px-4 py-2.5 border-r border-slate-100 group-hover:border-slate-800 text-center">
-                            {finalAvg !== null ? (
+                            {finalAvgDisplay !== null ? (
                               <span className={cn(
                                 "text-[10px] font-black px-1.5 py-0.5 rounded",
-                                finalAvg < 6 ? "bg-rose-50 text-rose-600 group-hover:bg-rose-500 group-hover:text-white" : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white"
+                                scale === 'letters'
+                                  ? (finalAvgDisplay === 'A' ? "bg-emerald-50 text-emerald-600 border border-emerald-200 group-hover:bg-emerald-500 group-hover:text-white" :
+                                     finalAvgDisplay === 'B' ? "bg-blue-50 text-blue-600 border border-blue-200 group-hover:bg-blue-600 group-hover:text-white" :
+                                     finalAvgDisplay === 'C' ? "bg-amber-50 text-amber-600 border border-amber-200 group-hover:bg-amber-500 group-hover:text-white" :
+                                     "bg-rose-50 text-rose-600 border border-rose-200 group-hover:bg-rose-500 group-hover:text-white")
+                                  : (scale === 'numeric_100'
+                                     ? (Number(finalAvgDisplay) < 60 ? "bg-rose-50 text-rose-600 group-hover:bg-rose-500 group-hover:text-white" : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white")
+                                     : (Number(finalAvgDisplay) < 6 ? "bg-rose-50 text-rose-600 group-hover:bg-rose-500 group-hover:text-white" : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white"))
                               )}>
-                                {finalAvg.toFixed(1)}
+                                {finalAvgDisplay}
                               </span>
                             ) : (
-                               <span className="text-[8px] font-black text-slate-300 group-hover:text-slate-700">0.0</span>
+                               <span className="text-[8px] font-black text-slate-300 group-hover:text-slate-700">-</span>
                             )}
                           </td>
 
@@ -1851,7 +1874,9 @@ export default function AcademicControl() {
                     <div className="space-y-4">
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <label className="block text-[10px] font-black text-blue-600 uppercase ml-1">Correo Acceso Padres *</label>
+                          <label className="block text-[10px] font-black text-slate-700 uppercase ml-1">
+                            Correo Acceso Padres <span className="text-slate-400 font-normal text-[9px] lowercase">(opcional)</span>
+                          </label>
                           {editingStudent && studentFormData.parentEmail && (
                             <button
                               type="button"
@@ -1870,11 +1895,10 @@ export default function AcademicControl() {
                         </div>
                         <input
                           type="email"
-                          required
                           value={studentFormData.parentEmail || ''}
                           onChange={(e) => setStudentFormData({...studentFormData, parentEmail: e.target.value})}
-                          className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg focus:bg-white focus:border-blue-600 outline-none text-xs font-bold"
-                          placeholder="obligatorio para el portal"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-slate-900 outline-none text-xs font-bold"
+                          placeholder="ej. padre@correo.com (opcional)"
                         />
                       </div>
                       
@@ -2267,7 +2291,7 @@ function DetailItem({ label, value, span = 1 }: { label: string; value?: string 
 }
 
 function SubjectsManagement({ subjects, settings, availableLevels }: { subjects: Subject[]; settings: AppSettings | null; availableLevels?: string[] }) {
-  const [newSubject, setNewSubject] = useState({ name: '', level: '', category: 'Académica' as const });
+  const [newSubject, setNewSubject] = useState({ name: '', level: '', category: 'Académica' as const, linkedSubjectName: '', isAttendanceCount: false });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
@@ -2294,12 +2318,14 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
     setIsSaving(true);
     try {
       await addDoc(collection(db, 'subjects'), {
-        name: newSubject.name,
+        name: newSubject.name.trim(),
         level: newSubject.level,
         category: newSubject.category,
+        linkedSubjectName: newSubject.category === 'Autonomía Curricular' ? (newSubject.linkedSubjectName || null) : null,
+        isAttendanceCount: (newSubject.category === 'Desarrollo Personal' || newSubject.category === 'Aspectos Formativos') ? !!newSubject.isAttendanceCount : false,
         createdAt: serverTimestamp()
       });
-      setNewSubject({ name: '', level: '', category: 'Académica' });
+      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false });
     } catch (error) {
       console.error("Error creating subject:", error);
       alert("Error al crear materia");
@@ -2313,9 +2339,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
     setIsSaving(true);
     try {
       await updateDoc(doc(db, 'subjects', editingSubject.id), {
-        name: editingSubject.name,
+        name: editingSubject.name.trim(),
         level: editingSubject.level,
         category: editingSubject.category || 'Académica',
+        linkedSubjectName: editingSubject.category === 'Autonomía Curricular' ? (editingSubject.linkedSubjectName || null) : null,
+        isAttendanceCount: (editingSubject.category === 'Desarrollo Personal' || editingSubject.category === 'Aspectos Formativos') ? !!editingSubject.isAttendanceCount : false,
         updatedAt: serverTimestamp()
       });
       setEditingSubject(null);
@@ -2372,6 +2400,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
           name: subj.name,
           level: targetLevel,
           category: subj.category || 'Académica',
+          linkedSubjectName: subj.linkedSubjectName || null,
+          isAttendanceCount: !!subj.isAttendanceCount,
           createdAt: serverTimestamp()
         });
       }
@@ -2401,7 +2431,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2rem] mb-6 flex items-center gap-2 italic">
           <Plus size={16} className="text-blue-500" /> Registrar Nueva Materia
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div className={cn("grid grid-cols-1 gap-4 items-end", (newSubject.category === 'Autonomía Curricular' || newSubject.category === 'Desarrollo Personal') ? "md:grid-cols-5" : "md:grid-cols-4")}>
           <FormInput 
             label="Nombre de la Materia" 
             placeholder="Ej. Matemáticas I, Inglés..."
@@ -2412,7 +2442,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Nivel Académico</label>
             <select
               value={newSubject.level}
-              onChange={(e) => setNewSubject({ ...newSubject, level: e.target.value })}
+              onChange={(e) => setNewSubject({ ...newSubject, level: e.target.value, linkedSubjectName: '' })}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
             >
               <option value="">Seleccionar Nivel</option>
@@ -2423,7 +2453,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Tipo / Categoría</label>
             <select
               value={newSubject.category}
-              onChange={(e) => setNewSubject({ ...newSubject, category: e.target.value as any })}
+              onChange={(e) => setNewSubject({ ...newSubject, category: e.target.value as any, linkedSubjectName: '', isAttendanceCount: false })}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
             >
               <option value="Académica">Académica (Base)</option>
@@ -2431,6 +2461,43 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
               <option value="Desarrollo Personal">Desarrollo Personal / Conducta</option>
             </select>
           </div>
+          {newSubject.category === 'Autonomía Curricular' && (
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                Suma al promedio de
+              </label>
+              <select
+                value={newSubject.linkedSubjectName || ''}
+                onChange={(e) => setNewSubject({ ...newSubject, linkedSubjectName: e.target.value })}
+                className="w-full px-4 py-3 bg-amber-50/60 border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-bold uppercase tracking-tight text-amber-900"
+              >
+                <option value="">(Ninguna - Independiente)</option>
+                {(subjectsByLevel[newSubject.level] || [])
+                  .filter(s => normalizeCategory(s.category) === 'Académica')
+                  .map(s => (
+                    <option key={s.id} value={s.name}>Suma a: {s.name}</option>
+                  ))}
+              </select>
+            </div>
+          )}
+          {newSubject.category === 'Desarrollo Personal' && (
+            <div>
+              <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5 ml-1">
+                Faltas de Asistencia
+              </label>
+              <label className="flex items-center gap-2 px-3 py-3 bg-indigo-50/60 border border-indigo-200 rounded-xl cursor-pointer hover:bg-indigo-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={!!newSubject.isAttendanceCount}
+                  onChange={(e) => setNewSubject({ ...newSubject, isAttendanceCount: e.target.checked })}
+                  className="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span className="text-[11px] font-bold text-indigo-950 uppercase tracking-tight leading-none">
+                  Suma Faltas Auto.
+                </span>
+              </label>
+            </div>
+          )}
           <button
             onClick={handleCreateSubject}
             disabled={isSaving}
@@ -2518,28 +2585,70 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                           {catSubjects.map(subj => (
                             <div key={subj.id} className="px-3 py-2 flex items-center justify-between group hover:bg-slate-50 rounded-lg transition-all">
                               {editingSubject?.id === subj.id ? (
-                                <div className="flex-1 flex gap-2">
+                                <div className="flex-1 flex flex-wrap gap-2 items-center">
                                   <input 
                                     autoFocus
                                     value={editingSubject.name}
                                     onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
-                                    className="flex-1 bg-white border border-blue-200 rounded px-2 py-1 text-sm font-bold outline-none"
+                                    className="flex-1 min-w-[120px] bg-white border border-blue-200 rounded px-2 py-1 text-sm font-bold outline-none"
                                   />
                                   <select
                                     value={normalizeCategory(editingSubject.category)}
-                                    onChange={(e) => setEditingSubject({ ...editingSubject, category: e.target.value as any })}
+                                    onChange={(e) => setEditingSubject({ 
+                                      ...editingSubject, 
+                                      category: e.target.value as any,
+                                      linkedSubjectName: e.target.value === 'Autonomía Curricular' ? editingSubject.linkedSubjectName : undefined
+                                    })}
                                     className="bg-white border border-blue-200 rounded px-1 py-1 text-[8px] font-black uppercase"
                                   >
                                     <option value="Académica">Aca.</option>
                                     <option value="Autonomía Curricular">Aut. Curr.</option>
                                     <option value="Desarrollo Personal">Des. Personal</option>
                                   </select>
+                                  {normalizeCategory(editingSubject.category) === 'Autonomía Curricular' && (
+                                    <select
+                                      value={editingSubject.linkedSubjectName || ''}
+                                      onChange={(e) => setEditingSubject({ ...editingSubject, linkedSubjectName: e.target.value })}
+                                      className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-amber-900 max-w-[160px]"
+                                      title="Vincular a materia académica para promediar"
+                                    >
+                                      <option value="">(Sin vincular)</option>
+                                      {(subjectsByLevel[editingSubject.level] || [])
+                                        .filter(s => normalizeCategory(s.category) === 'Académica' && s.id !== editingSubject.id)
+                                        .map(s => (
+                                          <option key={s.id} value={s.name}>Suma a: {s.name}</option>
+                                        ))}
+                                    </select>
+                                  )}
+                                  {normalizeCategory(editingSubject.category) === 'Desarrollo Personal' && (
+                                    <label className="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-indigo-900 cursor-pointer" title="Marcar para sumar faltas automáticamente">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!editingSubject.isAttendanceCount}
+                                        onChange={(e) => setEditingSubject({ ...editingSubject, isAttendanceCount: e.target.checked })}
+                                        className="w-3 h-3 text-indigo-600 rounded"
+                                      />
+                                      <span>Suma Faltas</span>
+                                    </label>
+                                  )}
                                   <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
                                   <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>
                                 </div>
                               ) : (
                                 <>
-                                  <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic">{subj.name}</span>
+                                  <div className="flex flex-col min-w-0 pr-2">
+                                    <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic truncate">{subj.name}</span>
+                                    {subj.linkedSubjectName && (
+                                      <span className="text-[9px] font-bold text-amber-600 flex items-center gap-1 mt-0.5">
+                                        <Link2 size={10} /> Suma a: {subj.linkedSubjectName}
+                                      </span>
+                                    )}
+                                    {subj.isAttendanceCount && (
+                                      <span className="text-[9px] font-bold text-indigo-600 flex items-center gap-1 mt-0.5">
+                                        <Sparkles size={10} /> Suma Faltas Automáticas
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button 
                                       onClick={() => setEditingSubject(subj)}
