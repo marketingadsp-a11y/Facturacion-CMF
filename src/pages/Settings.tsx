@@ -49,7 +49,8 @@ import {
   UserCheck,
   ChevronDown,
   ChevronUp,
-  Layers
+  Layers,
+  FileSpreadsheet
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -2036,6 +2037,61 @@ export default function Settings() {
                                 </button>
                               </div>
                             </div>
+                          </div>
+
+                          {/* Registro de Actividades por Nivel */}
+                          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5 ml-1 flex items-center gap-1.5">
+                                <FileSpreadsheet size={13} className="text-violet-600" />
+                                Registro de Actividades por Docente
+                              </label>
+                              <p className="text-xs text-slate-500 font-medium">
+                                Habilitar o deshabilitar la opción de que los docentes de {level} agreguen columnas de actividades (nombre y fecha) y califiquen a los alumnos.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const isCurrentlyEnabled = currentConfig.enableActivities ?? false;
+                                const updated: LevelEvaluationConfig = {
+                                  ...currentConfig,
+                                  enableActivities: !isCurrentlyEnabled
+                                };
+                                const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                newMap[level] = updated;
+
+                                const currentLevels = settings.teacherActivitiesLevels || [];
+                                const updatedLevels = !isCurrentlyEnabled
+                                  ? Array.from(new Set([...currentLevels, level]))
+                                  : currentLevels.filter(l => l !== level);
+
+                                const newSettings = {
+                                  ...settings,
+                                  levelEvaluationConfig: newMap,
+                                  teacherActivitiesLevels: updatedLevels
+                                };
+
+                                setSettings(newSettings);
+                                try {
+                                  await setDoc(doc(db, 'settings', 'general'), newSettings);
+                                } catch (e) {
+                                  console.error("Error auto-saving activities config:", e);
+                                }
+                              }}
+                              className={cn(
+                                "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border shrink-0",
+                                currentConfig.enableActivities
+                                  ? "bg-violet-600 text-white border-violet-600 shadow-sm shadow-violet-600/20"
+                                  : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                              )}
+                            >
+                              <div className={cn(
+                                "w-2 h-2 rounded-full",
+                                currentConfig.enableActivities ? "bg-white" : "bg-slate-400"
+                              )} />
+                              <span>{currentConfig.enableActivities ? 'Habilitado' : 'Deshabilitado'}</span>
+                            </button>
                           </div>
                         </div>
                       );

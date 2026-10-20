@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
-import { AppUser, Student, StudentGrade, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
+import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
 import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject } from '../lib/evaluationUtils';
 import { 
   Users, 
@@ -33,6 +33,9 @@ import {
   Image as ImageIcon,
   Sparkles,
   Edit3,
+  Edit2,
+  Plus,
+  FileSpreadsheet,
   Trash2,
   ShieldCheck,
   UserCheck,
@@ -105,6 +108,14 @@ export default function TeacherPortal() {
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [settings, setSettings] = useState<AppSettings | null>(null);
+
+  // Activities state
+  const [activities, setActivities] = useState<TeacherActivity[]>([]);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<TeacherActivity | null>(null);
+  const [activityFormName, setActivityFormName] = useState('');
+  const [activityFormDate, setActivityFormDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [isSavingActivity, setIsSavingActivity] = useState(false);
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
   const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
@@ -319,6 +330,27 @@ export default function TeacherPortal() {
   }, [settings, activeLevel]);
 
   const gradingScale = evalConfig.gradingScale || 'numeric_10';
+
+  const isActivitiesEnabledForCurrentLevel = useMemo(() => {
+    if (!activeLevel) return false;
+    const cfg = settings?.levelEvaluationConfig?.[activeLevel];
+    if (cfg?.enableActivities !== undefined) {
+      return Boolean(cfg.enableActivities);
+    }
+    if (settings?.teacherActivitiesLevels) {
+      return settings.teacherActivitiesLevels.includes(activeLevel);
+    }
+    return false;
+  }, [activeLevel, settings]);
+
+  const formatShortDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return dateStr;
+    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    return `${parseInt(parts[2], 10)} ${months[monthIdx] || parts[1]}`;
+  };
 
   // Subjects for the current active level
   const activeLevelSubjects = useMemo(() => {
@@ -604,6 +636,45 @@ export default function TeacherPortal() {
     return () => unsubGrades();
   }, [selectedBimestre, currentCycleId]);
 
+  // Fetch activities for active class and period
+  useEffect(() => {
+    if (!currentCycleId || !selectedBimestre || !activeLevel || !activeGrade || !activeGroup) {
+      setActivities([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'teacherActivities'),
+      where('cycleId', '==', currentCycleId),
+      where('period', '==', selectedBimestre)
+    );
+
+    const unsubActivities = onSnapshot(q, (snap) => {
+      const list: TeacherActivity[] = [];
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data() as TeacherActivity;
+        const act = { ...data, id: docSnap.id };
+        if (
+          act.level === activeLevel &&
+          act.grade === activeGrade &&
+          act.group === activeGroup
+        ) {
+          // If role is Docente, only show activities created by this teacher
+          if (userProfile?.role === 'Docente' && act.teacherId && act.teacherId !== userProfile.id) {
+            return;
+          }
+          list.push(act);
+        }
+      });
+      list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      setActivities(list);
+    }, (error) => {
+      console.error("Error loading activities:", error);
+    });
+
+    return () => unsubActivities();
+  }, [currentCycleId, selectedBimestre, activeLevel, activeGrade, activeGroup, userProfile?.id, userProfile?.role]);
+
   // Fetch lock status for all periods of current class
   useEffect(() => {
     if (!currentCycleId || !activeLevel || !activeGrade) {
@@ -786,6 +857,107 @@ export default function TeacherPortal() {
     });
   };
 
+  const handleSaveActivity = async () => {
+    if (!activityFormName.trim()) {
+      alert("Por favor ingresa el nombre de la actividad");
+      return;
+    }
+    if (!activityFormDate) {
+      alert("Por favor selecciona la fecha de la actividad");
+      return;
+    }
+    setIsSavingActivity(true);
+    try {
+      if (editingActivity) {
+        await updateDoc(doc(db, 'teacherActivities', editingActivity.id), {
+          name: activityFormName.trim(),
+          date: activityFormDate,
+          updatedAt: serverTimestamp()
+        });
+        toast.success("Actividad actualizada correctamente");
+      } else {
+        await addDoc(collection(db, 'teacherActivities'), {
+          name: activityFormName.trim(),
+          date: activityFormDate,
+          level: activeLevel,
+          grade: activeGrade,
+          group: activeGroup,
+          period: selectedBimestre,
+          cycleId: currentCycleId,
+          teacherId: userProfile?.id || '',
+          teacherName: userProfile?.name || '',
+          scores: {},
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        toast.success("Columna de actividad creada");
+      }
+      setIsActivityModalOpen(false);
+      setEditingActivity(null);
+      setActivityFormName('');
+      setActivityFormDate(new Date().toISOString().split('T')[0]);
+    } catch (err) {
+      console.error("Error saving activity:", err);
+      alert("Error al guardar la actividad");
+    } finally {
+      setIsSavingActivity(false);
+    }
+  };
+
+  const handleDeleteActivity = async (activityId: string, activityName: string) => {
+    if (!window.confirm(`¿Estás seguro de eliminar la actividad "${activityName}" y sus calificaciones registradas?`)) {
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'teacherActivities', activityId));
+      toast.info("Actividad eliminada");
+    } catch (err) {
+      console.error("Error deleting activity:", err);
+      alert("Error al eliminar la actividad");
+    }
+  };
+
+  const handleActivityScoreChange = (activityId: string, studentId: string, value: string) => {
+    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+
+    let parsedVal: number | string = value;
+    if (gradingScale === 'letters') {
+      parsedVal = value ? String(value).toUpperCase().trim() : '';
+    } else if (value === '' || value === null || value === undefined) {
+      parsedVal = '';
+    } else {
+      const num = parseFloat(value);
+      parsedVal = isNaN(num) ? '' : num;
+    }
+
+    setActivities(prev => prev.map(act => {
+      if (act.id !== activityId) return act;
+      const nextScores = { ...(act.scores || {}) };
+      if (parsedVal === '') {
+        delete nextScores[studentId];
+      } else {
+        nextScores[studentId] = parsedVal;
+      }
+      return {
+        ...act,
+        scores: nextScores
+      };
+    }));
+  };
+
+  const handleActivityScoreBlur = async (activityId: string) => {
+    const act = activities.find(a => a.id === activityId);
+    if (!act) return;
+    try {
+      await setDoc(doc(db, 'teacherActivities', act.id), {
+        scores: act.scores || {},
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (err) {
+      console.error("Error autosaving activity score:", err);
+    }
+  };
+
   const handleSaveAll = async () => {
     if (!hasPermission('grading', 'manage')) return;
     setIsSaving(true);
@@ -831,7 +1003,14 @@ export default function TeacherPortal() {
         }, { merge: true });
       });
 
-      await Promise.all(promises);
+      const activityPromises = activities.map(act => {
+        return setDoc(doc(db, 'teacherActivities', act.id), {
+          scores: act.scores || {},
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      });
+
+      await Promise.all([...promises, ...activityPromises]);
       setSavedStatus('¡Calificaciones guardadas!');
       setTimeout(() => setSavedStatus(null), 3000);
     } catch (error) {
@@ -1409,6 +1588,22 @@ export default function TeacherPortal() {
                 Bloqueado
               </div>
             )}
+            {isActivitiesEnabledForCurrentLevel && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingActivity(null);
+                  setActivityFormName('');
+                  setActivityFormDate(new Date().toISOString().split('T')[0]);
+                  setIsActivityModalOpen(true);
+                }}
+                disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                <Plus size={13} strokeWidth={3} />
+                <span>Nueva Actividad</span>
+              </button>
+            )}
             <button
               onClick={handleSaveAll}
               disabled={isSaving || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
@@ -1717,13 +1912,48 @@ export default function TeacherPortal() {
                       {personalDevLevelSubjects.length > 0 && (
                         <th 
                           colSpan={personalDevLevelSubjects.length} 
-                          className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
+                          className={cn(
+                            "py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black",
+                            isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : ""
+                          )}
                         >
                           <div className="flex items-center justify-center gap-1.5">
                             <span className="tracking-wider">Desarrollo Personal</span>
                             <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
                               {personalDevLevelSubjects.length}
                             </span>
+                          </div>
+                        </th>
+                      )}
+
+                      {/* Grupo: Actividades */}
+                      {isActivitiesEnabledForCurrentLevel && (
+                        <th
+                          colSpan={activities.length > 0 ? activities.length : 1}
+                          className="py-2.5 px-3 text-center bg-violet-50/90 text-violet-900 border-b border-violet-200 font-black border-l-[3px] border-l-slate-300"
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <FileSpreadsheet size={13} className="text-violet-700" />
+                            <span className="tracking-wider">Actividades</span>
+                            <span className="text-[9px] bg-violet-200/80 text-violet-900 px-1.5 py-0.5 rounded-full font-bold">
+                              {activities.length}
+                            </span>
+                            {!isBimestreLocked && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingActivity(null);
+                                  setActivityFormName('');
+                                  setActivityFormDate(new Date().toISOString().split('T')[0]);
+                                  setIsActivityModalOpen(true);
+                                }}
+                                title="Registrar nueva actividad en este grupo"
+                                className="ml-1 px-2 py-0.5 rounded bg-violet-600 hover:bg-violet-700 text-white text-[9px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+                              >
+                                <Plus size={10} strokeWidth={3} />
+                                <span>Actividad</span>
+                              </button>
+                            )}
                           </div>
                         </th>
                       )}
@@ -1735,7 +1965,7 @@ export default function TeacherPortal() {
                       {pureAcademicSubjects.length > 0 ? (
                         pureAcademicSubjects.map((subj, idx) => {
                           const isLast = idx === pureAcademicSubjects.length - 1;
-                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
+                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0 || isActivitiesEnabledForCurrentLevel;
                           return (
                             <th 
                               key={subj.id} 
@@ -1759,7 +1989,7 @@ export default function TeacherPortal() {
                       {autonomyCurricularSubjects.length > 0 && (
                         autonomyCurricularSubjects.map((subj, idx) => {
                           const isLast = idx === autonomyCurricularSubjects.length - 1;
-                          const hasNextGroup = personalDevLevelSubjects.length > 0;
+                          const hasNextGroup = personalDevLevelSubjects.length > 0 || isActivitiesEnabledForCurrentLevel;
                           return (
                             <th 
                               key={subj.id} 
@@ -1790,13 +2020,74 @@ export default function TeacherPortal() {
                               title={`Desarrollo Personal: ${subj.name}`}
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[90px] max-w-[130px] whitespace-normal break-words leading-tight bg-indigo-50/70 text-indigo-900 font-black",
-                                isLast ? "" : "border-r border-indigo-200/70"
+                                isLast ? (isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : "") : "border-r border-indigo-200/70"
                               )}
                             >
                               <span className="block leading-tight">{subj.name}</span>
                             </th>
                           );
                         })
+                      )}
+
+                      {/* Columnas de Actividades */}
+                      {isActivitiesEnabledForCurrentLevel && (
+                        activities.length > 0 ? (
+                          activities.map((act, idx) => {
+                            const isFirst = idx === 0;
+                            const isLast = idx === activities.length - 1;
+                            return (
+                              <th 
+                                key={act.id} 
+                                title={`Actividad: ${act.name} (${act.date})`}
+                                className={cn(
+                                  "px-2 py-2 text-center min-w-[110px] max-w-[150px] whitespace-normal break-words leading-tight bg-violet-50/40 text-violet-950 font-black",
+                                  isFirst ? "border-l-[3px] border-l-slate-300" : "",
+                                  isLast ? "" : "border-r border-violet-200/70"
+                                )}
+                              >
+                                <div className="space-y-1">
+                                  <span className="block leading-tight text-[10px] text-violet-950 font-black truncate max-w-[130px] mx-auto" title={act.name}>
+                                    {act.name}
+                                  </span>
+                                  <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-violet-700">
+                                    <span className="px-1.5 py-0.5 rounded bg-violet-100/90 border border-violet-200/80">
+                                      {formatShortDate(act.date)}
+                                    </span>
+                                    {!isBimestreLocked && (
+                                      <div className="flex items-center gap-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingActivity(act);
+                                            setActivityFormName(act.name);
+                                            setActivityFormDate(act.date || new Date().toISOString().split('T')[0]);
+                                            setIsActivityModalOpen(true);
+                                          }}
+                                          title="Editar actividad"
+                                          className="p-0.5 hover:text-violet-950 hover:bg-violet-200/70 rounded cursor-pointer transition-colors"
+                                        >
+                                          <Edit2 size={9} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteActivity(act.id, act.name)}
+                                          title="Eliminar actividad"
+                                          className="p-0.5 hover:text-rose-600 hover:bg-rose-100 rounded cursor-pointer transition-colors"
+                                        >
+                                          <Trash2 size={9} />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </th>
+                            );
+                          })
+                        ) : (
+                          <th className="px-3 py-2 text-center text-violet-400 italic text-[8px] bg-violet-50/20 border-l-[3px] border-l-slate-300">
+                            Sin actividades
+                          </th>
+                        )
                       )}
                     </tr>
                   </thead>
@@ -1971,7 +2262,7 @@ export default function TeacherPortal() {
                                   key={subj.id} 
                                   className={cn(
                                     "px-1 py-1.5 bg-indigo-50/15",
-                                    isLast ? "" : "border-r border-indigo-100/70"
+                                    isLast ? (isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : "") : "border-r border-indigo-100/70"
                                   )}
                                 >
                                   {isAttendanceTracker ? (
@@ -2035,6 +2326,69 @@ export default function TeacherPortal() {
                                 </td>
                               );
                             })
+                          )}
+
+                          {/* Actividades Inputs */}
+                          {isActivitiesEnabledForCurrentLevel && (
+                            activities.length > 0 ? (
+                              activities.map((act, idx) => {
+                                const isFirst = idx === 0;
+                                const isLast = idx === activities.length - 1;
+                                const rawScore = act.scores?.[student.id] ?? '';
+
+                                return (
+                                  <td 
+                                    key={act.id} 
+                                    className={cn(
+                                      "px-1 py-1.5 bg-violet-50/15",
+                                      isFirst ? "border-l-[3px] border-l-slate-300" : "",
+                                      isLast ? "" : "border-r border-violet-100/70"
+                                    )}
+                                  >
+                                    {gradingScale === 'letters' ? (
+                                      <select
+                                        disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawScore}
+                                        onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
+                                        onBlur={() => handleActivityScoreBlur(act.id)}
+                                        className={cn(
+                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                          rawScore === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                          rawScore === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                          rawScore === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                          rawScore === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                          "bg-violet-50/40 text-violet-400 border-transparent focus:bg-white focus:border-violet-400"
+                                        )}
+                                      >
+                                        <option value="">-</option>
+                                        <option value="A">A - Destacado</option>
+                                        <option value="B">B - Bueno</option>
+                                        <option value="C">C - Suficiente</option>
+                                        <option value="D">D - Apoyo</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="number"
+                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                        min="0"
+                                        max={gradingScale === 'numeric_100' ? "100" : "10"}
+                                        step={gradingScale === 'numeric_100' ? "1" : "0.5"}
+                                        disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawScore}
+                                        onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
+                                        onBlur={() => handleActivityScoreBlur(act.id)}
+                                        className="w-full bg-violet-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-violet-950 focus:bg-white focus:border-violet-400 outline-none transition-all tabular-nums italic"
+                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                      />
+                                    )}
+                                  </td>
+                                );
+                              })
+                            ) : (
+                              <td className="px-1 py-1.5 text-center text-slate-300 text-[10px] italic bg-violet-50/5 border-l-[3px] border-l-slate-300">
+                                -
+                              </td>
+                            )
                           )}
                         </tr>
                       );
@@ -2957,6 +3311,109 @@ export default function TeacherPortal() {
                   <Check size={14} /> Guardar Justificación
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Modal: Crear / Editar Actividad */}
+        {isActivityModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-xl backdrop-blur-xs">
+                    <FileSpreadsheet size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider">
+                      {editingActivity ? 'Editar Actividad' : 'Nueva Actividad'}
+                    </h3>
+                    <p className="text-[10px] text-violet-100 font-bold uppercase tracking-widest mt-0.5">
+                      {activeLevel} • {activeGrade} "{activeGroup}" • {evalConfig.periodNames?.[selectedBimestre - 1] || `${selectedBimestre}º Periodo`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActivityModalOpen(false);
+                    setEditingActivity(null);
+                  }}
+                  className="p-1.5 hover:bg-white/20 rounded-lg text-white/80 hover:text-white transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={(e) => { e.preventDefault(); handleSaveActivity(); }}>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                      Nombre de la Actividad *
+                    </label>
+                    <input
+                      type="text"
+                      autoFocus
+                      required
+                      placeholder="Ej. Ensayo Revolución, Proyecto 1, Tarea 3..."
+                      value={activityFormName}
+                      onChange={(e) => setActivityFormName(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-200 outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                      Fecha de la Actividad *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={activityFormDate}
+                      onChange={(e) => setActivityFormDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-200 outline-none transition-all"
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed bg-violet-50/60 border border-violet-100 rounded-xl p-3">
+                    💡 Al registrar esta actividad se agregará automáticamente una columna al final de las materias para que puedas calificar a cada alumno del grupo.
+                  </p>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActivityModalOpen(false);
+                      setEditingActivity(null);
+                    }}
+                    disabled={isSavingActivity}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingActivity || !activityFormName.trim() || !activityFormDate}
+                    className="px-5 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                  >
+                    {isSavingActivity ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Check size={14} />
+                    )}
+                    <span>{editingActivity ? 'Guardar Cambios' : 'Crear Columna'}</span>
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

@@ -330,6 +330,7 @@ export interface AppSettings {
   attendanceListColumns?: number; // number of blank attendance columns (default 31)
   attendanceListShowMatricula?: boolean;
   attendanceListShowNo?: boolean;
+  teacherActivitiesLevels?: string[]; // Niveles educativos con registro de actividades habilitado
 }
 
 export type GradingScale = 'letters' | 'numeric_10' | 'numeric_100';
@@ -339,6 +340,23 @@ export interface LevelEvaluationConfig {
   periodType: 'Trimestres' | 'Bimestres' | 'Semestres' | 'Cuatrimestres' | 'Personalizado';
   periodNames?: string[]; // e.g. ["1er Trimestre", "2do Trimestre", "3er Trimestre"]
   gradingScale?: GradingScale; // 'letters' (Preescolar A-D), 'numeric_10' (0-10), 'numeric_100' (0-100)
+  enableActivities?: boolean; // Permite a los docentes registrar columnas de actividades y evaluarlas
+}
+
+export interface TeacherActivity {
+  id: string;
+  name: string;
+  date: string; // ISO format YYYY-MM-DD
+  level: string;
+  grade: string;
+  group: string;
+  period: number; // Periodo o bimestre correspondiente (1, 2, 3...)
+  cycleId: string;
+  teacherId?: string;
+  teacherName?: string;
+  scores?: Record<string, number | string>; // studentId -> calificacion
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface Subject {
