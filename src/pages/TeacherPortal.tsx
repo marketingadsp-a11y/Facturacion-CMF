@@ -107,17 +107,40 @@ export default function TeacherPortal() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
+  const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
   const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
   const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
   const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
 
   const availableLevels = useMemo(() => {
     const all = settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
-    if (restrictedLevels.length > 0) {
-      return all.filter(lvl => restrictedLevels.includes(lvl));
+    let levels = restrictedLevels.length > 0 ? all.filter(lvl => restrictedLevels.includes(lvl)) : all;
+
+    // For specific subject access teachers, strictly limit to levels where they actually have assigned subjects
+    if (isSpecificTeacher) {
+      const allowed = userProfile?.assignedSubjects || [];
+      levels = levels.filter(lvl => {
+        const hasFromSubjects = subjects.some(s => {
+          if (!s.level || s.level.toLowerCase().trim() !== lvl.toLowerCase().trim()) return false;
+          const keyWithLevel = `${s.name}__${s.level}`;
+          return allowed.some(a => 
+            a === s.id || 
+            a.toLowerCase().trim() === keyWithLevel.toLowerCase().trim() ||
+            a.toLowerCase().trim() === s.name.toLowerCase().trim()
+          );
+        });
+
+        const hasFromKey = allowed.some(a => {
+          const parts = a.split('__');
+          return parts.length >= 2 && parts[1].toLowerCase().trim() === lvl.toLowerCase().trim();
+        });
+
+        return hasFromSubjects || hasFromKey;
+      });
     }
-    return all;
-  }, [settings?.academicLevels, restrictedLevels]);
+
+    return levels;
+  }, [settings?.academicLevels, restrictedLevels, isSpecificTeacher, userProfile?.assignedSubjects, subjects]);
 
   const activeLevel = useMemo(() => {
     if (selectedLevel && availableLevels.includes(selectedLevel)) return selectedLevel;
@@ -129,11 +152,48 @@ export default function TeacherPortal() {
 
   const availableGrades = useMemo(() => {
     const all = settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
-    if (restrictedGrades.length > 0) {
-      return all.filter(g => restrictedGrades.includes(g));
+    let grades = restrictedGrades.length > 0 ? all.filter(g => restrictedGrades.includes(g)) : all;
+
+    // For specific subject access teachers, only include grades where they have assigned subjects in activeLevel
+    if (isSpecificTeacher) {
+      if (!activeLevel) return [];
+      const allowed = userProfile?.assignedSubjects || [];
+      const currentLevelSubjs = subjects.filter(s => 
+        s.level && activeLevel && s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
+      );
+      
+      const teacherSubjsInLevel = currentLevelSubjs.filter(s => {
+        const keyWithLevel = `${s.name}__${s.level}`;
+        return allowed.some(a => 
+          a === s.id || 
+          a.toLowerCase().trim() === keyWithLevel.toLowerCase().trim() ||
+          a.toLowerCase().trim() === s.name.toLowerCase().trim()
+        );
+      });
+
+      if (teacherSubjsInLevel.length === 0) return [];
+
+      const validGradesSet = new Set<string>();
+      teacherSubjsInLevel.forEach(s => {
+        const keyWithLevel = `${s.name}__${s.level}`;
+        const gradeList = userProfile?.teacherSubjectGrades?.[keyWithLevel] 
+          || userProfile?.teacherSubjectGrades?.[s.name] 
+          || userProfile?.teacherSubjectGrades?.[s.id];
+
+        if (!gradeList || gradeList.length === 0 || gradeList.includes('all')) {
+          grades.forEach(g => validGradesSet.add(g));
+        } else {
+          gradeList.forEach(g => {
+            if (grades.includes(g)) validGradesSet.add(g);
+          });
+        }
+      });
+
+      return all.filter(g => validGradesSet.has(g));
     }
-    return all;
-  }, [settings?.academicGrades, restrictedGrades]);
+
+    return grades;
+  }, [settings?.academicGrades, restrictedGrades, isSpecificTeacher, activeLevel, userProfile, subjects]);
 
   const activeGrade = useMemo(() => {
     if (selectedGrade && availableGrades.includes(selectedGrade)) return selectedGrade;
@@ -147,10 +207,12 @@ export default function TeacherPortal() {
     const all = settings?.academicGroups && settings.academicGroups.length > 0
       ? settings.academicGroups
       : ['A', 'B', 'C', 'D'];
+    const baseGroups = restrictedGroups.length > 0 ? all.filter(grp => restrictedGroups.includes(grp)) : all;
 
-    // For specific subject access teachers, dynamically calculate valid groups for the active level and grade
-    if (userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific' && activeGrade) {
-      const allowed = userProfile.assignedSubjects || [];
+    // For specific subject access teachers, dynamically calculate valid groups for activeLevel and activeGrade
+    if (isSpecificTeacher) {
+      if (!activeLevel || !activeGrade) return [];
+      const allowed = userProfile?.assignedSubjects || [];
       const currentLevelSubjs = subjects.filter(s => 
         s.level && activeLevel && s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
       );
@@ -167,60 +229,64 @@ export default function TeacherPortal() {
       // Filter to subjects that teach activeGrade
       const validForGrade = teacherSubjsInLevel.filter(s => {
         const keyWithLevel = `${s.name}__${s.level}`;
-        const gradeList = userProfile.teacherSubjectGrades?.[keyWithLevel] 
-          || userProfile.teacherSubjectGrades?.[s.name] 
-          || userProfile.teacherSubjectGrades?.[s.id];
+        const gradeList = userProfile?.teacherSubjectGrades?.[keyWithLevel] 
+          || userProfile?.teacherSubjectGrades?.[s.name] 
+          || userProfile?.teacherSubjectGrades?.[s.id];
         return !gradeList || gradeList.length === 0 || gradeList.includes('all') || gradeList.includes(activeGrade);
       });
 
-      if (validForGrade.length > 0) {
-        const gradeGroupsSet = new Set<string>();
-        let hasAll = false;
-
-        validForGrade.forEach(s => {
-          const keyWithLevel = `${s.name}__${s.level}`;
-          const gradeGroupList = (
-            userProfile.teacherSubjectGroups?.[`${keyWithLevel}__${activeGrade}`] ||
-            userProfile.teacherSubjectGroups?.[`${s.name}__${activeGrade}`] ||
-            userProfile.teacherSubjectGroups?.[`${s.id}__${activeGrade}`]
-          );
-          const list = (gradeGroupList && gradeGroupList.length > 0) 
-            ? gradeGroupList
-            : (
-                userProfile.teacherSubjectGroups?.[keyWithLevel] ||
-                userProfile.teacherSubjectGroups?.[s.name] ||
-                userProfile.teacherSubjectGroups?.[s.id]
-              );
-
-          if (!list || list.length === 0 || list.includes('all')) {
-            hasAll = true;
-          } else {
-            list.forEach(g => gradeGroupsSet.add(g));
-          }
-        });
-
-        if (!hasAll && gradeGroupsSet.size > 0) {
-          return all.filter(grp => gradeGroupsSet.has(grp));
-        }
+      // If no assigned subjects exist for this grade, NO groups are valid
+      if (validForGrade.length === 0) {
+        return [];
       }
+
+      const gradeGroupsSet = new Set<string>();
+      let hasAll = false;
+
+      validForGrade.forEach(s => {
+        const keyWithLevel = `${s.name}__${s.level}`;
+        const gradeGroupList = (
+          userProfile?.teacherSubjectGroups?.[`${keyWithLevel}__${activeGrade}`] ||
+          userProfile?.teacherSubjectGroups?.[`${s.name}__${activeGrade}`] ||
+          userProfile?.teacherSubjectGroups?.[`${s.id}__${activeGrade}`]
+        );
+        const list = (gradeGroupList && gradeGroupList.length > 0) 
+          ? gradeGroupList
+          : (
+              userProfile?.teacherSubjectGroups?.[keyWithLevel] ||
+              userProfile?.teacherSubjectGroups?.[s.name] ||
+              userProfile?.teacherSubjectGroups?.[s.id]
+            );
+
+        if (!list || list.length === 0 || list.includes('all')) {
+          hasAll = true;
+        } else {
+          list.forEach(g => {
+            if (baseGroups.includes(g)) gradeGroupsSet.add(g);
+          });
+        }
+      });
+
+      if (hasAll) {
+        return baseGroups;
+      }
+      return all.filter(grp => gradeGroupsSet.has(grp));
     }
 
-    if (restrictedGroups.length > 0) {
-      return all.filter(grp => restrictedGroups.includes(grp));
-    }
-    return all;
-  }, [settings?.academicGroups, restrictedGroups, userProfile, activeLevel, activeGrade, subjects]);
+    return baseGroups;
+  }, [settings?.academicGroups, restrictedGroups, isSpecificTeacher, activeLevel, activeGrade, userProfile, subjects]);
 
   const activeGroup = useMemo(() => {
     if (selectedGroup && availableGroups.includes(selectedGroup)) return selectedGroup;
     if (userProfile?.role === 'Docente' && userProfile.assignedGroup && availableGroups.includes(userProfile.assignedGroup)) {
       return userProfile.assignedGroup;
     }
-    return availableGroups[0] || 'A';
+    return availableGroups[0] || '';
   }, [selectedGroup, availableGroups, userProfile]);
 
   const isMultiGroupTeacher = userProfile?.role === 'Docente' && (
     userProfile.teacherGroupAccess === 'multiple' ||
+    userProfile.teacherSubjectAccess === 'specific' ||
     (userProfile.restrictedLevels && userProfile.restrictedLevels.length > 1) ||
     (userProfile.restrictedGrades && userProfile.restrictedGrades.length > 1) ||
     (userProfile.restrictedGroups && userProfile.restrictedGroups.length > 1) ||
@@ -230,34 +296,6 @@ export default function TeacherPortal() {
   );
 
   const canFilterGroups = userProfile?.role !== 'Docente' || isMultiGroupTeacher;
-
-  const students = useMemo(() => {
-    let list = [...allStudents];
-    if (restrictedLevels.length > 0) {
-      list = list.filter(s => restrictedLevels.includes(s.level));
-    }
-    if (restrictedGrades.length > 0) {
-      list = list.filter(s => restrictedGrades.includes(s.grade));
-    }
-    if (restrictedGroups.length > 0) {
-      list = list.filter(s => restrictedGroups.includes(s.group || ''));
-    }
-
-    if (activeLevel) {
-      list = list.filter(s => s.level?.toLowerCase().trim() === activeLevel.toLowerCase().trim());
-    }
-    if (activeGrade) {
-      list = list.filter(s => s.grade === activeGrade);
-    }
-    if (activeGroup) {
-      list = list.filter(s => s.group === activeGroup);
-    }
-    return list.sort((a, b) => {
-      const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
-      const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-  }, [allStudents, restrictedLevels, restrictedGrades, restrictedGroups, activeLevel, activeGrade, activeGroup]);
 
   const evalConfig = useMemo(() => {
     return getLevelEvaluationConfig(settings, activeLevel);
@@ -273,8 +311,8 @@ export default function TeacherPortal() {
     );
 
     // If teacher has specific subject access, filter only assigned subjects (and by grade/group if restricted)
-    if (userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific') {
-      const allowed = userProfile.assignedSubjects || [];
+    if (isSpecificTeacher) {
+      const allowed = userProfile?.assignedSubjects || [];
       list = list.filter(s => {
         const keyWithLevel = `${s.name}__${s.level}`;
         const isSubjectAllowed = allowed.some(a => 
@@ -285,9 +323,9 @@ export default function TeacherPortal() {
         if (!isSubjectAllowed) return false;
 
         // Check if grade-restricted for this subject
-        const gradeList = userProfile.teacherSubjectGrades?.[keyWithLevel] 
-          || userProfile.teacherSubjectGrades?.[s.name] 
-          || userProfile.teacherSubjectGrades?.[s.id];
+        const gradeList = userProfile?.teacherSubjectGrades?.[keyWithLevel] 
+          || userProfile?.teacherSubjectGrades?.[s.name] 
+          || userProfile?.teacherSubjectGrades?.[s.id];
 
         if (gradeList && gradeList.length > 0 && !gradeList.includes('all')) {
           if (activeGrade && !gradeList.includes(activeGrade)) {
@@ -297,15 +335,15 @@ export default function TeacherPortal() {
 
         // Check if group-restricted for this subject (grade-specific first, fallback to general)
         const gradeGroupList = (activeGrade && (
-          userProfile.teacherSubjectGroups?.[`${keyWithLevel}__${activeGrade}`] ||
-          userProfile.teacherSubjectGroups?.[`${s.name}__${activeGrade}`] ||
-          userProfile.teacherSubjectGroups?.[`${s.id}__${activeGrade}`]
+          userProfile?.teacherSubjectGroups?.[`${keyWithLevel}__${activeGrade}`] ||
+          userProfile?.teacherSubjectGroups?.[`${s.name}__${activeGrade}`] ||
+          userProfile?.teacherSubjectGroups?.[`${s.id}__${activeGrade}`]
         )) || undefined;
 
         const groupList = gradeGroupList || (
-          userProfile.teacherSubjectGroups?.[keyWithLevel] ||
-          userProfile.teacherSubjectGroups?.[s.name] ||
-          userProfile.teacherSubjectGroups?.[s.id]
+          userProfile?.teacherSubjectGroups?.[keyWithLevel] ||
+          userProfile?.teacherSubjectGroups?.[s.name] ||
+          userProfile?.teacherSubjectGroups?.[s.id]
         );
 
         if (groupList && groupList.length > 0 && !groupList.includes('all')) {
@@ -329,7 +367,7 @@ export default function TeacherPortal() {
     });
 
     return list;
-  }, [subjects, activeLevel, activeGrade, activeGroup, userProfile]);
+  }, [subjects, activeLevel, activeGrade, activeGroup, isSpecificTeacher, userProfile]);
 
   // Academic and Autonomía Curricular subjects (combined, used for average calculations)
   const academicLevelSubjects = useMemo(() => {
@@ -359,7 +397,44 @@ export default function TeacherPortal() {
     );
   }, [activeLevelSubjects]);
 
-  const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
+  const students = useMemo(() => {
+    // If Docente with specific subject access:
+    // Strictly verify that active level, grade, and group are valid and assigned,
+    // and that the teacher has at least one active assigned subject in this group
+    if (isSpecificTeacher) {
+      if (!activeLevel || !activeGrade || !activeGroup) return [];
+      if (!availableLevels.includes(activeLevel)) return [];
+      if (!availableGrades.includes(activeGrade)) return [];
+      if (!availableGroups.includes(activeGroup)) return [];
+      if (activeLevelSubjects.length === 0) return [];
+    }
+
+    let list = [...allStudents];
+    if (restrictedLevels.length > 0) {
+      list = list.filter(s => restrictedLevels.includes(s.level));
+    }
+    if (restrictedGrades.length > 0) {
+      list = list.filter(s => restrictedGrades.includes(s.grade));
+    }
+    if (restrictedGroups.length > 0) {
+      list = list.filter(s => restrictedGroups.includes(s.group || ''));
+    }
+
+    if (activeLevel) {
+      list = list.filter(s => s.level?.toLowerCase().trim() === activeLevel.toLowerCase().trim());
+    }
+    if (activeGrade) {
+      list = list.filter(s => s.grade === activeGrade);
+    }
+    if (activeGroup) {
+      list = list.filter(s => s.group === activeGroup);
+    }
+    return list.sort((a, b) => {
+      const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
+      const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [allStudents, restrictedLevels, restrictedGrades, restrictedGroups, activeLevel, activeGrade, activeGroup, isSpecificTeacher, availableLevels, availableGrades, availableGroups, activeLevelSubjects]);
 
   // Adjust selectedBimestre if it exceeds the level's period count
   useEffect(() => {
@@ -1250,17 +1325,26 @@ export default function TeacherPortal() {
             </span>
             <select
               value={activeLevel}
-              onChange={(e) => setSelectedLevel(e.target.value)}
+              onChange={(e) => {
+                setSelectedLevel(e.target.value);
+                setSelectedGrade('');
+                setSelectedGroup('');
+              }}
               className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer shadow-xs"
             >
               {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
+              {availableLevels.length === 0 && <option value="">Sin niveles asignados</option>}
             </select>
             <select
               value={activeGrade}
-              onChange={(e) => setSelectedGrade(e.target.value)}
+              onChange={(e) => {
+                setSelectedGrade(e.target.value);
+                setSelectedGroup('');
+              }}
               className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer shadow-xs"
             >
               {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
+              {availableGrades.length === 0 && <option value="">Sin grados</option>}
             </select>
             <select
               value={activeGroup}
@@ -1268,13 +1352,14 @@ export default function TeacherPortal() {
               className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer shadow-xs"
             >
               {availableGroups.map(grp => <option key={grp} value={grp}>Grupo {grp}</option>)}
+              {availableGroups.length === 0 && <option value="">Sin grupos</option>}
             </select>
           </div>
         ) : (
           <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl text-blue-900">
             <Users size={14} className="text-blue-600" />
             <span className="text-xs font-black uppercase tracking-wider">
-              {activeLevel} • {activeGrade} "{activeGroup}"
+              {activeLevel ? `${activeLevel} • ${activeGrade} "${activeGroup}"` : 'Sin asignación'}
             </span>
           </div>
         )}
@@ -1998,7 +2083,16 @@ export default function TeacherPortal() {
             </div>
           </div>
 
-          <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
+          {isSpecificTeacher && activeLevelSubjects.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center mb-12 shadow-sm">
+              <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
+              <h3 className="text-sm font-black text-amber-900 uppercase">Sin materias asignadas para este grupo</h3>
+              <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto font-medium">
+                Tu usuario tiene asignado acceso a materias específicas, pero ninguna de tus materias asignadas corresponde al nivel o grupo seleccionado.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2123,7 +2217,8 @@ export default function TeacherPortal() {
               </div>
             )}
           </div>
-        </div>
+        )}
+      </div>
       ) : activeTab === 'horario' ? (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-6">
           <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
