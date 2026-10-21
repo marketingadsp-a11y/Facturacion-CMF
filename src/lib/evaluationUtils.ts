@@ -145,44 +145,75 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodCount: 3,
       periodType: 'Trimestres',
       periodNames: ['1er Trimestre', '2do Trimestre', '3er Trimestre'],
-      gradingScale: defaultScale
+      gradingScale: defaultScale,
+      enableActivities: false,
+      enableSubjectAttendance: false
     };
   }
 
+  const trimmedLevel = levelName.trim().toLowerCase();
+  const activitiesFallback = Boolean(
+    settings?.teacherActivitiesLevels?.some(l => l && l.trim().toLowerCase() === trimmedLevel)
+  );
+
+  const defaultSubjectAttendance = /secundaria|bachillerato|preparatoria|prepa/i.test(trimmedLevel);
+  const subjectAttendanceFallback = Boolean(
+    settings?.subjectAttendanceLevels !== undefined
+      ? settings.subjectAttendanceLevels.some(l => l && l.trim().toLowerCase() === trimmedLevel)
+      : defaultSubjectAttendance
+  );
+
   // 1. If explicitly configured in settings under levelEvaluationConfig
-  if (settings?.levelEvaluationConfig?.[levelName]) {
-    const conf = settings.levelEvaluationConfig[levelName];
+  const exactConf = settings?.levelEvaluationConfig?.[levelName];
+  const matchedKey = exactConf
+    ? levelName
+    : Object.keys(settings?.levelEvaluationConfig || {}).find(k => k && k.trim().toLowerCase() === trimmedLevel);
+  const conf = exactConf || (matchedKey ? settings?.levelEvaluationConfig?.[matchedKey] : undefined);
+
+  if (conf) {
     const count = Number(conf.periodCount) || 3;
     const type = conf.periodType || (count === 5 ? 'Bimestres' : count === 3 ? 'Trimestres' : 'Personalizado');
     const names = (conf.periodNames && conf.periodNames.length === count)
       ? conf.periodNames
       : generateDefaultPeriodNames(type, count);
     const gradingScale = conf.gradingScale || defaultScale;
+    const enableActivities = conf.enableActivities !== undefined
+      ? Boolean(conf.enableActivities)
+      : activitiesFallback;
+    const enableSubjectAttendance = conf.enableSubjectAttendance !== undefined
+      ? Boolean(conf.enableSubjectAttendance)
+      : subjectAttendanceFallback;
 
     return {
       periodCount: count,
       periodType: type,
       periodNames: names,
-      gradingScale
+      gradingScale,
+      enableActivities,
+      enableSubjectAttendance
     };
   }
 
   // 2. Intelligent defaults based on Mexican standard educational levels:
-  const lLower = levelName.toLowerCase();
+  const lLower = trimmedLevel;
   if (lLower.includes('prepa') || lLower.includes('bachiller')) {
     // Preparatoria / Bachillerato: 5 bimestres, 0 a 100
     return {
       periodCount: 5,
       periodType: 'Bimestres',
       periodNames: ['1er Bimestre', '2do Bimestre', '3er Bimestre', '4to Bimestre', '5to Bimestre'],
-      gradingScale: 'numeric_100'
+      gradingScale: 'numeric_100',
+      enableActivities: activitiesFallback,
+      enableSubjectAttendance: subjectAttendanceFallback
     };
   } else if (lLower.includes('universidad') || lLower.includes('licenciatura')) {
     return {
       periodCount: 2,
       periodType: 'Semestres',
       periodNames: ['1er Semestre', '2do Semestre'],
-      gradingScale: 'numeric_100'
+      gradingScale: 'numeric_100',
+      enableActivities: activitiesFallback,
+      enableSubjectAttendance: subjectAttendanceFallback
     };
   } else if (
     lLower.includes('preescolar') ||
@@ -196,7 +227,9 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodCount: 3,
       periodType: 'Trimestres',
       periodNames: ['1er Trimestre', '2do Trimestre', '3er Trimestre'],
-      gradingScale: 'letters'
+      gradingScale: 'letters',
+      enableActivities: activitiesFallback,
+      enableSubjectAttendance: subjectAttendanceFallback
     };
   } else {
     // Primaria, Secundaria: 3 Trimestres (SEP estándar), 0 a 10
@@ -204,7 +237,9 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodCount: 3,
       periodType: 'Trimestres',
       periodNames: ['1er Trimestre', '2do Trimestre', '3er Trimestre'],
-      gradingScale: 'numeric_10'
+      gradingScale: 'numeric_10',
+      enableActivities: activitiesFallback,
+      enableSubjectAttendance: subjectAttendanceFallback
     };
   }
 }
@@ -347,13 +382,15 @@ export function getPeriodForDate(dateStr: string, periodCount: number = 3): numb
  * Checks whether a Subject is configured or identified as tracking student absences (Inasistencias / Faltas).
  */
 export function isAttendanceTrackingSubject(subject: Subject): boolean {
+  if (!subject) return false;
   if (subject.isAttendanceCount) return true;
   const norm = (subject.name || '').toLowerCase().trim();
-  const isPersonalDev = subject.category === 'Desarrollo Personal' || subject.category === 'Aspectos Formativos';
-  return isPersonalDev && (
+  return (
     norm === 'inasistencia' ||
     norm === 'inasistencias' ||
     norm === 'faltas' ||
-    norm === 'falta'
+    norm === 'falta' ||
+    norm.includes('inasistencia') ||
+    norm.includes('falta')
   );
 }

@@ -331,6 +331,14 @@ export interface AppSettings {
   attendanceListShowMatricula?: boolean;
   attendanceListShowNo?: boolean;
   teacherActivitiesLevels?: string[]; // Niveles educativos con registro de actividades habilitado
+  subjectAttendanceLevels?: string[]; // Niveles educativos con asistencia por materia (individual) habilitada
+  teacherPortalFeatures?: {
+    attendance?: boolean;
+    grading?: boolean;
+    activities?: boolean;
+    horario?: boolean;
+    credencial?: boolean;
+  };
 }
 
 export type GradingScale = 'letters' | 'numeric_10' | 'numeric_100';
@@ -341,6 +349,7 @@ export interface LevelEvaluationConfig {
   periodNames?: string[]; // e.g. ["1er Trimestre", "2do Trimestre", "3er Trimestre"]
   gradingScale?: GradingScale; // 'letters' (Preescolar A-D), 'numeric_10' (0-10), 'numeric_100' (0-100)
   enableActivities?: boolean; // Permite a los docentes registrar columnas de actividades y evaluarlas
+  enableSubjectAttendance?: boolean; // Permite pase de lista individual por materia
 }
 
 export interface TeacherActivity {
@@ -352,6 +361,8 @@ export interface TeacherActivity {
   group: string;
   period: number; // Periodo o bimestre correspondiente (1, 2, 3...)
   cycleId: string;
+  subjectId?: string; // ID de la materia a la que pertenece la actividad
+  subjectName?: string; // Nombre de la materia
   teacherId?: string;
   teacherName?: string;
   scores?: Record<string, number | string>; // studentId -> calificacion
@@ -396,6 +407,8 @@ export interface Attendance {
   cycleId: string;
   date: string; // ISO format YYYY-MM-DD
   status: AttendanceStatus;
+  subjectId?: string; // ID de la materia (para asistencia individual por materia)
+  subjectName?: string; // Nombre de la materia
   justificationReason?: string; // Optional motivo/justificación when status is 'Justificado'
   period?: number; // Optional evaluation period (e.g. 1, 2, 3...)
   updatedAt: Timestamp;

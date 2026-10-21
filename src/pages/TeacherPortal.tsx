@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, d
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
-import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -12,12 +12,17 @@ import {
   CheckCircle2, 
   ChevronRight, 
   ChevronLeft,
+  ChevronDown,
   Search,
   Filter,
   MoreVertical,
   ClipboardList,
   AlertCircle,
   Calendar,
+  ArrowLeftRight,
+  Calculator,
+  TrendingUp,
+  Printer,
   Lock,
   Unlock,
   Check,
@@ -31,7 +36,6 @@ import {
   Upload,
   Camera,
   Image as ImageIcon,
-  Sparkles,
   Edit3,
   Edit2,
   Plus,
@@ -64,20 +68,30 @@ const DEFAULT_TIME_PERIODS = [
   { label: '7mo Periodo', time: '13:00 - 13:50', isBreak: false },
 ];
 
-export default function TeacherPortal() {
+interface TeacherPortalProps {
+  appSettings?: AppSettings | null;
+}
+
+export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) {
   const { userProfile, hasPermission } = usePermissions();
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Record<string, StudentGrade>>({});
+  const [allCycleGrades, setAllCycleGrades] = useState<StudentGrade[]>([]);
+  const [gradingViewMode, setGradingViewMode] = useState<'capture' | 'summary'>('capture');
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
+  const [rawAttendance, setRawAttendance] = useState<Attendance[]>([]);
   const [cycleAbsences, setCycleAbsences] = useState<Attendance[]>([]);
   const [justificationModal, setJustificationModal] = useState<{
     student: Student;
     currentReason?: string;
   } | null>(null);
+  const [absenceDatesModal, setAbsenceDatesModal] = useState<{
+    student: Student;
+    absences: Attendance[];
+  } | null>(null);
   const [justificationReason, setJustificationReason] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'horario' | 'credencial'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'activities' | 'horario' | 'credencial'>('attendance');
   const [teachers, setTeachers] = useState<AppUser[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
   const [isEditingCredential, setIsEditingCredential] = useState(false);
@@ -107,15 +121,35 @@ export default function TeacherPortal() {
   const [selectedLevel, setSelectedLevel] = useState<string>('');
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const hasPromptedGroupModalRef = useRef(false);
+  const [settings, setSettings] = useState<AppSettings | null>(appSettings || null);
+
+  useEffect(() => {
+    if (appSettings) {
+      setSettings(appSettings);
+      if (appSettings.currentCycleId) {
+        setCurrentCycleId(appSettings.currentCycleId);
+      }
+    }
+  }, [appSettings]);
 
   // Activities state
   const [activities, setActivities] = useState<TeacherActivity[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<TeacherActivity | null>(null);
   const [activityFormName, setActivityFormName] = useState('');
   const [activityFormDate, setActivityFormDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [activityFormSubjectId, setActivityFormSubjectId] = useState('');
   const [isSavingActivity, setIsSavingActivity] = useState(false);
+  const [isSyncingActivities, setIsSyncingActivities] = useState(false);
+  const [unsyncedSubjects, setUnsyncedSubjects] = useState<Record<string, boolean>>({});
+  const [isSyncConfirmModalOpen, setIsSyncConfirmModalOpen] = useState(false);
+  const [syncTargetSubjectId, setSyncTargetSubjectId] = useState<string | undefined>(undefined);
+
+  // Subject Attendance state
+  const [attendanceSubjectId, setAttendanceSubjectId] = useState<string>('');
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
   const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
@@ -325,6 +359,188 @@ export default function TeacherPortal() {
 
   const canFilterGroups = userProfile?.role !== 'Docente' || isMultiGroupTeacher;
 
+  // List of all accessible (level, grade, group) combinations for the current teacher / user
+  const accessibleGroupsList = useMemo(() => {
+    const allGrades = settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+    const allGroups = (settings?.academicGroups && settings.academicGroups.length > 0)
+      ? settings.academicGroups
+      : ['A', 'B', 'C', 'D'];
+
+    const result: Array<{
+      level: string;
+      grade: string;
+      group: string;
+      key: string;
+      displayName: string;
+    }> = [];
+
+    availableLevels.forEach(lvl => {
+      let validGradesForLevel = restrictedGrades.length > 0 
+        ? allGrades.filter(g => restrictedGrades.includes(g)) 
+        : allGrades;
+
+      if (isSpecificTeacher) {
+        const allowed = userProfile?.assignedSubjects || [];
+        const currentLevelSubjs = subjects.filter(s => 
+          s.level && lvl && s.level.toLowerCase().trim() === lvl.toLowerCase().trim()
+        );
+        const teacherSubjsInLevel = currentLevelSubjs.filter(s => {
+          const keyWithLevel = `${s.name}__${s.level}`;
+          return allowed.some(a => 
+            a === s.id || 
+            a.toLowerCase().trim() === keyWithLevel.toLowerCase().trim() ||
+            a.toLowerCase().trim() === s.name.toLowerCase().trim()
+          );
+        });
+
+        if (teacherSubjsInLevel.length === 0) {
+          validGradesForLevel = [];
+        } else {
+          const validGradesSet = new Set<string>();
+          teacherSubjsInLevel.forEach(s => {
+            const keyWithLevel = `${s.name}__${s.level}`;
+            const gradeList = userProfile?.teacherSubjectGrades?.[keyWithLevel] 
+              || userProfile?.teacherSubjectGrades?.[s.name] 
+              || userProfile?.teacherSubjectGrades?.[s.id];
+
+            if (!gradeList || gradeList.length === 0 || gradeList.includes('all')) {
+              validGradesForLevel.forEach(g => validGradesSet.add(g));
+            } else {
+              gradeList.forEach(g => {
+                if (validGradesForLevel.includes(g)) validGradesSet.add(g);
+              });
+            }
+          });
+          validGradesForLevel = allGrades.filter(g => validGradesSet.has(g));
+        }
+      }
+
+      validGradesForLevel.forEach(grd => {
+        let baseGroups = restrictedGroups.length > 0 ? allGroups.filter(grp => restrictedGroups.includes(grp)) : allGroups;
+
+        if (userProfile?.role === 'Docente' && userProfile.teacherGradeGroups) {
+          const levelGradeKey = `${lvl}__${grd}`;
+          const specificForGrade = userProfile.teacherGradeGroups[levelGradeKey] || userProfile.teacherGradeGroups[grd];
+          if (specificForGrade && Array.isArray(specificForGrade)) {
+            if (!specificForGrade.includes('all')) {
+              baseGroups = allGroups.filter(grp => specificForGrade.includes(grp));
+            }
+          } else if (Object.keys(userProfile.teacherGradeGroups).length > 0) {
+            baseGroups = [];
+          }
+        }
+
+        if (isSpecificTeacher) {
+          const allowed = userProfile?.assignedSubjects || [];
+          const currentLevelSubjs = subjects.filter(s => 
+            s.level && lvl && s.level.toLowerCase().trim() === lvl.toLowerCase().trim()
+          );
+          const teacherSubjsInLevel = currentLevelSubjs.filter(s => {
+            const keyWithLevel = `${s.name}__${s.level}`;
+            return allowed.some(a => 
+              a === s.id || 
+              a.toLowerCase().trim() === keyWithLevel.toLowerCase().trim() ||
+              a.toLowerCase().trim() === s.name.toLowerCase().trim()
+            );
+          });
+          const validForGrade = teacherSubjsInLevel.filter(s => {
+            const keyWithLevel = `${s.name}__${s.level}`;
+            const gradeList = userProfile?.teacherSubjectGrades?.[keyWithLevel] 
+              || userProfile?.teacherSubjectGrades?.[s.name] 
+              || userProfile?.teacherSubjectGrades?.[s.id];
+            return !gradeList || gradeList.length === 0 || gradeList.includes('all') || gradeList.includes(grd);
+          });
+
+          if (validForGrade.length === 0) {
+            baseGroups = [];
+          } else {
+            const gradeGroupsSet = new Set<string>();
+            let hasAll = false;
+            validForGrade.forEach(s => {
+              const keyWithLevel = `${s.name}__${s.level}`;
+              const gradeGroupList = (
+                userProfile?.teacherSubjectGroups?.[`${keyWithLevel}__${grd}`] ||
+                userProfile?.teacherSubjectGroups?.[`${s.name}__${grd}`] ||
+                userProfile?.teacherSubjectGroups?.[`${s.id}__${grd}`]
+              );
+              const list = (gradeGroupList && gradeGroupList.length > 0)
+                ? gradeGroupList
+                : (
+                    userProfile?.teacherSubjectGroups?.[keyWithLevel] ||
+                    userProfile?.teacherSubjectGroups?.[s.name] ||
+                    userProfile?.teacherSubjectGroups?.[s.id]
+                  );
+              if (!list || list.length === 0 || list.includes('all')) {
+                hasAll = true;
+              } else {
+                list.forEach(g => {
+                  if (baseGroups.includes(g)) gradeGroupsSet.add(g);
+                });
+              }
+            });
+            if (!hasAll) {
+              baseGroups = baseGroups.filter(grp => gradeGroupsSet.has(grp));
+            }
+          }
+        }
+
+        baseGroups.forEach(grp => {
+          result.push({
+            level: lvl,
+            grade: grd,
+            group: grp,
+            key: `${lvl}__${grd}__${grp}`,
+            displayName: `${lvl} ${grd} ${grp}`
+          });
+        });
+      });
+    });
+
+    if (result.length === 0 && userProfile?.role === 'Docente' && userProfile.assignedLevel && userProfile.assignedGrade && userProfile.assignedGroup) {
+      result.push({
+        level: userProfile.assignedLevel,
+        grade: userProfile.assignedGrade,
+        group: userProfile.assignedGroup,
+        key: `${userProfile.assignedLevel}__${userProfile.assignedGrade}__${userProfile.assignedGroup}`,
+        displayName: `${userProfile.assignedLevel} ${userProfile.assignedGrade} ${userProfile.assignedGroup}`
+      });
+    }
+
+    return result;
+  }, [availableLevels, settings?.academicGrades, settings?.academicGroups, restrictedGrades, restrictedGroups, isSpecificTeacher, userProfile, subjects]);
+
+  const activeGroupTitle = useMemo(() => {
+    if (activeLevel && activeGrade && activeGroup) {
+      return `${activeLevel} ${activeGrade} ${activeGroup}`;
+    }
+    if (activeLevel && activeGrade) {
+      return `${activeLevel} ${activeGrade}`;
+    }
+    if (activeLevel) {
+      return `${activeLevel}`;
+    }
+    return 'Panel de Docente';
+  }, [activeLevel, activeGrade, activeGroup]);
+
+  const handleSelectGroup = (item: { level: string; grade: string; group: string }) => {
+    setSelectedLevel(item.level);
+    setSelectedGrade(item.grade);
+    setSelectedGroup(item.group);
+    setIsGroupModalOpen(false);
+    if (activeTab === 'attendance' || !activeTab) {
+      setActiveTab('attendance');
+    }
+  };
+
+  // Auto-prompt group selection modal on initial entry if teacher has access to multiple groups
+  useEffect(() => {
+    if (loading || !settings) return;
+    if (accessibleGroupsList.length > 1 && !hasPromptedGroupModalRef.current) {
+      hasPromptedGroupModalRef.current = true;
+      setIsGroupModalOpen(true);
+    }
+  }, [loading, settings, accessibleGroupsList.length]);
+
   const evalConfig = useMemo(() => {
     return getLevelEvaluationConfig(settings, activeLevel);
   }, [settings, activeLevel]);
@@ -333,15 +549,65 @@ export default function TeacherPortal() {
 
   const isActivitiesEnabledForCurrentLevel = useMemo(() => {
     if (!activeLevel) return false;
+    if (evalConfig?.enableActivities !== undefined) {
+      return Boolean(evalConfig.enableActivities);
+    }
     const cfg = settings?.levelEvaluationConfig?.[activeLevel];
     if (cfg?.enableActivities !== undefined) {
       return Boolean(cfg.enableActivities);
     }
     if (settings?.teacherActivitiesLevels) {
-      return settings.teacherActivitiesLevels.includes(activeLevel);
+      const trimmed = activeLevel.trim().toLowerCase();
+      return settings.teacherActivitiesLevels.some(l => l && l.trim().toLowerCase() === trimmed);
     }
     return false;
-  }, [activeLevel, settings]);
+  }, [activeLevel, evalConfig, settings]);
+
+  const isSubjectAttendanceEnabledForCurrentLevel = useMemo(() => {
+    if (!activeLevel) return false;
+    if (evalConfig?.enableSubjectAttendance !== undefined) {
+      return Boolean(evalConfig.enableSubjectAttendance);
+    }
+    const cfg = settings?.levelEvaluationConfig?.[activeLevel];
+    if (cfg?.enableSubjectAttendance !== undefined) {
+      return Boolean(cfg.enableSubjectAttendance);
+    }
+    if (settings?.subjectAttendanceLevels) {
+      const trimmed = activeLevel.trim().toLowerCase();
+      return settings.subjectAttendanceLevels.some(l => l && l.trim().toLowerCase() === trimmed);
+    }
+    // Default: enabled for Secundaria and Preparatoria/Bachillerato, disabled for Preescolar and Primaria
+    return /secundaria|bachillerato|preparatoria|prepa/i.test(activeLevel);
+  }, [activeLevel, evalConfig, settings]);
+
+  // Tab visibility controls configured in Settings -> Panel del Docente
+  const isAttendanceTabEnabled = settings ? settings.teacherPortalFeatures?.attendance !== false : false;
+  const isGradingTabEnabled = settings ? settings.teacherPortalFeatures?.grading !== false : false;
+  const isActivitiesTabEnabled = isActivitiesEnabledForCurrentLevel && (settings ? settings.teacherPortalFeatures?.activities !== false : false);
+  const isHorarioTabEnabled = settings ? settings.teacherPortalFeatures?.horario !== false : false;
+  const isCredencialTabEnabled = settings ? settings.teacherPortalFeatures?.credencial !== false : false;
+
+  // Auto-switch tab if current activeTab is disabled in settings
+  useEffect(() => {
+    if (!settings) return;
+    const tabMap: Record<string, boolean> = {
+      attendance: isAttendanceTabEnabled,
+      grading: isGradingTabEnabled,
+      activities: isActivitiesTabEnabled,
+      horario: isHorarioTabEnabled,
+      credencial: isCredencialTabEnabled,
+    };
+
+    if (!tabMap[activeTab]) {
+      const tabsOrder: Array<'attendance' | 'grading' | 'activities' | 'horario' | 'credencial'> = [
+        'attendance', 'grading', 'activities', 'horario', 'credencial'
+      ];
+      const valid = tabsOrder.find(t => tabMap[t]);
+      if (valid) {
+        setActiveTab(valid);
+      }
+    }
+  }, [settings, activeTab, isAttendanceTabEnabled, isGradingTabEnabled, isActivitiesTabEnabled, isHorarioTabEnabled, isCredencialTabEnabled]);
 
   const formatShortDate = (dateStr: string) => {
     if (!dateStr) return '';
@@ -446,6 +712,95 @@ export default function TeacherPortal() {
     );
   }, [activeLevelSubjects]);
 
+  // Keep selectedSubjectId synchronized with available subjects
+  useEffect(() => {
+    if (activeLevelSubjects.length > 0) {
+      if (!selectedSubjectId || !activeLevelSubjects.some(s => s.id === selectedSubjectId)) {
+        setSelectedSubjectId(activeLevelSubjects[0].id);
+      }
+    } else {
+      setSelectedSubjectId('');
+    }
+  }, [activeLevelSubjects, selectedSubjectId]);
+
+  const selectedSubject = useMemo(() => {
+    return activeLevelSubjects.find(s => s.id === selectedSubjectId) || activeLevelSubjects[0] || null;
+  }, [activeLevelSubjects, selectedSubjectId]);
+
+  // Keep attendanceSubjectId synchronized with available subjects
+  useEffect(() => {
+    if (isSubjectAttendanceEnabledForCurrentLevel && activeLevelSubjects.length > 0) {
+      if (!attendanceSubjectId || !activeLevelSubjects.some(s => s.id === attendanceSubjectId)) {
+        setAttendanceSubjectId(activeLevelSubjects[0].id);
+      }
+    } else if (!isSubjectAttendanceEnabledForCurrentLevel) {
+      if (attendanceSubjectId) {
+        setAttendanceSubjectId('');
+      }
+    }
+  }, [isSubjectAttendanceEnabledForCurrentLevel, activeLevelSubjects, attendanceSubjectId]);
+
+  const selectedAttendanceSubject = useMemo(() => {
+    if (!isSubjectAttendanceEnabledForCurrentLevel) return null;
+    return activeLevelSubjects.find(s => s.id === attendanceSubjectId) || activeLevelSubjects[0] || null;
+  }, [isSubjectAttendanceEnabledForCurrentLevel, activeLevelSubjects, attendanceSubjectId]);
+
+  // Map raw attendance records to studentId, filtering by subject if enabled for this level
+  const attendance = useMemo(() => {
+    const attMap: Record<string, Attendance> = {};
+    rawAttendance.forEach(data => {
+      if (isSubjectAttendanceEnabledForCurrentLevel) {
+        if (attendanceSubjectId && data.subjectId === attendanceSubjectId) {
+          attMap[data.studentId] = data;
+        }
+      } else {
+        if (!data.subjectId) {
+          attMap[data.studentId] = data;
+        }
+      }
+    });
+    return attMap;
+  }, [rawAttendance, isSubjectAttendanceEnabledForCurrentLevel, attendanceSubjectId]);
+
+  // Filter activities for the currently selected subject in the activities tab
+  const currentSubjectActivities = useMemo(() => {
+    if (!selectedSubjectId) return [];
+    return activities.filter(act => {
+      if (act.subjectId) {
+        return act.subjectId === selectedSubjectId;
+      }
+      // If legacy activity without subjectId, assign it to the first subject
+      return activeLevelSubjects[0]?.id === selectedSubjectId;
+    });
+  }, [activities, selectedSubjectId, activeLevelSubjects]);
+
+  // Calculate the average of activities for a given student in a specific subject
+  const getStudentActivityAverage = (studentId: string, subjectId: string): { raw: string; num: number | null } => {
+    const targetActs = activities.filter(a => {
+      if (a.subjectId) return a.subjectId === subjectId;
+      return activeLevelSubjects[0]?.id === subjectId;
+    });
+
+    if (targetActs.length === 0) return { raw: '-', num: null };
+
+    let sum = 0;
+    let count = 0;
+
+    for (const act of targetActs) {
+      const score = act.scores?.[studentId];
+      const numericVal = gradeToNumeric(score, gradingScale);
+      if (numericVal !== null) {
+        sum += numericVal;
+        count++;
+      }
+    }
+
+    if (count === 0) return { raw: '-', num: null };
+    const avgStr = formatAverage(sum, count, gradingScale);
+    const avgNum = gradingScale === 'letters' ? null : (gradingScale === 'numeric_100' ? Math.round(Number(avgStr)) : parseFloat(avgStr));
+    return { raw: avgStr, num: avgNum };
+  };
+
   const students = useMemo(() => {
     // If Docente with specific subject access:
     // Strictly verify that active level, grade, and group are valid and assigned,
@@ -489,6 +844,42 @@ export default function TeacherPortal() {
       return nameA.localeCompare(nameB);
     });
   }, [allStudents, restrictedLevels, restrictedGrades, restrictedGroups, activeLevel, activeGrade, activeGroup, isSpecificTeacher, availableLevels, availableGrades, availableGroups, activeLevelSubjects]);
+  // Evaluates whether current subject activities are completely synchronized with Calificaciones
+  const isActivitiesSyncedWithGrades = useMemo(() => {
+    if (currentSubjectActivities.length === 0) return true;
+    if (!selectedSubjectId || !selectedSubject) return true;
+
+    if (unsyncedSubjects[selectedSubjectId] === true) {
+      return false;
+    }
+
+    let hasAtLeastOneScore = false;
+    for (const student of students) {
+      const avg = getStudentActivityAverage(student.id, selectedSubjectId);
+      if (avg.raw === '-') continue;
+      hasAtLeastOneScore = true;
+
+      const currentGrade = grades[student.id]?.subjects?.[selectedSubject.name] ?? grades[student.id]?.subjects?.[selectedSubjectId];
+      if (currentGrade === undefined || currentGrade === null || currentGrade === '') {
+        return false;
+      }
+
+      if (gradingScale === 'letters') {
+        if (String(currentGrade).toUpperCase().trim() !== avg.raw.toUpperCase().trim()) {
+          return false;
+        }
+      } else {
+        const numGrade = parseFloat(String(currentGrade));
+        const numAvg = parseFloat(avg.raw);
+        if (isNaN(numGrade) || Math.abs(numGrade - numAvg) > 0.01) {
+          return false;
+        }
+      }
+    }
+
+    if (!hasAtLeastOneScore) return true;
+    return true;
+  }, [currentSubjectActivities, selectedSubjectId, selectedSubject, unsyncedSubjects, students, grades, gradingScale, activities]);
 
   // Adjust selectedBimestre if it exceeds the level's period count
   useEffect(() => {
@@ -560,16 +951,19 @@ export default function TeacherPortal() {
         const data = snap.data() as AppSettings;
         setSettings(data);
         setCurrentCycleId(data.currentCycleId || '');
-        // Initialize schema selection
-        if (userProfile?.assignedLevel) {
-          setSelectedLevelSchema(userProfile.assignedLevel);
-        } else if (data.academicLevels && data.academicLevels.length > 0) {
-          setSelectedLevelSchema(data.academicLevels[0]);
-        }
       }
     });
     return unsub;
-  }, [userProfile]);
+  }, []);
+
+  // Initialize schema selection based on user profile or available levels
+  useEffect(() => {
+    if (userProfile?.assignedLevel) {
+      setSelectedLevelSchema(userProfile.assignedLevel);
+    } else if (settings?.academicLevels && settings.academicLevels.length > 0) {
+      setSelectedLevelSchema(settings.academicLevels[0]);
+    }
+  }, [userProfile?.assignedLevel, settings?.academicLevels]);
 
   // Fetch subjects
   useEffect(() => {
@@ -635,6 +1029,30 @@ export default function TeacherPortal() {
 
     return () => unsubGrades();
   }, [selectedBimestre, currentCycleId]);
+
+  // Fetch all grades in active cycle across all periods for cumulative averages
+  useEffect(() => {
+    if (!currentCycleId) {
+      setAllCycleGrades([]);
+      return;
+    }
+
+    const unsubAllGrades = onSnapshot(
+      query(
+        collection(db, 'grades'),
+        where('cycleId', '==', currentCycleId)
+      ),
+      (snap) => {
+        const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as StudentGrade));
+        setAllCycleGrades(list);
+      },
+      (error) => {
+        console.error("Error loading all cycle grades:", error);
+      }
+    );
+
+    return () => unsubAllGrades();
+  }, [currentCycleId]);
 
   // Fetch activities for active class and period
   useEffect(() => {
@@ -711,9 +1129,9 @@ export default function TeacherPortal() {
     hasManuallySelectedPeriodRef.current = false;
   }, [activeTab, activeLevel, activeGrade, activeGroup]);
 
-  // Auto-advance to the next available (unlocked) period when entering grading or when locks update
+  // Auto-advance to the next available (unlocked) period when entering grading or activities or when locks update
   useEffect(() => {
-    if (activeTab !== 'grading') return;
+    if (activeTab !== 'grading' && activeTab !== 'activities') return;
     if (hasManuallySelectedPeriodRef.current) return;
     if (!currentCycleId || !activeLevel || !activeGrade) return;
 
@@ -744,12 +1162,8 @@ export default function TeacherPortal() {
         where('cycleId', '==', currentCycleId)
       ),
       (snap) => {
-        const attMap: Record<string, Attendance> = {};
-        snap.docs.forEach(doc => {
-          const data = doc.data() as Attendance;
-          attMap[data.studentId] = { ...data, id: doc.id };
-        });
-        setAttendance(attMap);
+        const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Attendance));
+        setRawAttendance(list);
       },
       (error) => {
         console.error("Error loading attendance:", error);
@@ -790,6 +1204,133 @@ export default function TeacherPortal() {
       const attPeriod = att.period || getPeriodForDate(att.date, evalConfig.periodCount);
       return attPeriod === period;
     }).length;
+  };
+
+  const getStudentCumulativeAbsences = (studentId: string) => {
+    const currentPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+    const useSubject = isSubjectAttendanceEnabledForCurrentLevel && Boolean(attendanceSubjectId);
+
+    const studentCycleFaltas = cycleAbsences.filter(a => {
+      if (a.studentId !== studentId) return false;
+      if (useSubject && a.subjectId && a.subjectId !== attendanceSubjectId) return false;
+      return true;
+    });
+
+    const totalCycle = studentCycleFaltas.length;
+    const totalPeriod = studentCycleFaltas.filter(a => {
+      const p = a.period || getPeriodForDate(a.date, evalConfig.periodCount);
+      return p === currentPeriod;
+    }).length;
+
+    return { totalCycle, totalPeriod, currentPeriod };
+  };
+
+  const handleOpenAbsencesModal = (student: Student) => {
+    const useSubject = isSubjectAttendanceEnabledForCurrentLevel && Boolean(attendanceSubjectId);
+    const studentFaltas = cycleAbsences.filter(a => {
+      if (a.studentId !== student.id) return false;
+      if (useSubject && a.subjectId && a.subjectId !== attendanceSubjectId) return false;
+      return true;
+    });
+    studentFaltas.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (studentFaltas.length === 0) return;
+    setAbsenceDatesModal({ student, absences: studentFaltas });
+  };
+
+  // Map of all cycle grades indexed by studentId and period (bimestre)
+  const cycleGradesByStudentAndPeriod = useMemo(() => {
+    const map: Record<string, Record<number, StudentGrade>> = {};
+    allCycleGrades.forEach(g => {
+      if (!map[g.studentId]) {
+        map[g.studentId] = {};
+      }
+      map[g.studentId][g.bimestre] = g;
+    });
+    return map;
+  }, [allCycleGrades]);
+
+  // Calculate cumulative average for a specific subject and student across evaluated periods
+  const getSubjectCumulativeAverage = (studentId: string, subjectName: string) => {
+    let sum = 0;
+    let count = 0;
+    const periodsData: Array<{ period: number; rawVal: any; numericVal: number | null }> = [];
+
+    for (let p = 1; p <= evalConfig.periodCount; p++) {
+      const gradeDoc = p === selectedBimestre 
+        ? (grades[studentId] || cycleGradesByStudentAndPeriod[studentId]?.[p])
+        : cycleGradesByStudentAndPeriod[studentId]?.[p];
+
+      const rawVal = gradeDoc?.subjects?.[subjectName];
+      const numeric = gradeToNumeric(rawVal, gradingScale);
+      periodsData.push({ period: p, rawVal, numericVal: numeric });
+      if (numeric !== null) {
+        sum += numeric;
+        count++;
+      }
+    }
+
+    const avgFormatted = formatAverage(sum, count, gradingScale);
+    const avgNumeric = count > 0 ? (sum / count) : null;
+
+    return { sum, count, avgFormatted, avgNumeric, periodsData };
+  };
+
+  // Calculate overall average for a student across all academic subjects of this teacher
+  const getStudentGeneralAverage = (studentId: string) => {
+    let totalSum = 0;
+    let totalCount = 0;
+
+    academicLevelSubjects.forEach(subj => {
+      const { avgNumeric } = getSubjectCumulativeAverage(studentId, subj.name);
+      if (avgNumeric !== null) {
+        totalSum += avgNumeric;
+        totalCount++;
+      }
+    });
+
+    const generalAvgFormatted = formatAverage(totalSum, totalCount, gradingScale);
+    const generalAvgNumeric = totalCount > 0 ? (totalSum / totalCount) : null;
+
+    return { totalSum, totalCount, generalAvgFormatted, generalAvgNumeric };
+  };
+
+  // Group average for a subject in a specific period or cumulative
+  const getGroupSubjectAverage = (subjectName: string, period?: number) => {
+    let sum = 0;
+    let count = 0;
+    filteredStudents.forEach(st => {
+      if (period !== undefined) {
+        const gradeDoc = period === selectedBimestre 
+          ? (grades[st.id] || cycleGradesByStudentAndPeriod[st.id]?.[period])
+          : cycleGradesByStudentAndPeriod[st.id]?.[period];
+        const val = gradeToNumeric(gradeDoc?.subjects?.[subjectName], gradingScale);
+        if (val !== null) {
+          sum += val;
+          count++;
+        }
+      } else {
+        const { avgNumeric } = getSubjectCumulativeAverage(st.id, subjectName);
+        if (avgNumeric !== null) {
+          sum += avgNumeric;
+          count++;
+        }
+      }
+    });
+    return formatAverage(sum, count, gradingScale);
+  };
+
+  // Group overall general average across all teacher subjects
+  const getGroupOverallAverage = () => {
+    let sum = 0;
+    let count = 0;
+    filteredStudents.forEach(st => {
+      const { generalAvgNumeric } = getStudentGeneralAverage(st.id);
+      if (generalAvgNumeric !== null) {
+        sum += generalAvgNumeric;
+        count++;
+      }
+    });
+    return formatAverage(sum, count, gradingScale);
   };
 
   const handleGradeChange = (studentId: string, field: string, value: any, isSubject: boolean = false) => {
@@ -866,12 +1407,18 @@ export default function TeacherPortal() {
       alert("Por favor selecciona la fecha de la actividad");
       return;
     }
+
+    const targetSubjId = activityFormSubjectId || selectedSubjectId;
+    const targetSubj = activeLevelSubjects.find(s => s.id === targetSubjId) || selectedSubject;
+
     setIsSavingActivity(true);
     try {
       if (editingActivity) {
         await updateDoc(doc(db, 'teacherActivities', editingActivity.id), {
           name: activityFormName.trim(),
           date: activityFormDate,
+          subjectId: targetSubjId,
+          subjectName: targetSubj?.name || '',
           updatedAt: serverTimestamp()
         });
         toast.success("Actividad actualizada correctamente");
@@ -884,13 +1431,18 @@ export default function TeacherPortal() {
           group: activeGroup,
           period: selectedBimestre,
           cycleId: currentCycleId,
+          subjectId: targetSubjId,
+          subjectName: targetSubj?.name || '',
           teacherId: userProfile?.id || '',
           teacherName: userProfile?.name || '',
           scores: {},
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
-        toast.success("Columna de actividad creada");
+        toast.success(`Actividad agregada a ${targetSubj?.name || 'la materia'}`);
+      }
+      if (targetSubjId) {
+        setUnsyncedSubjects(prev => ({ ...prev, [targetSubjId]: true }));
       }
       setIsActivityModalOpen(false);
       setEditingActivity(null);
@@ -910,6 +1462,9 @@ export default function TeacherPortal() {
     }
     try {
       await deleteDoc(doc(db, 'teacherActivities', activityId));
+      if (selectedSubjectId) {
+        setUnsyncedSubjects(prev => ({ ...prev, [selectedSubjectId]: true }));
+      }
       toast.info("Actividad eliminada");
     } catch (err) {
       console.error("Error deleting activity:", err);
@@ -928,6 +1483,10 @@ export default function TeacherPortal() {
     } else {
       const num = parseFloat(value);
       parsedVal = isNaN(num) ? '' : num;
+    }
+
+    if (selectedSubjectId) {
+      setUnsyncedSubjects(prev => ({ ...prev, [selectedSubjectId]: true }));
     }
 
     setActivities(prev => prev.map(act => {
@@ -958,13 +1517,109 @@ export default function TeacherPortal() {
     }
   };
 
+  const promptSyncActivitiesModal = (targetSubjId?: string) => {
+    setSyncTargetSubjectId(targetSubjId);
+    setIsSyncConfirmModalOpen(true);
+  };
+
+  const handleCancelSyncModal = () => {
+    setIsSyncConfirmModalOpen(false);
+    setSyncTargetSubjectId(undefined);
+  };
+
+  const handleConfirmSync = async () => {
+    const targetId = syncTargetSubjectId;
+    setIsSyncConfirmModalOpen(false);
+    setSyncTargetSubjectId(undefined);
+    await handleSyncActivitiesToGrades(targetId);
+  };
+
+  const handleSyncActivitiesToGrades = async (targetSubjId?: string) => {
+    const subjIdToSync = targetSubjId || selectedSubjectId;
+    if (!subjIdToSync || !currentCycleId) return;
+
+    const subjObj = activeLevelSubjects.find(s => s.id === subjIdToSync) || selectedSubject;
+    setIsSyncingActivities(true);
+    try {
+      const updatedGradesMap = { ...grades };
+      const batch = writeBatch(db);
+      let opCount = 0;
+      const batches = [batch];
+
+      students.forEach(student => {
+        const { raw, num } = getStudentActivityAverage(student.id, subjIdToSync);
+        if (raw !== '-') {
+          const valToSet = gradingScale === 'letters' ? raw : (num ?? (parseFloat(raw) || 0));
+          const currentGrade = updatedGradesMap[student.id] || {
+            studentId: student.id,
+            bimestre: selectedBimestre,
+            cycleId: currentCycleId,
+            subjects: {},
+            conduct: 0,
+            uniform: 0,
+            attendance: 0,
+            tasksNotDone: 0,
+            tardies: 0,
+            cleanliness: 0,
+            updatedAt: serverTimestamp() as any,
+            createdBy: userProfile?.id || 'system'
+          };
+
+          const nextSubjects = {
+            ...(currentGrade.subjects || {}),
+            ...(subjObj ? { [subjObj.name]: valToSet, [subjObj.id]: valToSet } : { [subjIdToSync]: valToSet })
+          };
+
+          updatedGradesMap[student.id] = {
+            ...currentGrade,
+            subjects: nextSubjects
+          };
+
+          const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
+          const curBatch = batches[batches.length - 1];
+          curBatch.set(doc(db, 'grades', id), {
+            ...currentGrade,
+            subjects: nextSubjects,
+            cycleId: currentCycleId,
+            bimestre: selectedBimestre,
+            studentId: student.id,
+            updatedAt: serverTimestamp(),
+            createdBy: userProfile?.id || 'system'
+          }, { merge: true });
+
+          opCount++;
+          if (opCount % 400 === 0) {
+            batches.push(writeBatch(db));
+          }
+        }
+      });
+
+      setGrades(updatedGradesMap);
+      if (opCount > 0) {
+        for (const b of batches) {
+          await b.commit();
+        }
+      }
+      setUnsyncedSubjects(prev => ({ ...prev, [subjIdToSync]: false }));
+      toast.success(`Promedios sincronizados con Calificaciones (${subjObj?.name || 'Materia'})`);
+    } catch (err) {
+      console.error("Error syncing activities to grades:", err);
+      toast.error("Error al sincronizar con Calificaciones");
+    } finally {
+      setIsSyncingActivities(false);
+    }
+  };
+
   const handleSaveAll = async () => {
     if (!hasPermission('grading', 'manage')) return;
     setIsSaving(true);
     try {
-      const trackerSubj = personalDevLevelSubjects.find(isAttendanceTrackingSubject);
+      const trackerSubj = activeLevelSubjects.find(isAttendanceTrackingSubject);
+      const batch = writeBatch(db);
+      let opCount = 0;
+      const batches = [batch];
 
-      const promises = students.map(student => {
+      students.forEach(student => {
         const grade = grades[student.id] || {
           studentId: student.id,
           bimestre: selectedBimestre,
@@ -981,19 +1636,16 @@ export default function TeacherPortal() {
         };
 
         const autoFaltas = trackerSubj ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
-        const finalAttendance = autoFaltas !== null 
-          ? (grade.attendance !== undefined && grade.attendance !== '' ? grade.attendance : autoFaltas)
-          : grade.attendance;
+        const finalAttendance = autoFaltas !== null ? autoFaltas : (grade.attendance ?? 0);
 
         const updatedSubjects = { ...(grade.subjects || {}) };
         if (trackerSubj && autoFaltas !== null) {
-          if (updatedSubjects[trackerSubj.name] === undefined || updatedSubjects[trackerSubj.name] === '') {
-            updatedSubjects[trackerSubj.name] = autoFaltas;
-          }
+          updatedSubjects[trackerSubj.name] = autoFaltas;
         }
 
         const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
-        return setDoc(doc(db, 'grades', id), {
+        const curBatch = batches[batches.length - 1];
+        curBatch.set(doc(db, 'grades', id), {
           ...grade,
           attendance: finalAttendance,
           subjects: updatedSubjects,
@@ -1001,16 +1653,27 @@ export default function TeacherPortal() {
           updatedAt: serverTimestamp(),
           createdBy: userProfile?.id || 'system'
         }, { merge: true });
+
+        opCount++;
+        if (opCount % 400 === 0) batches.push(writeBatch(db));
       });
 
-      const activityPromises = activities.map(act => {
-        return setDoc(doc(db, 'teacherActivities', act.id), {
+      activities.forEach(act => {
+        const curBatch = batches[batches.length - 1];
+        curBatch.set(doc(db, 'teacherActivities', act.id), {
           scores: act.scores || {},
           updatedAt: serverTimestamp()
         }, { merge: true });
+
+        opCount++;
+        if (opCount % 400 === 0) batches.push(writeBatch(db));
       });
 
-      await Promise.all([...promises, ...activityPromises]);
+      if (opCount > 0) {
+        for (const b of batches) {
+          await b.commit();
+        }
+      }
       setSavedStatus('¡Calificaciones guardadas!');
       setTimeout(() => setSavedStatus(null), 3000);
     } catch (error) {
@@ -1067,11 +1730,15 @@ export default function TeacherPortal() {
   const handleAttendanceToggle = async (studentId: string, newStatus: AttendanceStatus, justification?: string) => {
     if (!userProfile || !currentCycleId) return;
 
-    const attId = `${studentId}_${selectedDate}`;
+    const useSubject = isSubjectAttendanceEnabledForCurrentLevel && Boolean(attendanceSubjectId);
+    const attId = useSubject
+      ? `${studentId}_${selectedDate}_${attendanceSubjectId}`
+      : `${studentId}_${selectedDate}`;
     const targetPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+    const curSubj = useSubject ? (activeLevelSubjects.find(s => s.id === attendanceSubjectId) || selectedAttendanceSubject) : null;
 
     try {
-      await setDoc(doc(db, 'attendance', attId), {
+      const attendanceDoc: Record<string, any> = {
         studentId,
         cycleId: currentCycleId,
         date: selectedDate,
@@ -1080,17 +1747,37 @@ export default function TeacherPortal() {
         period: targetPeriod,
         updatedAt: serverTimestamp(),
         createdBy: userProfile.id
-      });
+      };
+
+      if (useSubject && attendanceSubjectId) {
+        attendanceDoc.subjectId = attendanceSubjectId;
+        if (curSubj?.name) {
+          attendanceDoc.subjectName = curSubj.name;
+        }
+      }
+
+      await setDoc(doc(db, 'attendance', attId), attendanceDoc);
 
       // Recalculate absence count for targetPeriod and sync with grades
-      const otherAbsences = cycleAbsences.filter(a => !(a.studentId === studentId && a.date === selectedDate));
+      const otherAbsences = cycleAbsences.filter(a => {
+        if (a.id === attId) return false;
+        if (a.studentId === studentId && a.date === selectedDate) {
+          if (useSubject) {
+            return a.subjectId !== attendanceSubjectId;
+          } else {
+            return Boolean(a.subjectId);
+          }
+        }
+        return true;
+      });
+
       const newAbsenceCount = otherAbsences.filter(a => {
         if (a.studentId !== studentId) return false;
         const p = a.period || getPeriodForDate(a.date, evalConfig.periodCount);
         return p === targetPeriod;
       }).length + (newStatus === 'Falta' ? 1 : 0);
 
-      const trackerSubj = personalDevLevelSubjects.find(isAttendanceTrackingSubject);
+      const trackerSubj = activeLevelSubjects.find(isAttendanceTrackingSubject);
       const gradeId = `${studentId}_B${targetPeriod}_${currentCycleId}`;
       const updateData: Record<string, any> = {
         studentId,
@@ -1146,10 +1833,15 @@ export default function TeacherPortal() {
     try {
       const batch = writeBatch(db);
       const targetPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+      const useSubject = isSubjectAttendanceEnabledForCurrentLevel && Boolean(attendanceSubjectId);
+      const curSubj = useSubject ? (activeLevelSubjects.find(s => s.id === attendanceSubjectId) || selectedAttendanceSubject) : null;
+
       students.forEach(student => {
-        const attId = `${student.id}_${selectedDate}`;
+        const attId = useSubject
+          ? `${student.id}_${selectedDate}_${attendanceSubjectId}`
+          : `${student.id}_${selectedDate}`;
         const ref = doc(db, 'attendance', attId);
-        batch.set(ref, {
+        const docData: Record<string, any> = {
           studentId: student.id,
           cycleId: currentCycleId,
           date: selectedDate,
@@ -1157,10 +1849,21 @@ export default function TeacherPortal() {
           period: targetPeriod,
           updatedAt: serverTimestamp(),
           createdBy: userProfile.id
-        });
+        };
+        if (useSubject && attendanceSubjectId) {
+          docData.subjectId = attendanceSubjectId;
+          if (curSubj?.name) {
+            docData.subjectName = curSubj.name;
+          }
+        }
+        batch.set(ref, docData);
       });
       await batch.commit();
-      setSavedStatus('¡Todos los alumnos confirmados como Asistió!');
+      setSavedStatus(
+        useSubject && curSubj
+          ? `¡Todos confirmados como Asistió en ${curSubj.name}!`
+          : '¡Todos los alumnos confirmados como Asistió!'
+      );
       setTimeout(() => setSavedStatus(null), 3000);
     } catch (err) {
       console.error("Error marking all present:", err);
@@ -1416,7 +2119,7 @@ export default function TeacherPortal() {
     }
   };
 
-  if (loading) {
+  if (loading || !settings) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1424,43 +2127,68 @@ export default function TeacherPortal() {
     );
   }
 
-  if (userProfile?.role === 'Docente' && (!userProfile.assignedLevel || !userProfile.assignedGrade) && !isMultiGroupTeacher && activeTab !== 'credencial') {
+  const hasNoAssignedGroup = userProfile?.role === 'Docente' && (!userProfile.assignedLevel || !userProfile.assignedGrade) && !isMultiGroupTeacher && accessibleGroupsList.length === 0;
+  const isViewingSpecialTab = (activeTab === 'credencial' && isCredencialTabEnabled) || (activeTab === 'horario' && isHorarioTabEnabled);
+
+  if (hasNoAssignedGroup && !isViewingSpecialTab) {
     return (
       <div className="space-y-6 pb-12">
         <div className="flex gap-1.5 p-1 bg-slate-100 rounded-md w-fit">
-          <button
-            onClick={() => setActiveTab('attendance')}
-            className={cn(
-              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-              activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            <Calendar size={14} /> Asistencia
-          </button>
-          <button
-            onClick={() => setActiveTab('grading')}
-            className={cn(
-              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-              activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            <ClipboardList size={14} /> Calificaciones
-          </button>
-          <button
-            onClick={() => setActiveTab('horario')}
-            className={cn(
-              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-              activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            <Calendar size={14} /> Mi Horario
-          </button>
-          <button
-            onClick={() => setActiveTab('credencial')}
-            className="px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 text-slate-400 hover:text-slate-600"
-          >
-            <CreditCard size={14} /> Credencial
-          </button>
+          {isAttendanceTabEnabled && (
+            <button
+              onClick={() => setActiveTab('attendance')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <Calendar size={14} /> Asistencia
+            </button>
+          )}
+          {isGradingTabEnabled && (
+            <button
+              onClick={() => setActiveTab('grading')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <ClipboardList size={14} /> Calificaciones
+            </button>
+          )}
+          {isActivitiesTabEnabled && (
+            <button
+              onClick={() => setActiveTab('activities')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                activeTab === 'activities' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <BookOpen size={14} /> Actividades
+            </button>
+          )}
+          {isHorarioTabEnabled && (
+            <button
+              onClick={() => setActiveTab('horario')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <Calendar size={14} /> Mi Horario
+            </button>
+          )}
+          {isCredencialTabEnabled && (
+            <button
+              onClick={() => setActiveTab('credencial')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                activeTab === 'credencial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <CreditCard size={14} /> Credencial
+            </button>
+          )}
         </div>
 
         <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-amber-800">
@@ -1468,15 +2196,30 @@ export default function TeacherPortal() {
             <AlertCircle className="shrink-0 text-amber-600" size={32} />
             <div>
               <h2 className="font-bold text-base">Configuración de Grupo Pendiente para Asistencia y Calificaciones</h2>
-              <p className="text-xs text-amber-700 mt-0.5">Tu cuenta aún no tiene un grado o grupo asignado para control escolar. Sin embargo, ya puedes configurar tu Credencial Oficial y fotografía en la pestaña Credencial.</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {isCredencialTabEnabled
+                  ? "Tu cuenta aún no tiene un grado o grupo asignado para control escolar. Sin embargo, ya puedes consultar tus datos o fotografía en la pestaña Credencial."
+                  : isHorarioTabEnabled
+                    ? "Tu cuenta aún no tiene un grado o grupo asignado para control escolar. Puedes consultar tu itinerario en la pestaña Mi Horario."
+                    : "Tu cuenta aún no tiene un grado o grupo asignado para control escolar. Comunícate con dirección o administración para que te asignen grupo o materias."}
+              </p>
             </div>
           </div>
-          <button
-            onClick={() => setActiveTab('credencial')}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 shadow-sm"
-          >
-            Ir a Mi Credencial
-          </button>
+          {isCredencialTabEnabled ? (
+            <button
+              onClick={() => setActiveTab('credencial')}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 shadow-sm cursor-pointer"
+            >
+              Ir a Mi Credencial
+            </button>
+          ) : isHorarioTabEnabled ? (
+            <button
+              onClick={() => setActiveTab('horario')}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 shadow-sm cursor-pointer"
+            >
+              Ir a Mi Horario
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -1499,22 +2242,28 @@ export default function TeacherPortal() {
         animate={{ y: 0, opacity: 1 }}
         className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200"
       >
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase italic">Portal Docente</h1>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1 opacity-75 flex items-center gap-2">
-            {userProfile?.role === 'Docente' 
-              ? (isMultiGroupTeacher ? (
-                  <span className="flex items-center gap-1.5 text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
-                    DOCENTE MULTIGRUPO • SELECCIONADO: <strong>{activeLevel} {activeGrade} "{activeGroup}"</strong>
-                  </span>
-                ) : (
-                  <span>ASIGNACIÓN: <strong>{activeLevel} - {activeGrade} "{activeGroup}"</strong></span>
-                ))
-              : (
-                <span>GESTIÓN DE CALIFICACIONES Y ASISTENCIA • <strong>{activeLevel} {activeGrade} "{activeGroup}"</strong></span>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase italic">
+                {activeGroupTitle}
+              </h1>
+              {accessibleGroupsList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(true)}
+                  className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  title="Cambiar grupo activo"
+                >
+                  <ArrowLeftRight size={13} className="text-blue-600" />
+                  <span>Cambiar Grupo</span>
+                </button>
               )}
-          </p>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+              {userProfile?.name ? `Docente: ${userProfile.name}` : 'Control Escolar'}
+            </p>
+          </div>
         </div>
 
         {/* Group selection filter for admin or multi-group teachers */}
@@ -1566,9 +2315,9 @@ export default function TeacherPortal() {
         )}
         
         
-        {activeTab === 'grading' && hasPermission('grading', 'manage') && (
+        {(activeTab === 'grading' || activeTab === 'activities') && hasPermission('grading', 'manage') && (
           <div className="flex flex-wrap gap-2">
-            {!isBimestreLocked && (
+            {activeTab === 'grading' && !isBimestreLocked && (
               <button
                 onClick={handleFinalize}
                 disabled={isLocking || isSaving}
@@ -1588,21 +2337,51 @@ export default function TeacherPortal() {
                 Bloqueado
               </div>
             )}
-            {isActivitiesEnabledForCurrentLevel && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingActivity(null);
-                  setActivityFormName('');
-                  setActivityFormDate(new Date().toISOString().split('T')[0]);
-                  setIsActivityModalOpen(true);
-                }}
-                disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
-              >
-                <Plus size={13} strokeWidth={3} />
-                <span>Nueva Actividad</span>
-              </button>
+            {activeTab === 'activities' && (
+              <>
+                {currentSubjectActivities.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => promptSyncActivitiesModal()}
+                    disabled={isSyncingActivities}
+                    title={
+                      isActivitiesSyncedWithGrades
+                        ? "Calificaciones sincronizadas con las actividades"
+                        : "Hay calificaciones pendientes de sincronizar con Calificaciones"
+                    }
+                    className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <span
+                      className={cn(
+                        "w-2 h-2 rounded-full shrink-0 transition-colors",
+                        isActivitiesSyncedWithGrades
+                          ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"
+                          : "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)] animate-pulse"
+                      )}
+                    />
+                    {isSyncingActivities ? (
+                      <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <span>Sincronizar a Calificaciones</span>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingActivity(null);
+                    setActivityFormName('');
+                    setActivityFormDate(new Date().toISOString().split('T')[0]);
+                    setActivityFormSubjectId(selectedSubjectId);
+                    setIsActivityModalOpen(true);
+                  }}
+                  disabled={!selectedSubjectId || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                  className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm shadow-blue-950/20 active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus size={13} strokeWidth={3} />
+                  <span>Nueva Actividad</span>
+                </button>
+              </>
             )}
             <button
               onClick={handleSaveAll}
@@ -1619,70 +2398,6 @@ export default function TeacherPortal() {
           </div>
         )}
       </motion.div>
-
-      {/* Metrics Row - Compact Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
-        >
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Matrícula Grupo</p>
-          <div className="flex items-end justify-between">
-            <p className="text-2xl font-bold text-slate-900 tabular-nums lowercase">{students.length} <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">alumnos</span></p>
-            <Users size={16} className="text-slate-200 mb-1" />
-          </div>
-        </motion.div>
-        
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
-        >
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Asistencia Real</p>
-          <div className="flex items-end justify-between">
-            <p className="text-2xl font-bold text-slate-900 tabular-nums">
-              {attendancePercentage}% <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">({presentCount}/{students.length})</span>
-            </p>
-            <CheckCircle2 size={16} className="text-emerald-200 mb-1" />
-          </div>
-        </motion.div>
-
-        {activeTab === 'grading' && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
-          >
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
-              {evalConfig.periodType === 'Trimestres' ? 'Trimestre Activo' : evalConfig.periodType === 'Bimestres' ? 'Bimestre Activo' : 'Periodo Activo'}
-            </p>
-            <div className="flex items-end justify-between">
-              <p className="text-xl font-bold text-slate-900 tabular-nums">
-                {evalConfig.periodNames?.[selectedBimestre - 1] || `${selectedBimestre}º Periodo`}
-              </p>
-              <ClipboardList size={16} className="text-slate-200 mb-1" />
-            </div>
-          </motion.div>
-        )}
-
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-white p-3 rounded-md border border-slate-200 shadow-sm flex flex-col justify-between"
-        >
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Estado Ciclo</p>
-          <div className="flex items-end justify-between">
-            <p className="text-sm font-black text-slate-950 uppercase tracking-tight truncate max-w-[120px]">
-              {isBimestreLocked ? 'Bloqueado' : 'Abierto para Edición'}
-            </p>
-            {isBimestreLocked ? <Lock size={16} className="text-amber-400 mb-1" /> : <Unlock size={16} className="text-emerald-400 mb-1" />}
-          </div>
-        </motion.div>
-      </div>
 
       {savedStatus && (
         <motion.div 
@@ -1724,86 +2439,359 @@ export default function TeacherPortal() {
 
       {/* Tabs - Technical Strip */}
       <div className="flex gap-1.5 p-1 bg-slate-100 rounded-md w-fit">
-        <button
-          onClick={() => setActiveTab('attendance')}
-          className={cn(
-            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-            activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-          )}
-        >
-          <Calendar size={14} /> Asistencia
-        </button>
-        <button
-          onClick={() => setActiveTab('grading')}
-          className={cn(
-            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-            activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-          )}
-        >
-          <ClipboardList size={14} /> Calificaciones
-        </button>
-        <button
-          onClick={() => setActiveTab('horario')}
-          className={cn(
-            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-            activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-          )}
-        >
-          <Calendar size={14} /> Mi Horario
-        </button>
-        <button
-          onClick={() => setActiveTab('credencial')}
-          className={cn(
-            "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-            activeTab === 'credencial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
-          )}
-        >
-          <CreditCard size={14} /> Credencial
-        </button>
+        {isAttendanceTabEnabled && (
+          <button
+            onClick={() => setActiveTab('attendance')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <Calendar size={14} /> Asistencia
+          </button>
+        )}
+        {isGradingTabEnabled && (
+          <button
+            onClick={() => setActiveTab('grading')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <ClipboardList size={14} /> Calificaciones
+          </button>
+        )}
+        {isActivitiesTabEnabled && (
+          <button
+            onClick={() => setActiveTab('activities')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'activities' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <BookOpen size={14} /> Actividades
+          </button>
+        )}
+        {isHorarioTabEnabled && (
+          <button
+            onClick={() => setActiveTab('horario')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <Calendar size={14} /> Mi Horario
+          </button>
+        )}
+        {isCredencialTabEnabled && (
+          <button
+            onClick={() => setActiveTab('credencial')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'credencial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <CreditCard size={14} /> Credencial
+          </button>
+        )}
       </div>
 
       {activeTab === 'grading' ? (
         <div className="space-y-4">
-          {/* Controls - Compact */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-200 shadow-sm">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
-                {evalConfig.periodType}:
-              </span>
-              {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
-                  onClick={() => {
-                    hasManuallySelectedPeriodRef.current = true;
-                    setSelectedBimestre(b);
-                  }}
-                  className={cn(
-                    "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1",
-                    selectedBimestre === b 
-                      ? "bg-slate-900 text-white shadow-sm" 
-                      : lockedPeriods[b]
-                        ? "text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-600"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  )}
-                >
-                  <span>{evalConfig.periodType.charAt(0)}{b}</span>
-                  {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
-                </button>
-              ))}
+          {/* Switcher de Vista: Captura por Periodo vs Sábana de Promedios */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl w-fit">
+              <button
+                type="button"
+                onClick={() => setGradingViewMode('capture')}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer",
+                  gradingViewMode === 'capture'
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                <Edit3 size={13} className={gradingViewMode === 'capture' ? "text-blue-600" : "text-slate-400"} />
+                <span>Captura por Periodo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGradingViewMode('summary')}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer",
+                  gradingViewMode === 'summary'
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                <Calculator size={13} className={gradingViewMode === 'summary' ? "text-blue-600" : "text-slate-400"} />
+                <span>TABLA DE PROMEDIOS</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold">
+                  {academicLevelSubjects.length} {academicLevelSubjects.length === 1 ? 'materia' : 'materias'}
+                </span>
+              </button>
             </div>
-            
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input
-                placeholder="Filtrar por nombre..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold w-full md:w-64 outline-none focus:ring-1 focus:ring-slate-900"
-              />
+
+            <div className="flex items-center gap-2">
+              <div className="relative w-full sm:w-60">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                <input
+                  placeholder="Buscar alumno..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold w-full outline-none focus:bg-white focus:ring-1 focus:ring-slate-900 transition-all"
+                />
+              </div>
             </div>
           </div>
+
+          {gradingViewMode === 'summary' ? (
+            /* ========================================================
+               VISTA: SÁBANA DE PROMEDIOS
+               ======================================================== */
+            <div className="space-y-4">
+              {/* Sábana de Promedios Table */}
+              {academicLevelSubjects.length === 0 ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center shadow-xs">
+                  <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
+                  <h3 className="text-sm font-black text-amber-900 uppercase">Sin materias académicas asignadas</h3>
+                  <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto font-medium">
+                    No hay materias académicas configuradas para calcular promedios en este grupo.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-12">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-full">
+                      <thead>
+                        {/* Materias Header Row */}
+                        <tr className="text-[10px] font-black uppercase tracking-wider">
+                          <th
+                            rowSpan={2}
+                            className="px-4 py-3 sticky left-0 bg-slate-100 z-20 w-60 border-r-[3px] border-r-slate-300 border-b border-slate-200 text-slate-700 shadow-[2px_0_4px_rgba(0,0,0,0.03)]"
+                          >
+                            <span>Nombre Alumno</span>
+                          </th>
+
+                          {academicLevelSubjects.map((subj, sIdx) => {
+                            const colSpan = evalConfig.periodCount + 1;
+                            const isLastSubj = sIdx === academicLevelSubjects.length - 1;
+                            return (
+                              <th
+                                key={subj.id}
+                                colSpan={colSpan}
+                                className={cn(
+                                  "py-2.5 px-3 text-center border-b border-slate-200 font-black",
+                                  sIdx % 2 === 0 ? "bg-blue-50/90 text-blue-950" : "bg-indigo-50/90 text-indigo-950",
+                                  !isLastSubj ? "border-r-[3px] border-r-slate-300" : ""
+                                )}
+                              >
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="tracking-wider">{subj.name}</span>
+                                  {subj.category && (
+                                    <span className="text-[8px] px-1.5 py-0.5 rounded font-bold uppercase bg-white/70">
+                                      {subj.category}
+                                    </span>
+                                  )}
+                                </div>
+                              </th>
+                            );
+                          })}
+                        </tr>
+
+                        {/* Period Subheaders Row */}
+                        <tr className="text-[9px] font-black uppercase tracking-wider border-b border-slate-200">
+                          {academicLevelSubjects.map((subj, sIdx) => {
+                            const isLastSubj = sIdx === academicLevelSubjects.length - 1;
+                            return (
+                              <React.Fragment key={`sub-${subj.id}`}>
+                                {Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1).map((p) => {
+                                  const pShort = `${evalConfig.periodType.charAt(0)}${p}`;
+                                  return (
+                                    <th
+                                      key={`p-${subj.id}-${p}`}
+                                      className="px-2 py-2 text-center w-12 bg-slate-50/70 text-slate-700 border-r border-slate-200"
+                                      title={evalConfig.periodNames?.[p - 1] || `${evalConfig.periodType} ${p}`}
+                                    >
+                                      {pShort}
+                                    </th>
+                                  );
+                                })}
+                                <th
+                                  className={cn(
+                                    "px-2.5 py-2 text-center w-16 bg-blue-100/90 text-blue-950 font-black",
+                                    !isLastSubj ? "border-r-[3px] border-r-slate-300" : ""
+                                  )}
+                                  title={`Promedio acumulado de ${subj.name}`}
+                                >
+                                  PROM
+                                </th>
+                              </React.Fragment>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100 font-mono">
+                        {filteredStudents.map((student) => {
+                          return (
+                            <tr key={student.id} className="hover:bg-slate-50/80 transition-colors group">
+                              {/* Sticky Student Column */}
+                              <td className="px-4 py-2.5 sticky left-0 bg-white z-10 border-r-[3px] border-r-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.03)] backdrop-blur-sm group-hover:bg-slate-50/80">
+                                <div className="flex items-center gap-3">
+                                  {student.photoUrl ? (
+                                    <img
+                                      src={student.photoUrl}
+                                      alt=""
+                                      className="w-7 h-7 rounded object-cover border border-slate-200 shadow-xs shrink-0"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center font-black text-[10px] shrink-0">
+                                      {student.name.charAt(0)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">
+                                      {student.name}
+                                    </p>
+                                    <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">
+                                      {[student.lastName, student.motherLastName].filter(Boolean).join(' ')}
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Subject Periods & Average */}
+                              {academicLevelSubjects.map((subj, sIdx) => {
+                                const { avgFormatted, avgNumeric, periodsData } = getSubjectCumulativeAverage(student.id, subj.name);
+                                const isLastSubj = sIdx === academicLevelSubjects.length - 1;
+
+                                return (
+                                  <React.Fragment key={`cell-${student.id}-${subj.id}`}>
+                                    {periodsData.map((pd) => (
+                                      <td
+                                        key={`pcell-${student.id}-${subj.id}-${pd.period}`}
+                                        className="px-2 py-2 text-center text-xs tabular-nums text-slate-800 border-r border-slate-100"
+                                      >
+                                        {pd.rawVal !== undefined && pd.rawVal !== '' && pd.rawVal !== null ? (
+                                          <span className="font-bold">
+                                            {pd.rawVal}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-300 font-normal">-</span>
+                                        )}
+                                      </td>
+                                    ))}
+
+                                    {/* Subject Cumulative Average Cell */}
+                                    <td
+                                      className={cn(
+                                        "px-2.5 py-2 text-center bg-blue-50/40 tabular-nums",
+                                        !isLastSubj ? "border-r-[3px] border-r-slate-300" : ""
+                                      )}
+                                    >
+                                      <span
+                                        className={cn(
+                                          "inline-block px-1.5 py-0.5 rounded text-xs font-black",
+                                          avgNumeric === null
+                                            ? "text-slate-300 font-normal"
+                                            : avgNumeric >= 8
+                                              ? "bg-emerald-50 text-emerald-800 font-black"
+                                              : avgNumeric >= 6
+                                                ? "bg-amber-50 text-amber-800 font-black"
+                                                : "bg-rose-50 text-rose-800 font-black"
+                                        )}
+                                      >
+                                        {avgFormatted}
+                                      </span>
+                                    </td>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+
+                      {/* Footer Row: Group Averages */}
+                      <tfoot className="bg-slate-100/90 font-black border-t-2 border-slate-300 text-xs">
+                        <tr>
+                          <td className="px-4 py-3 sticky left-0 bg-slate-200 z-10 border-r-[3px] border-r-slate-300 uppercase text-[10px] tracking-wider text-slate-800">
+                            Promedio Grupal
+                          </td>
+                          {academicLevelSubjects.map((subj, sIdx) => {
+                            const isLastSubj = sIdx === academicLevelSubjects.length - 1;
+                            return (
+                              <React.Fragment key={`foot-${subj.id}`}>
+                                {Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1).map((p) => (
+                                  <td
+                                    key={`foot-p-${subj.id}-${p}`}
+                                    className="px-2 py-3 text-center text-xs tabular-nums text-slate-700 border-r border-slate-200"
+                                  >
+                                    {getGroupSubjectAverage(subj.name, p)}
+                                  </td>
+                                ))}
+                                <td
+                                  className={cn(
+                                    "px-2.5 py-3 text-center bg-blue-100 text-blue-950 font-black text-xs tabular-nums",
+                                    !isLastSubj ? "border-r-[3px] border-r-slate-300" : ""
+                                  )}
+                                >
+                                  {getGroupSubjectAverage(subj.name)}
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {filteredStudents.length === 0 && (
+                    <div className="py-16 text-center text-slate-400 text-xs italic">
+                      Sin alumnos encontrados en este grupo
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ========================================================
+               VISTA: CAPTURA POR PERIODO (EXISTENTE)
+               ======================================================== */
+            <>
+              {/* Controls - Compact */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-200 shadow-sm">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
+                    {evalConfig.periodType}:
+                  </span>
+                  {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
+                      onClick={() => {
+                        hasManuallySelectedPeriodRef.current = true;
+                        setSelectedBimestre(b);
+                      }}
+                      className={cn(
+                        "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1",
+                        selectedBimestre === b 
+                          ? "bg-slate-900 text-white shadow-sm" 
+                          : lockedPeriods[b]
+                            ? "text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-600"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      )}
+                    >
+                      <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                      {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
           {/* Category badges legend bar */}
           <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold">
@@ -1912,48 +2900,13 @@ export default function TeacherPortal() {
                       {personalDevLevelSubjects.length > 0 && (
                         <th 
                           colSpan={personalDevLevelSubjects.length} 
-                          className={cn(
-                            "py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black",
-                            isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : ""
-                          )}
+                          className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
                         >
                           <div className="flex items-center justify-center gap-1.5">
                             <span className="tracking-wider">Desarrollo Personal</span>
                             <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
                               {personalDevLevelSubjects.length}
                             </span>
-                          </div>
-                        </th>
-                      )}
-
-                      {/* Grupo: Actividades */}
-                      {isActivitiesEnabledForCurrentLevel && (
-                        <th
-                          colSpan={activities.length > 0 ? activities.length : 1}
-                          className="py-2.5 px-3 text-center bg-violet-50/90 text-violet-900 border-b border-violet-200 font-black border-l-[3px] border-l-slate-300"
-                        >
-                          <div className="flex items-center justify-center gap-2">
-                            <FileSpreadsheet size={13} className="text-violet-700" />
-                            <span className="tracking-wider">Actividades</span>
-                            <span className="text-[9px] bg-violet-200/80 text-violet-900 px-1.5 py-0.5 rounded-full font-bold">
-                              {activities.length}
-                            </span>
-                            {!isBimestreLocked && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingActivity(null);
-                                  setActivityFormName('');
-                                  setActivityFormDate(new Date().toISOString().split('T')[0]);
-                                  setIsActivityModalOpen(true);
-                                }}
-                                title="Registrar nueva actividad en este grupo"
-                                className="ml-1 px-2 py-0.5 rounded bg-violet-600 hover:bg-violet-700 text-white text-[9px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
-                              >
-                                <Plus size={10} strokeWidth={3} />
-                                <span>Actividad</span>
-                              </button>
-                            )}
                           </div>
                         </th>
                       )}
@@ -1965,7 +2918,7 @@ export default function TeacherPortal() {
                       {pureAcademicSubjects.length > 0 ? (
                         pureAcademicSubjects.map((subj, idx) => {
                           const isLast = idx === pureAcademicSubjects.length - 1;
-                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0 || isActivitiesEnabledForCurrentLevel;
+                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
                           return (
                             <th 
                               key={subj.id} 
@@ -1989,7 +2942,7 @@ export default function TeacherPortal() {
                       {autonomyCurricularSubjects.length > 0 && (
                         autonomyCurricularSubjects.map((subj, idx) => {
                           const isLast = idx === autonomyCurricularSubjects.length - 1;
-                          const hasNextGroup = personalDevLevelSubjects.length > 0 || isActivitiesEnabledForCurrentLevel;
+                          const hasNextGroup = personalDevLevelSubjects.length > 0;
                           return (
                             <th 
                               key={subj.id} 
@@ -2020,74 +2973,13 @@ export default function TeacherPortal() {
                               title={`Desarrollo Personal: ${subj.name}`}
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[90px] max-w-[130px] whitespace-normal break-words leading-tight bg-indigo-50/70 text-indigo-900 font-black",
-                                isLast ? (isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : "") : "border-r border-indigo-200/70"
+                                isLast ? "" : "border-r border-indigo-200/70"
                               )}
                             >
                               <span className="block leading-tight">{subj.name}</span>
                             </th>
                           );
                         })
-                      )}
-
-                      {/* Columnas de Actividades */}
-                      {isActivitiesEnabledForCurrentLevel && (
-                        activities.length > 0 ? (
-                          activities.map((act, idx) => {
-                            const isFirst = idx === 0;
-                            const isLast = idx === activities.length - 1;
-                            return (
-                              <th 
-                                key={act.id} 
-                                title={`Actividad: ${act.name} (${act.date})`}
-                                className={cn(
-                                  "px-2 py-2 text-center min-w-[110px] max-w-[150px] whitespace-normal break-words leading-tight bg-violet-50/40 text-violet-950 font-black",
-                                  isFirst ? "border-l-[3px] border-l-slate-300" : "",
-                                  isLast ? "" : "border-r border-violet-200/70"
-                                )}
-                              >
-                                <div className="space-y-1">
-                                  <span className="block leading-tight text-[10px] text-violet-950 font-black truncate max-w-[130px] mx-auto" title={act.name}>
-                                    {act.name}
-                                  </span>
-                                  <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-violet-700">
-                                    <span className="px-1.5 py-0.5 rounded bg-violet-100/90 border border-violet-200/80">
-                                      {formatShortDate(act.date)}
-                                    </span>
-                                    {!isBimestreLocked && (
-                                      <div className="flex items-center gap-0.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setEditingActivity(act);
-                                            setActivityFormName(act.name);
-                                            setActivityFormDate(act.date || new Date().toISOString().split('T')[0]);
-                                            setIsActivityModalOpen(true);
-                                          }}
-                                          title="Editar actividad"
-                                          className="p-0.5 hover:text-violet-950 hover:bg-violet-200/70 rounded cursor-pointer transition-colors"
-                                        >
-                                          <Edit2 size={9} />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteActivity(act.id, act.name)}
-                                          title="Eliminar actividad"
-                                          className="p-0.5 hover:text-rose-600 hover:bg-rose-100 rounded cursor-pointer transition-colors"
-                                        >
-                                          <Trash2 size={9} />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </th>
-                            );
-                          })
-                        ) : (
-                          <th className="px-3 py-2 text-center text-violet-400 italic text-[8px] bg-violet-50/20 border-l-[3px] border-l-slate-300">
-                            Sin actividades
-                          </th>
-                        )
                       )}
                     </tr>
                   </thead>
@@ -2131,7 +3023,11 @@ export default function TeacherPortal() {
                             pureAcademicSubjects.map((subj, idx) => {
                               const isLast = idx === pureAcademicSubjects.length - 1;
                               const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
-                              const rawVal = studentGrade.subjects?.[subj.name] ?? '';
+                              const isAttendanceTracker = isAttendanceTrackingSubject(subj);
+                              const autoAbsenceCount = isAttendanceTracker ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
+                              const rawVal = isAttendanceTracker
+                                ? (autoAbsenceCount !== null ? String(autoAbsenceCount) : (studentGrade.attendance !== undefined && studentGrade.attendance !== '' ? String(studentGrade.attendance) : (studentGrade.subjects?.[subj.name] ?? '')))
+                                : (studentGrade.subjects?.[subj.name] ?? '');
                               return (
                                 <td 
                                   key={subj.id} 
@@ -2247,14 +3143,18 @@ export default function TeacherPortal() {
                               const legacyField = (
                                 norm === 'conducta' ? 'conduct' :
                                 norm === 'uniforme' ? 'uniform' :
-                                norm === 'faltas' || norm === 'falta' || norm === 'inasistencia' ? 'attendance' :
+                                norm === 'faltas' || norm === 'falta' || norm === 'inasistencia' || norm === 'inasistencias' ? 'attendance' :
                                 norm === 'tareas' || norm === 'tareas no realizadas' ? 'tasksNotDone' :
                                 norm === 'retardo' || norm === 'retardos' ? 'tardies' :
                                 norm === 'aseo' ? 'cleanliness' : null
                               ) as keyof StudentGrade | null;
 
                               const gradeVal = isAttendanceTracker
-                                ? (studentGrade.subjects?.[subj.name] ?? (studentGrade.attendance !== undefined && studentGrade.attendance !== '' ? studentGrade.attendance : (autoAbsenceCount ?? 0)))
+                                ? (autoAbsenceCount !== null 
+                                    ? autoAbsenceCount 
+                                    : (studentGrade.attendance !== undefined && studentGrade.attendance !== '' 
+                                        ? studentGrade.attendance 
+                                        : (studentGrade.subjects?.[subj.name] ?? 0)))
                                 : (studentGrade.subjects?.[subj.name] ?? (legacyField ? studentGrade[legacyField] : '') ?? '');
 
                               return (
@@ -2327,69 +3227,317 @@ export default function TeacherPortal() {
                               );
                             })
                           )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          </>
+          )}
+        </div>
+      ) : activeTab === 'activities' ? (
+        <div className="space-y-4">
+          {/* Activities Controls */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Period Selector */}
+              <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-200 shadow-sm">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
+                  {evalConfig.periodType}:
+                </span>
+                {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
+                    onClick={() => {
+                      hasManuallySelectedPeriodRef.current = true;
+                      setSelectedBimestre(b);
+                    }}
+                    className={cn(
+                      "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1",
+                      selectedBimestre === b 
+                        ? "bg-blue-900 text-white shadow-sm" 
+                        : lockedPeriods[b]
+                          ? "text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-600"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    )}
+                  >
+                    <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                    {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
+                  </button>
+                ))}
+              </div>
 
-                          {/* Actividades Inputs */}
-                          {isActivitiesEnabledForCurrentLevel && (
-                            activities.length > 0 ? (
-                              activities.map((act, idx) => {
-                                const isFirst = idx === 0;
-                                const isLast = idx === activities.length - 1;
-                                const rawScore = act.scores?.[student.id] ?? '';
+              {/* Materia Filter Selector */}
+              {activeLevelSubjects.length > 0 && (
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm">
+                  <span className="text-[9px] font-black text-blue-950 uppercase tracking-widest flex items-center gap-1">
+                    <BookOpen size={12} className="text-blue-900" /> Materia:
+                  </span>
+                  <select
+                    value={selectedSubjectId}
+                    onChange={(e) => setSelectedSubjectId(e.target.value)}
+                    className="bg-transparent text-xs font-black text-blue-950 outline-none cursor-pointer border-none pr-1"
+                  >
+                    {activeLevelSubjects.map((s) => {
+                      const count = activities.filter(a => (a.subjectId ? a.subjectId === s.id : activeLevelSubjects[0]?.id === s.id)).length;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({count} {count === 1 ? 'actividad' : 'actividades'})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+            </div>
 
-                                return (
-                                  <td 
-                                    key={act.id} 
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input
+                  placeholder="Filtrar por alumno..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold w-full md:w-56 outline-none focus:ring-1 focus:ring-blue-900 shadow-sm"
+                />
+              </div>
+
+              {currentSubjectActivities.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => promptSyncActivitiesModal()}
+                  disabled={isSyncingActivities}
+                  title={
+                    isActivitiesSyncedWithGrades 
+                      ? "Calificaciones sincronizadas con las actividades" 
+                      : "Hay calificaciones pendientes de sincronizar con Calificaciones"
+                  }
+                  className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  <span
+                    className={cn(
+                      "w-2 h-2 rounded-full shrink-0 transition-colors",
+                      isActivitiesSyncedWithGrades 
+                        ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" 
+                        : "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)] animate-pulse"
+                    )}
+                  />
+                  {isSyncingActivities ? (
+                    <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <span>Sincronizar a Calificaciones</span>
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingActivity(null);
+                  setActivityFormName('');
+                  setActivityFormDate(new Date().toISOString().split('T')[0]);
+                  setActivityFormSubjectId(selectedSubjectId);
+                  setIsActivityModalOpen(true);
+                }}
+                disabled={!selectedSubjectId || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                className="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                <Plus size={12} strokeWidth={3} />
+                <span>Nueva Actividad</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          {activeLevelSubjects.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center shadow-sm">
+              <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
+              <h3 className="text-sm font-black text-amber-900 uppercase">Sin materias disponibles</h3>
+              <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
+                No hay materias configuradas para este nivel o asignadas a tu cuenta de docente.
+              </p>
+            </div>
+          ) : currentSubjectActivities.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200/80 p-8 text-center shadow-xs">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                No hay actividades registradas
+              </p>
+              {!isBimestreLocked && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingActivity(null);
+                    setActivityFormName('');
+                    setActivityFormDate(new Date().toISOString().split('T')[0]);
+                    setActivityFormSubjectId(selectedSubjectId);
+                    setIsActivityModalOpen(true);
+                  }}
+                  className="mt-3 px-4 py-2 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                >
+                  <Plus size={13} strokeWidth={3} />
+                  <span>Nueva Actividad</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-md border border-slate-200 shadow-sm overflow-hidden mb-12">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/90 text-[9px] font-black uppercase tracking-wider border-b border-slate-200 text-slate-600">
+                      <th className="px-3 py-2.5 w-12 text-center border-r border-slate-200">No.</th>
+                      <th className="px-4 py-2.5 min-w-[200px] border-r border-slate-200">Alumno</th>
+                      {currentSubjectActivities.map((act) => (
+                        <th 
+                          key={act.id} 
+                          className="px-3 py-2 text-center min-w-[120px] max-w-[160px] whitespace-normal break-words leading-tight bg-blue-50/40 text-blue-950 font-black border-r border-blue-200/70"
+                        >
+                          <div className="space-y-1">
+                            <span className="block leading-tight text-[11px] text-blue-950 font-black truncate max-w-[140px] mx-auto" title={act.name}>
+                              {act.name}
+                            </span>
+                            <div className="flex items-center justify-center gap-1.5 text-[8px] font-bold text-blue-800">
+                              <span className="px-1.5 py-0.5 rounded bg-blue-100/90 border border-blue-200/80">
+                                {formatShortDate(act.date)}
+                              </span>
+                              {!isBimestreLocked && (
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingActivity(act);
+                                      setActivityFormName(act.name);
+                                      setActivityFormDate(act.date || new Date().toISOString().split('T')[0]);
+                                      setActivityFormSubjectId(act.subjectId || selectedSubjectId);
+                                      setIsActivityModalOpen(true);
+                                    }}
+                                    title="Editar actividad"
+                                    className="p-1 hover:text-blue-950 hover:bg-blue-200/70 rounded cursor-pointer transition-colors"
+                                  >
+                                    <Edit2 size={10} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteActivity(act.id, act.name)}
+                                    title="Eliminar actividad"
+                                    className="p-1 hover:text-rose-600 hover:bg-rose-100 rounded cursor-pointer transition-colors"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </th>
+                      ))}
+                      {/* Promedio Column */}
+                      <th className="px-3 py-2.5 text-center min-w-[110px] bg-emerald-50/80 text-emerald-950 font-black border-l-[3px] border-l-slate-300">
+                        <div className="space-y-0.5">
+                          <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-900">
+                            Promedio
+                          </span>
+                          <span className="inline-block px-1.5 py-0.2 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded text-[7px] font-black uppercase tracking-tight">
+                            A Calificaciones
+                          </span>
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {filteredStudents.map((student, idx) => {
+                      const avg = getStudentActivityAverage(student.id, selectedSubjectId);
+                      return (
+                        <tr key={student.id} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="px-3 py-2 text-center text-[10px] font-bold text-slate-400 tabular-nums border-r border-slate-100">
+                            {idx + 1}
+                          </td>
+                          <td className="px-4 py-2 border-r border-slate-100 font-sans">
+                            <div className="flex items-center gap-2.5">
+                              {student.photoUrl ? (
+                                <img 
+                                  src={student.photoUrl} 
+                                  alt="Avatar" 
+                                  className="w-7 h-7 rounded object-cover border border-slate-200 shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                  {student.name.charAt(0)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black text-slate-900 truncate uppercase leading-tight">
+                                  {student.name} {[student.lastName, student.motherLastName].filter(Boolean).join(' ')}
+                                </p>
+                                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
+                                  {student.curp ? student.curp.substring(0, 10) : student.id.substring(0, 8)}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Activity Score Inputs */}
+                          {currentSubjectActivities.map((act) => {
+                            const rawScore = act.scores?.[student.id] ?? '';
+                            return (
+                              <td key={act.id} className="px-1.5 py-1.5 text-center border-r border-slate-100 bg-blue-50/10">
+                                {gradingScale === 'letters' ? (
+                                  <select
+                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    value={rawScore}
+                                    onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
+                                    onBlur={() => handleActivityScoreBlur(act.id)}
                                     className={cn(
-                                      "px-1 py-1.5 bg-violet-50/15",
-                                      isFirst ? "border-l-[3px] border-l-slate-300" : "",
-                                      isLast ? "" : "border-r border-violet-100/70"
+                                      "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                      rawScore === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                      rawScore === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                      rawScore === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                      rawScore === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                      "bg-white text-slate-400 border-slate-200 focus:border-blue-900"
                                     )}
                                   >
-                                    {gradingScale === 'letters' ? (
-                                      <select
-                                        disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                        value={rawScore}
-                                        onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
-                                        onBlur={() => handleActivityScoreBlur(act.id)}
-                                        className={cn(
-                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
-                                          rawScore === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                          rawScore === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                          rawScore === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                          rawScore === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
-                                          "bg-violet-50/40 text-violet-400 border-transparent focus:bg-white focus:border-violet-400"
-                                        )}
-                                      >
-                                        <option value="">-</option>
-                                        <option value="A">A - Destacado</option>
-                                        <option value="B">B - Bueno</option>
-                                        <option value="C">C - Suficiente</option>
-                                        <option value="D">D - Apoyo</option>
-                                      </select>
-                                    ) : (
-                                      <input
-                                        type="number"
-                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                        min="0"
-                                        max={gradingScale === 'numeric_100' ? "100" : "10"}
-                                        step={gradingScale === 'numeric_100' ? "1" : "0.5"}
-                                        disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                        value={rawScore}
-                                        onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
-                                        onBlur={() => handleActivityScoreBlur(act.id)}
-                                        className="w-full bg-violet-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-violet-950 focus:bg-white focus:border-violet-400 outline-none transition-all tabular-nums italic"
-                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
-                                      />
-                                    )}
-                                  </td>
-                                );
-                              })
-                            ) : (
-                              <td className="px-1 py-1.5 text-center text-slate-300 text-[10px] italic bg-violet-50/5 border-l-[3px] border-l-slate-300">
-                                -
+                                    <option value="">-</option>
+                                    <option value="A">A - Destacado</option>
+                                    <option value="B">B - Bueno</option>
+                                    <option value="C">C - Suficiente</option>
+                                    <option value="D">D - Apoyo</option>
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                    min="0"
+                                    max={gradingScale === 'numeric_100' ? "100" : "10"}
+                                    step={gradingScale === 'numeric_100' ? "1" : "0.5"}
+                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    value={rawScore}
+                                    onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
+                                    onBlur={() => handleActivityScoreBlur(act.id)}
+                                    className="w-full bg-white border border-slate-200 rounded px-1.5 py-1.5 text-center text-[10px] font-black text-blue-950 focus:bg-white focus:border-blue-900 outline-none transition-all tabular-nums italic placeholder-slate-300 shadow-2xs"
+                                    placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                  />
+                                )}
                               </td>
-                            )
-                          )}
+                            );
+                          })}
+
+                          {/* Promedio Column */}
+                          <td className="px-2 py-1.5 text-center border-l-[3px] border-l-slate-300 bg-emerald-50/30">
+                            {avg.raw !== '-' ? (
+                              <div className="inline-flex flex-col items-center">
+                                <span className="px-2.5 py-1 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-950 text-xs font-black tabular-nums shadow-2xs">
+                                  {avg.raw}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 text-[10px] font-bold italic">-</span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -2404,6 +3552,18 @@ export default function TeacherPortal() {
           {/* Attendance Controls - Compact */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3">
+              {accessibleGroupsList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(true)}
+                  className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                  title="Cambiar grupo para tomar asistencia"
+                >
+                  <ArrowLeftRight size={12} className="text-blue-600" />
+                  <span>Grupo: {activeGroupTitle}</span>
+                </button>
+              )}
+
               <div className="flex items-center gap-2">
                 <Calendar size={14} className="text-slate-400" />
                 <input
@@ -2413,6 +3573,25 @@ export default function TeacherPortal() {
                   className="bg-white border border-slate-200 rounded px-3 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
                 />
               </div>
+
+              {/* Selector individual por materia para Secundaria / Preparatoria */}
+              {isSubjectAttendanceEnabledForCurrentLevel && activeLevelSubjects.length > 0 && (
+                <div className="flex items-center gap-2 bg-white border border-blue-200 bg-blue-50/40 rounded px-3 py-1.5 shadow-sm">
+                  <BookOpen size={14} className="text-blue-900 shrink-0" />
+                  <span className="text-[9px] font-black uppercase text-blue-900 tracking-wider shrink-0">Materia:</span>
+                  <select
+                    value={attendanceSubjectId}
+                    onChange={(e) => setAttendanceSubjectId(e.target.value)}
+                    className="bg-transparent text-[10px] font-black uppercase text-blue-950 outline-none cursor-pointer pr-1"
+                  >
+                    {activeLevelSubjects.map((s) => (
+                      <option key={s.id} value={s.id} className="bg-white text-slate-900">
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Attendance Quick Stats */}
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -2442,7 +3621,11 @@ export default function TeacherPortal() {
                 onClick={handleMarkAllPresent}
                 disabled={isSaving || students.length === 0}
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[9px] font-black uppercase tracking-wider transition-all border border-slate-200 flex items-center gap-1 shadow-xs"
-                title="Guarda a todos los alumnos como Asistió en esta fecha (100% Asistencia)"
+                title={
+                  isSubjectAttendanceEnabledForCurrentLevel && selectedAttendanceSubject
+                    ? `Guarda a todos los alumnos como Asistió en ${selectedAttendanceSubject.name} (100% Asistencia)`
+                    : "Guarda a todos los alumnos como Asistió en esta fecha (100% Asistencia)"
+                }
               >
                 <Check size={11} className="text-slate-700" /> Confirmar Todos Presentes
               </button>
@@ -2459,12 +3642,17 @@ export default function TeacherPortal() {
             </div>
           </div>
 
-          {isSpecificTeacher && activeLevelSubjects.length === 0 ? (
+          {(isSubjectAttendanceEnabledForCurrentLevel || isSpecificTeacher) && activeLevelSubjects.length === 0 ? (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center mb-12 shadow-sm">
               <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
-              <h3 className="text-sm font-black text-amber-900 uppercase">Sin materias asignadas para este grupo</h3>
+              <h3 className="text-sm font-black text-amber-900 uppercase">
+                {isSpecificTeacher ? "Sin materias asignadas para este grupo" : "Sin materias registradas para este nivel"}
+              </h3>
               <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto font-medium">
-                Tu usuario tiene asignado acceso a materias específicas, pero ninguna de tus materias asignadas corresponde al nivel o grupo seleccionado.
+                {isSpecificTeacher
+                  ? "Tu usuario tiene asignado acceso a materias específicas, pero ninguna corresponde al nivel o grupo seleccionado."
+                  : `No se han configurado materias para ${activeLevel}. Puedes registrarlas en Ajustes > Materias.`
+                }
               </p>
             </div>
           ) : (
@@ -2475,8 +3663,22 @@ export default function TeacherPortal() {
                   <tr className="bg-slate-50/80 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
                     <th className="px-6 py-3 w-12 text-center">RT</th>
                     <th className="px-6 py-3">Nombre Alumno</th>
-                    <th className="px-6 py-3 text-center">Registro de Asistencia</th>
-                    <th className="px-6 py-3 hidden md:table-cell text-right pr-12">CURP</th>
+                    <th className="px-6 py-3 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span>Registro de Asistencia</span>
+                        {isSubjectAttendanceEnabledForCurrentLevel && selectedAttendanceSubject && (
+                          <span className="font-black text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-[8px] tracking-normal normal-case">
+                            {selectedAttendanceSubject.name}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-right pr-6 sm:pr-8">
+                      <div className="flex flex-col items-end">
+                        <span>Faltas Acumuladas</span>
+                        <span className="text-[7px] text-slate-400 normal-case font-medium">Ciclo / Periodo</span>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -2576,8 +3778,35 @@ export default function TeacherPortal() {
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-3 hidden md:table-cell text-right pr-12">
-                          <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tabular-nums tracking-widest italic">{student.curp || 'S/N'}</span>
+                        <td className="px-6 py-3 text-right pr-6 sm:pr-8">
+                          {(() => {
+                            const { totalCycle, totalPeriod, currentPeriod } = getStudentCumulativeAbsences(student.id);
+                            const periodLabel = evalConfig.periodNames?.[currentPeriod - 1] || `${currentPeriod}º Periodo`;
+                            return (
+                              <div className="flex flex-col items-end">
+                                <button
+                                  type="button"
+                                  disabled={totalCycle === 0}
+                                  onClick={() => totalCycle > 0 && handleOpenAbsencesModal(student)}
+                                  className={cn(
+                                    "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black tabular-nums transition-all",
+                                    totalCycle === 0
+                                      ? "bg-slate-100 text-slate-500 cursor-default"
+                                      : totalCycle <= 3
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+                                        : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+                                  )}
+                                  title={totalCycle > 0 ? `Clic para ver las fechas de las faltas (${totalCycle} en total)` : "Sin faltas registradas"}
+                                >
+                                  <UserX size={10} className={totalCycle > 0 ? "text-rose-500" : "text-slate-400"} />
+                                  {totalCycle} {totalCycle === 1 ? 'falta' : 'faltas'}
+                                </button>
+                                <span className="text-[8px] font-bold text-slate-400 mt-0.5 tracking-tight">
+                                  {totalPeriod} en {periodLabel}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );
@@ -3315,27 +4544,27 @@ export default function TeacherPortal() {
           </div>
         )}
 
-        {/* Modal: Crear / Editar Actividad */}
+        {/* Modal: Crear / Editar Actividad (Minimalista y Simplificado) */}
         {isActivityModalOpen && (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden"
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-sm overflow-hidden"
             >
-              {/* Header */}
-              <div className="px-6 py-5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white/20 rounded-xl backdrop-blur-xs">
-                    <FileSpreadsheet size={18} />
+              {/* Header Minimalista */}
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-900 text-white flex items-center justify-center shadow-xs">
+                    <FileSpreadsheet size={16} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider">
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">
                       {editingActivity ? 'Editar Actividad' : 'Nueva Actividad'}
                     </h3>
-                    <p className="text-[10px] text-violet-100 font-bold uppercase tracking-widest mt-0.5">
-                      {activeLevel} • {activeGrade} "{activeGroup}" • {evalConfig.periodNames?.[selectedBimestre - 1] || `${selectedBimestre}º Periodo`}
+                    <p className="text-[10px] text-slate-400 font-bold">
+                      {evalConfig.periodNames?.[selectedBimestre - 1] || `${selectedBimestre}º Periodo`}
                     </p>
                   </div>
                 </div>
@@ -3345,50 +4574,64 @@ export default function TeacherPortal() {
                     setIsActivityModalOpen(false);
                     setEditingActivity(null);
                   }}
-                  className="p-1.5 hover:bg-white/20 rounded-lg text-white/80 hover:text-white transition-all cursor-pointer"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              {/* Form */}
+              {/* Formulario Simplificado */}
               <form onSubmit={(e) => { e.preventDefault(); handleSaveActivity(); }}>
-                <div className="p-6 space-y-4">
+                <div className="p-5 space-y-3.5">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
-                      Nombre de la Actividad *
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-0.5">
+                      Materia
+                    </label>
+                    <select
+                      value={activityFormSubjectId || selectedSubjectId}
+                      onChange={(e) => setActivityFormSubjectId(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-blue-900 focus:ring-2 focus:ring-blue-900/10 outline-none transition-all cursor-pointer"
+                    >
+                      {activeLevelSubjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-0.5">
+                      Nombre
                     </label>
                     <input
                       type="text"
                       autoFocus
                       required
-                      placeholder="Ej. Ensayo Revolución, Proyecto 1, Tarea 3..."
+                      placeholder="Ej. Tarea 1, Examen, Ensayo..."
                       value={activityFormName}
                       onChange={(e) => setActivityFormName(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-200 outline-none transition-all"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-blue-900 focus:ring-2 focus:ring-blue-900/10 outline-none transition-all"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
-                      Fecha de la Actividad *
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 ml-0.5">
+                      Fecha
                     </label>
                     <input
                       type="date"
                       required
                       value={activityFormDate}
                       onChange={(e) => setActivityFormDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-200 outline-none transition-all"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-blue-900 focus:ring-2 focus:ring-blue-900/10 outline-none transition-all"
                     />
                   </div>
-
-                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed bg-violet-50/60 border border-violet-100 rounded-xl p-3">
-                    💡 Al registrar esta actividad se agregará automáticamente una columna al final de las materias para que puedas calificar a cada alumno del grupo.
-                  </p>
                 </div>
 
-                {/* Footer */}
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                {/* Acciones */}
+                <div className="px-5 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -3396,24 +4639,248 @@ export default function TeacherPortal() {
                       setEditingActivity(null);
                     }}
                     disabled={isSavingActivity}
-                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                    className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 rounded-xl transition-all cursor-pointer"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={isSavingActivity || !activityFormName.trim() || !activityFormDate}
-                    className="px-5 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                    className="px-4 py-2 bg-blue-900 hover:bg-blue-950 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-blue-900/20 flex items-center gap-1.5 active:scale-95 cursor-pointer"
                   >
                     {isSavingActivity ? (
                       <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : (
                       <Check size={14} />
                     )}
-                    <span>{editingActivity ? 'Guardar Cambios' : 'Crear Columna'}</span>
+                    <span>{editingActivity ? 'Guardar' : 'Crear'}</span>
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Modal Minimalista de Selección de Grupo (Doble de Grande) */}
+        {isGroupModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsGroupModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 8 }}
+              className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200/90 p-5 sm:p-6 z-10 space-y-3"
+            >
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  Grupos
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[75vh] overflow-y-auto pr-1">
+                {accessibleGroupsList.map((grp) => {
+                  const isCurrent = grp.level === activeLevel && grp.grade === activeGrade && grp.group === activeGroup;
+                  return (
+                    <button
+                      key={grp.key}
+                      type="button"
+                      onClick={() => handleSelectGroup(grp)}
+                      className={cn(
+                        "w-full text-left p-4 sm:p-5 rounded-2xl border-2 transition-all flex flex-col justify-between cursor-pointer relative group",
+                        isCurrent
+                          ? "border-blue-900 bg-blue-50/70 text-blue-950 ring-2 ring-blue-900/15 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-blue-400 hover:bg-slate-50/80 hover:shadow-md hover:scale-[1.01] text-slate-800"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2 w-full mb-3">
+                        <span className={cn(
+                          "text-[10px] sm:text-xs font-black uppercase px-2.5 py-1 rounded-lg tracking-wider",
+                          isCurrent ? "bg-blue-900 text-white" : "bg-slate-100 text-slate-600 group-hover:bg-blue-100 group-hover:text-blue-700 transition-colors"
+                        )}>
+                          {grp.level}
+                        </span>
+
+                        {isCurrent && (
+                          <span className="flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-blue-900 text-white tracking-wider">
+                            <Check size={12} /> Activo
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-baseline justify-between w-full">
+                        <h4 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+                          {grp.grade} "{grp.group}"
+                        </h4>
+                        <span className="text-xs font-bold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                          Elegir <ChevronRight size={14} />
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Modal Minimalista: Confirmación de Sincronización de Actividades a Calificaciones */}
+        {isSyncConfirmModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handleCancelSyncModal}
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 8 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-5 sm:p-6 z-10 space-y-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs sm:text-sm text-slate-700 font-medium leading-relaxed">
+                  Esta acción actualizará las calificaciones del periodo actual en base a las actividades registradas. Si cancelas, no se realizará ninguna sincronización a calificaciones.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancelSyncModal}
+                  className="p-1 -mr-1 -mt-1 text-slate-400 hover:text-slate-700 rounded-lg transition-colors cursor-pointer shrink-0"
+                  title="Cerrar"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <p className="text-xs sm:text-sm font-bold text-slate-900">
+                ¿Deseas continuar con la sincronización o cancelar?
+              </p>
+
+              {/* Acciones */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancelSyncModal}
+                  disabled={isSyncingActivities}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSync}
+                  disabled={isSyncingActivities}
+                  className="px-4 py-2 bg-blue-900 hover:bg-blue-950 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-blue-900/20 flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                >
+                  {isSyncingActivities ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Check size={14} strokeWidth={3} />
+                  )}
+                  <span>Continuar</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Modal Minimalista: Fechas de Faltas del Alumno (Sin título) */}
+        {absenceDatesModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAbsenceDatesModal(null)}
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 8 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-5 z-10 space-y-3"
+            >
+              {/* Encabezado minimalista: Nombre del alumno y botón cerrar (sin título) */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="min-w-0 pr-2">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight truncate">
+                    {absenceDatesModal.student.name} {[absenceDatesModal.student.lastName, absenceDatesModal.student.motherLastName].filter(Boolean).join(' ')}
+                  </h4>
+                  <p className="text-[10px] text-rose-600 font-bold">
+                    {absenceDatesModal.absences.length} {absenceDatesModal.absences.length === 1 ? 'falta registrada' : 'faltas registradas'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAbsenceDatesModal(null)}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition-colors cursor-pointer shrink-0"
+                  title="Cerrar"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Lista minimalista de fechas */}
+              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-0.5">
+                {absenceDatesModal.absences.map((att, idx) => {
+                  const [y, m, d] = (att.date || '').split('-').map(Number);
+                  let formattedDate = att.date;
+                  if (y && m && d) {
+                    const dateObj = new Date(y, m - 1, d);
+                    const raw = dateObj.toLocaleDateString('es-MX', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    });
+                    formattedDate = raw.charAt(0).toUpperCase() + raw.slice(1);
+                  }
+
+                  const p = att.period || getPeriodForDate(att.date, evalConfig.periodCount);
+                  const periodName = evalConfig.periodNames?.[p - 1] || `${p}º Periodo`;
+
+                  return (
+                    <div
+                      key={att.id || `${att.studentId}_${att.date}_${idx}`}
+                      className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs hover:bg-slate-100/70 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                        <span className="font-bold text-slate-800 truncate">{formattedDate}</span>
+                      </div>
+                      <span className="text-[9px] font-black uppercase text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-md shrink-0 ml-2">
+                        {periodName}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Botón Cerrar */}
+              <div className="pt-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setAbsenceDatesModal(null)}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

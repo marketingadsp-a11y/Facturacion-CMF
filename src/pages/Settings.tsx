@@ -50,7 +50,8 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ClipboardList
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -59,6 +60,7 @@ import { formatCurrency, cn } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
 import ChargesCatalog from '../components/settings/ChargesCatalog';
 import { loadExampleData } from '../services/exampleDataService';
+import { toast } from 'react-toastify';
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -92,7 +94,7 @@ export default function Settings() {
   const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger' | 'parentPortal' | 'attendanceLists'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'cycles' | 'users' | 'courses' | 'charges' | 'locks' | 'academic' | 'reception' | 'danger' | 'parentPortal' | 'attendanceLists' | 'teacherPortal'>('general');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [gradeLocks, setGradeLocks] = useState<BimestreLock[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -429,7 +431,7 @@ export default function Settings() {
           {(activeTab === 'general' ? hasPermission('settings', 'editGeneral') : 
             activeTab === 'cycles' ? hasPermission('settings', 'editCycles') : 
             activeTab === 'billing' ? hasPermission('settings', 'editRules') : 
-            ['academic', 'reception', 'attendanceLists'].includes(activeTab)) && (
+            ['academic', 'reception', 'attendanceLists', 'teacherPortal'].includes(activeTab)) && (
             <button
               onClick={handleSave}
               className="bg-slate-950 hover:bg-slate-900 text-white px-6 py-3 rounded-2xl flex items-center gap-2 font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-200 transition-all active:scale-95 disabled:opacity-50"
@@ -502,6 +504,24 @@ export default function Settings() {
           </button>
 
           <div className="px-4 py-2 mt-6 mb-2 border-t border-slate-100 pt-6">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Portales</p>
+          </div>
+          <button 
+            onClick={() => setActiveTab('teacherPortal')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'teacherPortal' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            <GraduationCap size={18} className={activeTab === 'teacherPortal' ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-500'} />
+            <span className="text-sm font-bold">Panel del Docente</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('parentPortal')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'parentPortal' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            <Users size={18} className={activeTab === 'parentPortal' ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-500'} />
+            <span className="text-sm font-bold">Portal de Padres</span>
+          </button>
+
+          <div className="px-4 py-2 mt-6 mb-2 border-t border-slate-100 pt-6">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Seguridad</p>
           </div>
           <button 
@@ -527,15 +547,6 @@ export default function Settings() {
             >
               <Lock size={18} className={activeTab === 'locks' ? 'text-amber-400' : 'text-slate-400 group-hover:text-amber-500'} />
               <span className="text-sm font-bold">Bloqueos</span>
-            </button>
-          )}
-          {hasPermission('settings', 'editGeneral') && (
-            <button 
-              onClick={() => setActiveTab('parentPortal')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${activeTab === 'parentPortal' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'}`}
-            >
-              <Users size={18} className={activeTab === 'parentPortal' ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-500'} />
-              <span className="text-sm font-bold">Portal de Padres</span>
             </button>
           )}
           {userProfile?.role === 'Superadministrador' && (
@@ -635,6 +646,235 @@ export default function Settings() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'teacherPortal' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 text-left">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-lg">
+                      <GraduationCap size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Panel del Docente</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Configuración de módulos y visibilidad de pestañas</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200">
+                      {[
+                        'attendance', 'grading', 'activities', 'horario', 'credencial'
+                      ].filter(k => settings?.teacherPortalFeatures?.[k as keyof typeof settings.teacherPortalFeatures] !== false).length} de 5 Visibles
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div className="bg-blue-50/60 border border-blue-200/60 rounded-2xl p-4 flex items-start gap-3.5 text-blue-900">
+                    <div className="w-8 h-8 rounded-xl bg-blue-900 text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <GraduationCap size={16} />
+                    </div>
+                    <div className="text-xs">
+                      <p className="font-bold text-slate-900">Sincronización en tiempo real con el panel del docente</p>
+                      <p className="text-slate-600 mt-0.5 leading-relaxed">
+                        Activa o desactiva las pestañas que verán los docentes en su barra principal. Puedes ocultar temporalmente secciones como <strong>"Mi Horario"</strong> y <strong>"Credencial"</strong> mientras las concluyes; los docentes dejarán de verlas inmediatamente y serán redirigidos a las secciones activas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <div>
+                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Pestañas del Menú del Docente</h3>
+                      <p className="text-xs text-slate-500 font-medium">Controla la visualización de cada módulo de forma individual.</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!settings) return;
+                          const updated = {
+                            ...(settings.teacherPortalFeatures || {}),
+                            horario: false,
+                            credencial: false
+                          };
+                          const newSettings: AppSettings = { ...settings, teacherPortalFeatures: updated };
+                          setSettings(newSettings);
+                          try {
+                            await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                            toast.success("Secciones en desarrollo ('Mi Horario' y 'Credencial') ocultadas");
+                          } catch (err) {
+                            console.error(err);
+                            toast.error("Error al actualizar");
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all border border-slate-200 cursor-pointer"
+                      >
+                        Ocultar en Desarrollo (Horario y Credencial)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!settings) return;
+                          const updated = {
+                            attendance: true,
+                            grading: true,
+                            activities: true,
+                            horario: true,
+                            credencial: true
+                          };
+                          const newSettings: AppSettings = { ...settings, teacherPortalFeatures: updated };
+                          setSettings(newSettings);
+                          try {
+                            await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                            toast.success("Todas las pestañas han sido habilitadas");
+                          } catch (err) {
+                            console.error(err);
+                            toast.error("Error al actualizar");
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-[11px] font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 transition-all border border-blue-200 cursor-pointer"
+                      >
+                        Habilitar Todas
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      {
+                        key: 'attendance',
+                        label: 'Pase de Lista / Asistencia',
+                        desc: 'Toma de asistencia diaria por grupo o individual por materia.',
+                        badge: 'Módulo Principal',
+                        icon: Calendar
+                      },
+                      {
+                        key: 'grading',
+                        label: 'Calificaciones',
+                        desc: 'Evaluación y captura de calificaciones por periodo escolar.',
+                        badge: 'Módulo Principal',
+                        icon: ClipboardList
+                      },
+                      {
+                        key: 'activities',
+                        label: 'Actividades Evaluables',
+                        desc: 'Registro de columnas de actividades, tareas y proyectos ponderados.',
+                        badge: 'Evaluación Continua',
+                        icon: BookOpen
+                      },
+                      {
+                        key: 'horario',
+                        label: 'Mi Horario Semanal',
+                        desc: 'Horario escolar semanal y módulos de clase asignados al docente.',
+                        badge: 'Módulo en Desarrollo',
+                        icon: Clock
+                      },
+                      {
+                        key: 'credencial',
+                        label: 'Credencial Digital Oficial',
+                        desc: 'Credencial virtual oficial con código QR y formato de impresión PVC.',
+                        badge: 'Módulo en Desarrollo',
+                        icon: CreditCard
+                      }
+                    ].map((tabItem) => {
+                      const Icon = tabItem.icon;
+                      const isEnabled = settings?.teacherPortalFeatures?.[tabItem.key as keyof typeof settings.teacherPortalFeatures] !== false;
+
+                      const handleToggle = async () => {
+                        if (!settings) return;
+                        const nextVal = !isEnabled;
+                        const updatedFeatures = {
+                          ...(settings.teacherPortalFeatures || {}),
+                          [tabItem.key]: nextVal
+                        };
+
+                        const newSettings: AppSettings = {
+                          ...settings,
+                          teacherPortalFeatures: updatedFeatures
+                        };
+
+                        setSettings(newSettings);
+                        try {
+                          await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                          toast.success(`Pestaña "${tabItem.label}": ${nextVal ? 'Habilitada' : 'Ocultada'}`);
+                        } catch (err) {
+                          console.error("Error updating teacher portal features:", err);
+                          toast.error("Error al guardar la configuración");
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={tabItem.key}
+                          className={cn(
+                            "border rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all",
+                            isEnabled
+                              ? "bg-white border-slate-200 shadow-sm"
+                              : "bg-slate-50/70 border-slate-200/60 opacity-80"
+                          )}
+                        >
+                          <div className="flex items-start gap-3.5">
+                            <div className={cn(
+                              "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-colors",
+                              isEnabled
+                                ? "bg-blue-50 text-blue-900 border-blue-200 shadow-xs"
+                                : "bg-slate-200 text-slate-500 border-slate-300"
+                            )}>
+                              <Icon size={19} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">{tabItem.label}</h4>
+                                <span className={cn(
+                                  "text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-wider",
+                                  tabItem.badge.includes('Desarrollo')
+                                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                    : "bg-slate-100 text-slate-600 border border-slate-200"
+                                )}>
+                                  {tabItem.badge}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-1 leading-snug">{tabItem.desc}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                            <span className={cn(
+                              "text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                              isEnabled ? "text-emerald-700" : "text-slate-400"
+                            )}>
+                              <span className={cn("w-1.5 h-1.5 rounded-full", isEnabled ? "bg-emerald-500" : "bg-slate-300")} />
+                              {isEnabled ? "Visible en Panel" : "Oculta temporalmente"}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={handleToggle}
+                              className={cn(
+                                "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border shrink-0",
+                                isEnabled
+                                  ? "bg-blue-900 text-white border-blue-900 shadow-sm shadow-blue-900/20"
+                                  : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                              )}
+                            >
+                              <div className={cn(
+                                "w-2 h-2 rounded-full",
+                                isEnabled ? "bg-white" : "bg-slate-400"
+                              )} />
+                              <span>{isEnabled ? 'Habilitada' : 'Oculta'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1811,21 +2051,25 @@ export default function Settings() {
                     onClick={() => {
                       const newConfig = { ...(settings.levelEvaluationConfig || {}) };
                       (settings.academicLevels || []).forEach(lvl => {
+                        const existing = newConfig[lvl] || getLevelEvaluationConfig(settings, lvl);
                         const lower = lvl.toLowerCase();
                         if (lower.includes('prepa') || lower.includes('bachiller')) {
                           newConfig[lvl] = {
+                            ...existing,
                             periodCount: 5,
                             periodType: 'Bimestres',
                             periodNames: generateDefaultPeriodNames('Bimestres', 5)
                           };
                         } else if (lower.includes('uni') || lower.includes('licenciatura')) {
                           newConfig[lvl] = {
+                            ...existing,
                             periodCount: 2,
                             periodType: 'Semestres',
                             periodNames: generateDefaultPeriodNames('Semestres', 2)
                           };
                         } else {
                           newConfig[lvl] = {
+                            ...existing,
                             periodCount: 3,
                             periodType: 'Trimestres',
                             periodNames: generateDefaultPeriodNames('Trimestres', 3)
@@ -2043,55 +2287,137 @@ export default function Settings() {
                           <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
                               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5 ml-1 flex items-center gap-1.5">
-                                <FileSpreadsheet size={13} className="text-violet-600" />
+                                <FileSpreadsheet size={13} className="text-blue-900" />
                                 Registro de Actividades por Docente
                               </label>
                               <p className="text-xs text-slate-500 font-medium">
                                 Habilitar o deshabilitar la opción de que los docentes de {level} agreguen columnas de actividades (nombre y fecha) y califiquen a los alumnos.
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const isCurrentlyEnabled = currentConfig.enableActivities ?? false;
-                                const updated: LevelEvaluationConfig = {
-                                  ...currentConfig,
-                                  enableActivities: !isCurrentlyEnabled
-                                };
-                                const newMap = { ...(settings.levelEvaluationConfig || {}) };
-                                newMap[level] = updated;
-
-                                const currentLevels = settings.teacherActivitiesLevels || [];
-                                const updatedLevels = !isCurrentlyEnabled
-                                  ? Array.from(new Set([...currentLevels, level]))
-                                  : currentLevels.filter(l => l !== level);
-
-                                const newSettings = {
-                                  ...settings,
-                                  levelEvaluationConfig: newMap,
-                                  teacherActivitiesLevels: updatedLevels
-                                };
-
-                                setSettings(newSettings);
-                                try {
-                                  await setDoc(doc(db, 'settings', 'general'), newSettings);
-                                } catch (e) {
-                                  console.error("Error auto-saving activities config:", e);
-                                }
-                              }}
-                              className={cn(
-                                "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border shrink-0",
+                            {(() => {
+                              const isActivitiesEnabled = Boolean(
+                                settings.levelEvaluationConfig?.[level]?.enableActivities ??
+                                settings.teacherActivitiesLevels?.includes(level) ??
                                 currentConfig.enableActivities
-                                  ? "bg-violet-600 text-white border-violet-600 shadow-sm shadow-violet-600/20"
-                                  : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                              )}
-                            >
-                              <div className={cn(
-                                "w-2 h-2 rounded-full",
-                                currentConfig.enableActivities ? "bg-white" : "bg-slate-400"
-                              )} />
-                              <span>{currentConfig.enableActivities ? 'Habilitado' : 'Deshabilitado'}</span>
-                            </button>
+                              );
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const nextState = !isActivitiesEnabled;
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      enableActivities: nextState
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+
+                                    const currentLevels = settings.teacherActivitiesLevels || [];
+                                    const updatedLevels = nextState
+                                      ? Array.from(new Set([...currentLevels, level]))
+                                      : currentLevels.filter(l => l !== level);
+
+                                    const newSettings: AppSettings = {
+                                      ...settings,
+                                      levelEvaluationConfig: newMap,
+                                      teacherActivitiesLevels: updatedLevels
+                                    };
+
+                                    setSettings(newSettings);
+                                    try {
+                                      await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                      toast.success(`Actividades para ${level}: ${nextState ? 'Habilitadas' : 'Deshabilitadas'}`);
+                                    } catch (e) {
+                                      console.error("Error auto-saving activities config:", e);
+                                      toast.error("Error al guardar la configuración de actividades");
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border shrink-0",
+                                    isActivitiesEnabled
+                                      ? "bg-blue-900 text-white border-blue-900 shadow-sm shadow-blue-900/20"
+                                      : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                                  )}
+                                >
+                                  <div className={cn(
+                                    "w-2 h-2 rounded-full",
+                                    isActivitiesEnabled ? "bg-white" : "bg-slate-400"
+                                  )} />
+                                  <span>{isActivitiesEnabled ? 'Habilitado' : 'Deshabilitado'}</span>
+                                </button>
+                              );
+                            })()}
+                          </div>
+
+                          {/* Asistencia Individual por Materia */}
+                          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5 ml-1 flex items-center gap-1.5">
+                                <BookOpen size={13} className="text-blue-900" />
+                                Asistencia por Materia (Individual)
+                              </label>
+                              <p className="text-xs text-slate-500 font-medium">
+                                Permite a los docentes tomar pase de lista de forma independiente por cada materia. (Por defecto activo en Secundaria y Bachillerato/Preparatoria, inactivo en Preescolar y Primaria).
+                              </p>
+                            </div>
+                            {(() => {
+                              const isSubjectAttendanceDefault = /secundaria|bachillerato|preparatoria|prepa/i.test(level);
+                              const isSubjectAttendanceEnabled = Boolean(
+                                settings.levelEvaluationConfig?.[level]?.enableSubjectAttendance ??
+                                (settings.subjectAttendanceLevels !== undefined
+                                  ? settings.subjectAttendanceLevels.includes(level)
+                                  : isSubjectAttendanceDefault)
+                              );
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const nextState = !isSubjectAttendanceEnabled;
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      enableSubjectAttendance: nextState
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+
+                                    const currentLevels = settings.subjectAttendanceLevels || (
+                                      (settings.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'])
+                                        .filter(l => /secundaria|bachillerato|preparatoria|prepa/i.test(l))
+                                    );
+                                    const updatedLevels = nextState
+                                      ? Array.from(new Set([...currentLevels, level]))
+                                      : currentLevels.filter(l => l !== level);
+
+                                    const newSettings: AppSettings = {
+                                      ...settings,
+                                      levelEvaluationConfig: newMap,
+                                      subjectAttendanceLevels: updatedLevels
+                                    };
+
+                                    setSettings(newSettings);
+                                    try {
+                                      await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                      toast.success(`Asistencia por materia para ${level}: ${nextState ? 'Habilitada' : 'Deshabilitada'}`);
+                                    } catch (e) {
+                                      console.error("Error auto-saving subject attendance config:", e);
+                                      toast.error("Error al guardar la configuración de asistencia");
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer border shrink-0",
+                                    isSubjectAttendanceEnabled
+                                      ? "bg-blue-900 text-white border-blue-900 shadow-sm shadow-blue-900/20"
+                                      : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                                  )}
+                                >
+                                  <div className={cn(
+                                    "w-2 h-2 rounded-full",
+                                    isSubjectAttendanceEnabled ? "bg-white" : "bg-slate-400"
+                                  )} />
+                                  <span>{isSubjectAttendanceEnabled ? 'Habilitado' : 'Deshabilitado'}</span>
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

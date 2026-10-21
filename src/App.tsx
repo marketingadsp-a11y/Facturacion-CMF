@@ -572,13 +572,19 @@ const AppContent = () => {
   const { userProfile, hasPermission } = usePermissions();
   const isParent = userProfile?.role === 'Padre';
   const [enrollmentSlug, setEnrollmentSlug] = useState('enroll');
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'general'), (snap) => {
-      if (snap.exists() && snap.data().enrollmentSlug) {
-        setEnrollmentSlug(snap.data().enrollmentSlug);
-      } else if (!snap.exists() || !snap.data().enrollmentSlug) {
-        // Default to /inscripcion as requested if not set in settings
+      if (snap.exists()) {
+        const data = snap.data() as AppSettings;
+        setAppSettings(data);
+        if (data.enrollmentSlug) {
+          setEnrollmentSlug(data.enrollmentSlug);
+        } else {
+          setEnrollmentSlug('inscripcion');
+        }
+      } else {
         setEnrollmentSlug('inscripcion');
       }
     });
@@ -601,7 +607,7 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {userProfile?.role === 'Padre' ? <ParentDashboard /> : 
-             userProfile?.role === 'Docente' ? <TeacherPortal /> : <Dashboard />}
+             userProfile?.role === 'Docente' ? <TeacherPortal appSettings={appSettings} /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -689,7 +695,7 @@ const AppContent = () => {
         path="/docentes" 
         element={
           <ProtectedRoute>
-            {isParent || !hasPermission('grading', 'view') ? <Navigate to="/" /> : <TeacherPortal />}
+            {isParent || !hasPermission('grading', 'view') ? <Navigate to="/" /> : <TeacherPortal appSettings={appSettings} />}
           </ProtectedRoute>
         } 
       />
