@@ -394,3 +394,49 @@ export function isAttendanceTrackingSubject(subject: Subject): boolean {
     norm.includes('falta')
   );
 }
+
+/**
+ * Checks if educational level is Preescolar or Primaria (where period subject observations apply)
+ */
+export function isObservationsLevel(levelName?: string): boolean {
+  if (!levelName) return false;
+  const l = levelName.toLowerCase().trim();
+  return (
+    l.includes('preescolar') ||
+    l.includes('kinder') ||
+    l.includes('kínder') ||
+    l.includes('maternal') ||
+    l.includes('pre-escolar') ||
+    l.includes('pre escolar') ||
+    l.includes('primaria')
+  );
+}
+
+/**
+ * Checks if a subject belongs to "Materias Académicas"
+ */
+export function isPureAcademicSubject(subject: Subject): boolean {
+  if (!subject) return false;
+  return !subject.category || subject.category === 'Académica';
+}
+
+/**
+ * Retrieves the observation text for a given student's subject and period
+ */
+export function getSubjectObservation(
+  grades: StudentGrade[],
+  subjectName: string,
+  period: number
+): string {
+  if (!grades || grades.length === 0 || !subjectName) return '';
+  const bg = grades.find(g => Number(g.bimestre) === Number(period));
+  if (!bg) return '';
+  if (bg.subjectObservations && bg.subjectObservations[subjectName] !== undefined) {
+    return bg.subjectObservations[subjectName];
+  }
+  if (bg.observations && bg.observations[subjectName] !== undefined) {
+    return bg.observations[subjectName];
+  }
+  return '';
+}
+

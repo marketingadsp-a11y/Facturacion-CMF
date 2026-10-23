@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, d
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
-import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -22,7 +22,6 @@ import {
   ArrowLeftRight,
   Calculator,
   TrendingUp,
-  Printer,
   Lock,
   Unlock,
   Check,
@@ -47,6 +46,8 @@ import {
   IdCard,
   QrCode,
   FileBadge,
+  MessageSquare,
+  Sparkles,
   X
 } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
@@ -91,7 +92,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   } | null>(null);
   const [justificationReason, setJustificationReason] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'activities' | 'horario' | 'credencial'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'grading' | 'observations' | 'activities' | 'horario' | 'credencial'>('attendance');
   const [teachers, setTeachers] = useState<AppUser[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
   const [isEditingCredential, setIsEditingCredential] = useState(false);
@@ -150,6 +151,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   // Subject Attendance state
   const [attendanceSubjectId, setAttendanceSubjectId] = useState<string>('');
+
+  // Observations state (Preescolar & Primaria)
+  const [observationsViewMode, setObservationsViewMode] = useState<'bySubject' | 'byStudent'>('bySubject');
+  const [selectedObsSubjectId, setSelectedObsSubjectId] = useState<string>('');
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
   const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
@@ -586,6 +591,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const isActivitiesTabEnabled = isActivitiesEnabledForCurrentLevel && (settings ? settings.teacherPortalFeatures?.activities !== false : false);
   const isHorarioTabEnabled = settings ? settings.teacherPortalFeatures?.horario !== false : false;
   const isCredencialTabEnabled = settings ? settings.teacherPortalFeatures?.credencial !== false : false;
+  const isObservationsTabEnabled = isObservationsLevel(activeLevel) && hasPermission('grading', 'view');
 
   // Auto-switch tab if current activeTab is disabled in settings
   useEffect(() => {
@@ -593,14 +599,15 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     const tabMap: Record<string, boolean> = {
       attendance: isAttendanceTabEnabled,
       grading: isGradingTabEnabled,
+      observations: isObservationsTabEnabled,
       activities: isActivitiesTabEnabled,
       horario: isHorarioTabEnabled,
       credencial: isCredencialTabEnabled,
     };
 
     if (!tabMap[activeTab]) {
-      const tabsOrder: Array<'attendance' | 'grading' | 'activities' | 'horario' | 'credencial'> = [
-        'attendance', 'grading', 'activities', 'horario', 'credencial'
+      const tabsOrder: Array<'attendance' | 'grading' | 'observations' | 'activities' | 'horario' | 'credencial'> = [
+        'attendance', 'grading', 'observations', 'activities', 'horario', 'credencial'
       ];
       const valid = tabsOrder.find(t => tabMap[t]);
       if (valid) {
@@ -744,6 +751,21 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     if (!isSubjectAttendanceEnabledForCurrentLevel) return null;
     return activeLevelSubjects.find(s => s.id === attendanceSubjectId) || activeLevelSubjects[0] || null;
   }, [isSubjectAttendanceEnabledForCurrentLevel, activeLevelSubjects, attendanceSubjectId]);
+
+  // Keep selectedObsSubjectId synchronized with pureAcademicSubjects
+  useEffect(() => {
+    if (pureAcademicSubjects.length > 0) {
+      if (!selectedObsSubjectId || !pureAcademicSubjects.some(s => s.id === selectedObsSubjectId)) {
+        setSelectedObsSubjectId(pureAcademicSubjects[0].id);
+      }
+    } else {
+      setSelectedObsSubjectId('');
+    }
+  }, [pureAcademicSubjects, selectedObsSubjectId]);
+
+  const selectedObsSubject = useMemo(() => {
+    return pureAcademicSubjects.find(s => s.id === selectedObsSubjectId) || pureAcademicSubjects[0] || null;
+  }, [pureAcademicSubjects, selectedObsSubjectId]);
 
   // Map raw attendance records to studentId, filtering by subject if enabled for this level
   const attendance = useMemo(() => {
@@ -1610,7 +1632,90 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
   };
 
+  const handleObservationChange = (studentId: string, subjectName: string, text: string) => {
+    setGrades(prev => {
+      const studentGrade: StudentGrade = prev[studentId] || {
+        studentId,
+        bimestre: selectedBimestre,
+        cycleId: currentCycleId,
+        subjects: {},
+        subjectObservations: {},
+        observations: {},
+        conduct: 0,
+        uniform: 0,
+        attendance: 0,
+        tasksNotDone: 0,
+        tardies: 0,
+        cleanliness: 0,
+        updatedAt: serverTimestamp() as any,
+        createdBy: userProfile?.id || 'system'
+      };
+
+      const updatedObs = { ...(studentGrade.subjectObservations || studentGrade.observations || {}) };
+      updatedObs[subjectName] = text;
+
+      return {
+        ...prev,
+        [studentId]: {
+          ...studentGrade,
+          subjectObservations: updatedObs,
+          observations: updatedObs
+        }
+      };
+    });
+  };
+
+
+
+  const handleSaveObservations = async () => {
+    if (!hasPermission('grading', 'manage')) return;
+    setIsSaving(true);
+    try {
+      const batch = writeBatch(db);
+      let opCount = 0;
+      const batches = [batch];
+
+      students.forEach(student => {
+        const grade = grades[student.id];
+        const obs = grade?.subjectObservations || grade?.observations || {};
+
+        const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
+        const curBatch = batches[batches.length - 1];
+
+        curBatch.set(doc(db, 'grades', id), {
+          studentId: student.id,
+          bimestre: selectedBimestre,
+          cycleId: currentCycleId,
+          subjectObservations: obs,
+          observations: obs,
+          updatedAt: serverTimestamp(),
+          createdBy: grade?.createdBy || userProfile?.id || 'system'
+        }, { merge: true });
+
+        opCount++;
+        if (opCount % 400 === 0) batches.push(writeBatch(db));
+      });
+
+      for (const b of batches) {
+        await b.commit();
+      }
+
+      const periodLabel = evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType.charAt(0)}${selectedBimestre}`;
+      setSavedStatus(`Observaciones de ${periodLabel} guardadas`);
+      toast.success(`Observaciones del ${periodLabel} guardadas exitosamente`);
+      setTimeout(() => setSavedStatus(null), 3000);
+    } catch (error) {
+      console.error("Error saving observations:", error);
+      toast.error("Error al guardar observaciones");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveAll = async () => {
+    if (activeTab === 'observations') {
+      return handleSaveObservations();
+    }
     if (!hasPermission('grading', 'manage')) return;
     setIsSaving(true);
     try {
@@ -2156,6 +2261,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               <ClipboardList size={14} /> Calificaciones
             </button>
           )}
+          {isObservationsTabEnabled && (
+            <button
+              onClick={() => setActiveTab('observations')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                activeTab === 'observations' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <MessageSquare size={14} /> Observaciones
+            </button>
+          )}
           {isActivitiesTabEnabled && (
             <button
               onClick={() => setActiveTab('activities')}
@@ -2315,7 +2431,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         )}
         
         
-        {(activeTab === 'grading' || activeTab === 'activities') && hasPermission('grading', 'manage') && (
+        {(activeTab === 'grading' || activeTab === 'activities' || activeTab === 'observations') && hasPermission('grading', 'manage') && (
           <div className="flex flex-wrap gap-2">
             {activeTab === 'grading' && !isBimestreLocked && (
               <button
@@ -2393,7 +2509,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               ) : (
                 <Save size={12} />
               )}
-              {isBimestreLocked ? 'Guardar (Admin)' : `Guardar ${evalConfig.periodType.charAt(0)}${selectedBimestre}`}
+              {isBimestreLocked 
+                ? (activeTab === 'observations' ? 'Guardar Obs. (Admin)' : 'Guardar (Admin)') 
+                : (activeTab === 'observations' ? `Guardar Obs. ${evalConfig.periodType.charAt(0)}${selectedBimestre}` : `Guardar ${evalConfig.periodType.charAt(0)}${selectedBimestre}`)}
             </button>
           </div>
         )}
@@ -2459,6 +2577,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             )}
           >
             <ClipboardList size={14} /> Calificaciones
+          </button>
+        )}
+        {isObservationsTabEnabled && (
+          <button
+            onClick={() => setActiveTab('observations')}
+            className={cn(
+              "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+              activeTab === 'observations' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            <MessageSquare size={14} /> Observaciones
           </button>
         )}
         {isActivitiesTabEnabled && (
@@ -3236,6 +3365,315 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             </div>
           )}
           </>
+          )}
+        </div>
+      ) : activeTab === 'observations' ? (
+        <div className="space-y-4">
+          {/* Observaciones Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Period Selector */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
+                  {evalConfig.periodType}:
+                </span>
+                {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
+                    onClick={() => {
+                      hasManuallySelectedPeriodRef.current = true;
+                      setSelectedBimestre(b);
+                    }}
+                    className={cn(
+                      "px-2.5 h-7 rounded-lg font-black text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer",
+                      selectedBimestre === b 
+                        ? "bg-slate-900 text-white shadow-xs" 
+                        : lockedPeriods[b]
+                          ? "text-slate-400 bg-slate-50 hover:bg-slate-200/60"
+                          : "text-slate-600 hover:bg-white hover:text-slate-900"
+                    )}
+                  >
+                    <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                    {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* View Mode Switcher */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setObservationsViewMode('bySubject')}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer",
+                    observationsViewMode === 'bySubject'
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  )}
+                >
+                  <BookOpen size={13} className={observationsViewMode === 'bySubject' ? "text-blue-600" : "text-slate-400"} />
+                  <span>Por Materia</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setObservationsViewMode('byStudent')}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer",
+                    observationsViewMode === 'byStudent'
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  )}
+                >
+                  <Users size={13} className={observationsViewMode === 'byStudent' ? "text-blue-600" : "text-slate-400"} />
+                  <span>Por Alumno</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Search + Action */}
+            <div className="flex items-center gap-2">
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                <input
+                  placeholder="Buscar alumno..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold w-full outline-none focus:bg-white focus:ring-1 focus:ring-slate-900 transition-all"
+                />
+              </div>
+
+              {hasPermission('grading', 'manage') && (
+                <button
+                  type="button"
+                  onClick={handleSaveObservations}
+                  disabled={isSaving || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSaving ? (
+                    <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Save size={13} />
+                  )}
+                  <span>Guardar</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {pureAcademicSubjects.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center shadow-xs">
+              <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
+              <h3 className="text-sm font-black text-amber-900 uppercase">Sin materias académicas asignadas</h3>
+              <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto font-medium">
+                No hay materias con categoría "Académica" asignadas a este grupo. Las observaciones por periodo aplican únicamente sobre las materias académicas.
+              </p>
+            </div>
+          ) : observationsViewMode === 'bySubject' ? (
+            /* ========================================================
+               VISTA: POR MATERIA (PESTAÑAS DE MATERIA + LISTA COMPACTA DE ALUMNOS)
+               ======================================================== */
+            <div className="space-y-4">
+              {/* Subject Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                {pureAcademicSubjects.map(subj => {
+                  const isSelected = selectedObsSubject?.id === subj.id;
+                  const filledCount = students.filter(st => {
+                    const obs = grades[st.id]?.subjectObservations?.[subj.name] || grades[st.id]?.observations?.[subj.name];
+                    return obs && obs.trim().length > 0;
+                  }).length;
+                  return (
+                    <button
+                      key={subj.id}
+                      type="button"
+                      onClick={() => setSelectedObsSubjectId(subj.id)}
+                      className={cn(
+                        "px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shrink-0 cursor-pointer",
+                        isSelected
+                          ? "bg-slate-900 text-white shadow-sm"
+                          : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                      )}
+                    >
+                      <BookOpen size={13} className={isSelected ? "text-blue-300" : "text-slate-400"} />
+                      <span>{subj.name}</span>
+                      <span className={cn(
+                        "text-[9px] px-1.5 py-0.2 rounded-full font-bold",
+                        isSelected ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-600"
+                      )}>
+                        {filledCount}/{students.length}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedObsSubject && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
+                  {/* Subject Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                        {selectedObsSubject.name}
+                      </h3>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        {activeLevel}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-bold">
+                      {students.length} {students.length === 1 ? 'alumno' : 'alumnos'}
+                    </span>
+                  </div>
+
+                  {/* Student Rows List - Compact */}
+                  <div className="space-y-2">
+                    {filteredStudents.map((student, idx) => {
+                      const obs = grades[student.id]?.subjectObservations?.[selectedObsSubject.name] || grades[student.id]?.observations?.[selectedObsSubject.name] || '';
+                      const charCount = obs.length;
+                      const isLong = charCount > 350;
+                      const hasObs = obs.trim().length > 0;
+
+                      return (
+                        <div
+                          key={student.id}
+                          className={cn(
+                            "py-2 px-3 rounded-xl border transition-all flex flex-col md:flex-row gap-2.5 md:items-center",
+                            hasObs 
+                              ? "bg-white border-slate-200 hover:border-slate-300 shadow-2xs" 
+                              : "bg-slate-50/70 border-slate-200"
+                          )}
+                        >
+                          {/* Student Name & Status */}
+                          <div className="w-full md:w-64 shrink-0 flex items-center justify-between md:justify-start gap-2">
+                            <span className="text-[10px] font-black text-slate-400 w-5 shrink-0 text-center">
+                              {idx + 1}
+                            </span>
+                            <span className="text-xs font-black uppercase text-slate-900 truncate">
+                              {student.lastName} {student.name}
+                            </span>
+                            <span className={cn(
+                              "text-[8px] font-black uppercase px-2 py-0.5 rounded shrink-0 md:ml-auto inline-flex items-center gap-1",
+                              hasObs ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+                            )}>
+                              {hasObs ? <Check size={9} strokeWidth={3} /> : <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                              {hasObs ? 'Listo' : 'Pendiente'}
+                            </span>
+                          </div>
+
+                          {/* Textarea Column */}
+                          <div className="w-full flex-1 flex items-center gap-2">
+                            <textarea
+                              value={obs}
+                              onChange={(e) => handleObservationChange(student.id, selectedObsSubject.name, e.target.value)}
+                              disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                              placeholder={`Escribir observación manual para ${student.name}...`}
+                              rows={1}
+                              className="w-full text-xs py-1.5 px-3 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-slate-800 leading-normal transition-all placeholder:text-slate-300 resize-y min-h-[36px] disabled:bg-slate-100 disabled:cursor-not-allowed"
+                            />
+
+                            <span className={cn("text-[9px] font-bold shrink-0 tabular-nums w-14 text-right", isLong ? "text-amber-600 font-black" : "text-slate-400")}>
+                              {charCount}/350
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {filteredStudents.length === 0 && (
+                      <div className="py-12 text-center text-slate-400 text-xs italic">
+                        Sin alumnos que coincidan con la búsqueda
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ========================================================
+               VISTA: POR ALUMNO (CARDS POR ALUMNO CON TODAS SUS MATERIAS)
+               ======================================================== */
+            <div className="space-y-4">
+              {filteredStudents.map(student => {
+                const studentGrade = grades[student.id];
+                const studentObs = studentGrade?.subjectObservations || studentGrade?.observations || {};
+                
+                const completedCount = pureAcademicSubjects.filter(s => {
+                  const o = studentObs[s.name];
+                  return o && o.trim().length > 0;
+                }).length;
+                const isAllCompleted = completedCount === pureAcademicSubjects.length;
+
+                return (
+                  <div
+                    key={student.id}
+                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3"
+                  >
+                    {/* Student Card Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                      <div>
+                        <h4 className="text-sm font-black uppercase text-slate-900">
+                          {student.lastName} {student.name}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          {student.grade || ''} {student.group || ''} • {activeLevel}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-[10px] font-black uppercase px-2.5 py-1 rounded-full",
+                          isAllCompleted 
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                            : "bg-blue-50 text-blue-700 border border-blue-200"
+                        )}>
+                          {completedCount} de {pureAcademicSubjects.length} materias completadas
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Academic Subjects Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {pureAcademicSubjects.map(subj => {
+                        const obs = studentObs[subj.name] || '';
+                        const charCount = obs.length;
+                        const isLong = charCount > 350;
+
+                        return (
+                          <div 
+                            key={subj.id}
+                            className="bg-slate-50/70 border border-slate-200 rounded-xl p-3 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-tight">
+                                {subj.name}
+                              </span>
+                              <span className={cn("text-[9px] font-bold", isLong ? "text-amber-600 font-black" : "text-slate-400")}>
+                                {charCount} / 350
+                              </span>
+                            </div>
+
+                            <textarea
+                              value={obs}
+                              onChange={(e) => handleObservationChange(student.id, subj.name, e.target.value)}
+                              disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                              placeholder={`Observación de ${subj.name}...`}
+                              rows={2}
+                              className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-slate-800 leading-relaxed transition-all placeholder:text-slate-300 resize-y disabled:bg-slate-100 disabled:cursor-not-allowed"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {filteredStudents.length === 0 && (
+                <div className="py-12 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200">
+                  Sin alumnos que coincidan con la búsqueda
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : activeTab === 'activities' ? (

@@ -4,7 +4,7 @@ import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject, AppUser } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2 } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2, MessageSquare } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -13,10 +13,12 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import EnrollmentPDF from '../components/EnrollmentPDF';
 import RegistrationCodePDF from '../components/RegistrationCodePDF';
 import OfficialListPDF from '../components/OfficialListPDF';
+import StudentObservationsModal from '../components/StudentObservationsModal';
+import BatchBoletasModal from '../components/BatchBoletasModal';
 import { exportAttendanceExcel, exportAttendanceExcelAllGroups } from '../lib/attendanceExcel';
 import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
-import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade, isObservationsLevel } from '../lib/evaluationUtils';
 import { sendWelcomeEmail } from '../services/mailService';
 
 export default function AcademicControl() {
@@ -63,6 +65,8 @@ export default function AcademicControl() {
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
   const [codeModalStudent, setCodeModalStudent] = useState<Student | null>(null);
+  const [observationsModalStudent, setObservationsModalStudent] = useState<Student | null>(null);
+  const [isBatchBoletasModalOpen, setIsBatchBoletasModalOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const [isGroupSelectModalOpen, setIsGroupSelectModalOpen] = useState(false);
@@ -552,6 +556,26 @@ export default function AcademicControl() {
     });
   }, [students, exportLevel, filterLevel, exportGrade, filterGrade, exportGroup, filterGroup, filterCycleId, settings?.currentCycleId, restrictedLevels, restrictedGrades, restrictedGroups]);
 
+  // Students for batch report cards download when in a group
+  const currentGroupStudents = useMemo(() => {
+    if (!filterLevel || !filterGrade || !filterGroup) return [];
+    return students.filter(s => {
+      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
+      if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
+
+      const matchesLevel = s.level === filterLevel;
+      const matchesGrade = s.grade === filterGrade;
+      const matchesGroup = s.group === filterGroup;
+      const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
+      return matchesLevel && matchesGrade && matchesGroup && matchesCycle;
+    }).sort((a, b) => {
+      const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [students, filterLevel, filterGrade, filterGroup, filterCycleId, settings?.currentCycleId, restrictedLevels, restrictedGrades, restrictedGroups]);
+
   return (
     <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
       {/* Compact Header */}
@@ -773,6 +797,26 @@ export default function AcademicControl() {
                 <FileSpreadsheet size={12} className="text-emerald-600" /> Exportar Listas
               </button>
 
+              <button
+                onClick={() => {
+                  if (!filterLevel || !filterGrade || !filterGroup) {
+                    setIsGroupSelectModalOpen(true);
+                    return;
+                  }
+                  setIsBatchBoletasModalOpen(true);
+                }}
+                className={cn(
+                  "px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer shadow-sm",
+                  filterLevel && filterGrade && filterGroup
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 active:scale-95"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                )}
+                title={filterLevel && filterGrade && filterGroup ? "Descargar todas las boletas de este grupo en PDFs individuales" : "Selecciona un grupo para descargar las boletas"}
+              >
+                <FileDown size={12} className={filterLevel && filterGrade && filterGroup ? "text-white" : "text-indigo-600"} />
+                <span>Descargar Boletas {filterLevel && filterGrade && filterGroup ? `(${currentGroupStudents.length})` : ''}</span>
+              </button>
+
               <select
                 value={filterCycleId}
                 onChange={(e) => setFilterCycleId(e.target.value)}
@@ -833,6 +877,28 @@ export default function AcademicControl() {
               )}
             </div>
           </div>
+
+          {/* Active Group Indicator Banner */}
+          {filterLevel && filterGrade && filterGroup && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2.5 bg-indigo-50/70 border border-indigo-200/80 rounded-lg text-indigo-950 shadow-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                <span className="text-[11px] font-black uppercase tracking-wider">
+                  Grupo Activo: {filterLevel} {filterGrade} "{filterGroup}"
+                </span>
+                <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
+                  {currentGroupStudents.length} {currentGroupStudents.length === 1 ? 'Alumno' : 'Alumnos'}
+                </span>
+              </div>
+              <button
+                onClick={() => setIsBatchBoletasModalOpen(true)}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider rounded-md flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
+              >
+                <FileDown size={12} />
+                <span>Descargar Boletas del Grupo ({currentGroupStudents.length})</span>
+              </button>
+            </div>
+          )}
 
           {/* Student List Grid - Technical Data Style */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-xl overflow-hidden shadow-slate-100">
@@ -968,6 +1034,15 @@ export default function AcademicControl() {
                           
                           <td className="px-4 py-2.5 text-right w-px whitespace-nowrap">
                             <div className="flex items-center justify-end gap-2">
+                              {isObservationsLevel(displayLevel) && (
+                                <button
+                                  onClick={() => setObservationsModalStudent(student)}
+                                  className="p-1.5 bg-slate-100 text-slate-600 hover:!bg-blue-600 hover:!text-white group-hover:bg-slate-800 group-hover:text-slate-400 rounded transition-all flex items-center justify-center"
+                                  title="Observaciones por Materia"
+                                >
+                                  <MessageSquare size={13} />
+                                </button>
+                              )}
                               <a
                                 href={`/imprimir-boleta/${student.id}`}
                                 target="_blank"
@@ -2258,6 +2333,30 @@ export default function AcademicControl() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Student Observations Modal for Preescolar and Primaria */}
+      <StudentObservationsModal
+        isOpen={!!observationsModalStudent}
+        onClose={() => setObservationsModalStudent(null)}
+        student={observationsModalStudent}
+        cycle={currentCycle || null}
+        settings={settings}
+        subjects={subjects}
+      />
+
+      {/* Batch Boletas Modal per Group */}
+      <BatchBoletasModal
+        isOpen={isBatchBoletasModalOpen}
+        onClose={() => setIsBatchBoletasModalOpen(false)}
+        students={currentGroupStudents}
+        grades={grades}
+        subjects={subjects}
+        settings={settings}
+        cycle={currentCycle || ({ id: filterCycleId || 'actual', name: 'Ciclo Actual' } as SchoolCycle)}
+        level={filterLevel}
+        grade={filterGrade}
+        group={filterGroup}
+      />
     </div>
   );
 }

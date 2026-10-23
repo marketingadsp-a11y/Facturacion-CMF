@@ -1,7 +1,7 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
-import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade, isObservationsLevel, getSubjectObservation } from '../lib/evaluationUtils';
 
 const styles = StyleSheet.create({
   page: {
@@ -173,6 +173,174 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     color: '#334155',
+  },
+  // Observations Page Styles
+  obsPage: {
+    fontFamily: 'Helvetica',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 30,
+    paddingVertical: 25,
+    justifyContent: 'space-between',
+  },
+  obsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#0F172A',
+  },
+  obsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  obsSchoolInfo: {
+    marginLeft: 10,
+    justifyContent: 'center',
+  },
+  obsSchoolName: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  obsSchoolCct: {
+    fontSize: 7,
+    color: '#64748B',
+    textTransform: 'uppercase',
+    marginTop: 1,
+  },
+  obsLevelBadge: {
+    fontSize: 7.5,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    marginTop: 1,
+  },
+  obsHeaderRight: {
+    alignItems: 'flex-end',
+  },
+  obsHeaderTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    letterSpacing: 0.5,
+  },
+  obsHeaderSubtitle: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#475569',
+    marginTop: 2,
+  },
+  obsStudentBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginBottom: 8,
+  },
+  obsStudentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  obsStudentLabel: {
+    fontSize: 7,
+    fontWeight: 'bold',
+    color: '#64748B',
+    marginRight: 4,
+  },
+  obsStudentValue: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    textTransform: 'uppercase',
+  },
+  obsTable: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#0F172A',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  obsTableHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    minHeight: 20,
+  },
+  obsTableHeaderCellSubject: {
+    flex: 2.2,
+    paddingLeft: 8,
+    fontSize: 7.5,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  obsTableHeaderCellPeriod: {
+    textAlign: 'center',
+    fontSize: 7.5,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    borderLeftWidth: 1,
+    borderLeftColor: '#334155',
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
+  obsTableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    minHeight: 34,
+    alignItems: 'stretch',
+  },
+  obsTableCellSubject: {
+    flex: 2.2,
+    padding: 6,
+    backgroundColor: '#F8FAFC',
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+    justifyContent: 'center',
+  },
+  obsSubjectName: {
+    fontSize: 7.5,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  obsTableCellPeriod: {
+    padding: 5,
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+  },
+  obsPeriodText: {
+    fontSize: 7,
+    color: '#334155',
+    lineHeight: 1.25,
+  },
+  obsPeriodEmpty: {
+    fontSize: 6.5,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  obsSignatures: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  obsFooterNotice: {
+    fontSize: 6.5,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 6,
   },
 });
 
@@ -531,6 +699,129 @@ export default function ReportCardPDF({ student, grades, subjects, settings, cyc
 
         </View>
       </Page>
+
+      {/* ----- PAGE 3: HOJA DE OBSERVACIONES POR MATERIA (PREESCOLAR Y PRIMARIA) ----- */}
+      {isObservationsLevel(student.level) && (
+        <Page size="LETTER" orientation="landscape" style={styles.obsPage}>
+          <View>
+            {/* Header */}
+            <View style={styles.obsHeader}>
+              <View style={styles.obsHeaderLeft}>
+                <View style={{ width: 44, height: 44, justifyContent: 'center' }}>
+                  {proxiedLogo ? (
+                    <Image 
+                      src={proxiedLogo} 
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                    />
+                  ) : (
+                    <View style={{ width: 44, height: 44, backgroundColor: '#E2E8F0', borderRadius: 4 }} />
+                  )}
+                </View>
+                <View style={styles.obsSchoolInfo}>
+                  <Text style={styles.obsSchoolName}>{settings?.schoolName || 'COLEGIO MÉXICO'}</Text>
+                  <Text style={styles.obsSchoolCct}>
+                    {settings?.levelCCT?.[student.level] || 'CLAVE CENTRO DE TRABAJO'}
+                  </Text>
+                  <Text style={styles.obsLevelBadge}>NIVEL DE {student.level?.toUpperCase() || 'ESTUDIOS'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.obsHeaderRight}>
+                <Text style={styles.obsHeaderTitle}>OBSERVACIONES Y RECOMENDACIONES</Text>
+                <Text style={styles.obsHeaderSubtitle}>CICLO ESCOLAR {cycle.name}</Text>
+              </View>
+            </View>
+
+            {/* Student Info Banner */}
+            <View style={styles.obsStudentBanner}>
+              <View style={styles.obsStudentItem}>
+                <Text style={styles.obsStudentLabel}>ALUMNO:</Text>
+                <Text style={styles.obsStudentValue}>{student.lastName} {student.name}</Text>
+              </View>
+              <View style={styles.obsStudentItem}>
+                <Text style={styles.obsStudentLabel}>GRADO Y GRUPO:</Text>
+                <Text style={styles.obsStudentValue}>{student.grade || '-'} {student.group || ''}</Text>
+              </View>
+              <View style={styles.obsStudentItem}>
+                <Text style={styles.obsStudentLabel}>CURP:</Text>
+                <Text style={styles.obsStudentValue}>{student.curp || 'N/A'}</Text>
+              </View>
+              <View style={styles.obsStudentItem}>
+                <Text style={styles.obsStudentLabel}>MATRÍCULA:</Text>
+                <Text style={styles.obsStudentValue}>{student.matricula || 'N/A'}</Text>
+              </View>
+            </View>
+
+            {/* Observations Table */}
+            <View style={styles.obsTable}>
+              {/* Header */}
+              <View style={styles.obsTableHeaderRow}>
+                <Text style={styles.obsTableHeaderCellSubject}>Materia Académica / Campo Formativo</Text>
+                {periodIndices.map(num => (
+                  <Text 
+                    key={`obs-head-${num}`} 
+                    style={[styles.obsTableHeaderCellPeriod, { flex: 7.8 / periodCount }]}
+                  >
+                    {evalConfig.periodNames?.[num - 1] || `${num}º Periodo`}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Rows */}
+              {academicSubjects.length > 0 ? (
+                academicSubjects.map((subject, idx) => (
+                  <View 
+                    key={`obs-row-${idx}`} 
+                    style={[styles.obsTableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
+                  >
+                    <View style={styles.obsTableCellSubject}>
+                      <Text style={styles.obsSubjectName}>{subject}</Text>
+                    </View>
+                    {periodIndices.map(num => {
+                      const obs = getSubjectObservation(grades, subject, num);
+                      const hasObs = obs && obs.trim().length > 0;
+                      return (
+                        <View 
+                          key={`obs-cell-${subject}-${num}`} 
+                          style={[styles.obsTableCellPeriod, { flex: 7.8 / periodCount }]}
+                        >
+                          {hasObs ? (
+                            <Text style={styles.obsPeriodText}>{obs.trim()}</Text>
+                          ) : (
+                            <Text style={styles.obsPeriodEmpty}>—</Text>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))
+              ) : (
+                <View style={{ padding: 15, alignItems: 'center' }}>
+                  <Text style={styles.obsPeriodEmpty}>No hay materias académicas configuradas para este nivel.</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Signatures & Footer */}
+          <View>
+            <View style={styles.obsSignatures}>
+              <View style={styles.signatureCol}>
+                <View style={styles.signatureLine} />
+                <Text style={styles.signatureText}>DOCENTE TITULAR / MAESTRO(A) DE GRUPO</Text>
+              </View>
+              <View style={styles.signatureCol}>
+                <View style={styles.signatureLine} />
+                <Text style={styles.signatureText}>DIRECTOR(A) DE {student.level?.toUpperCase() || 'NIVEL'}</Text>
+              </View>
+            </View>
+
+            <Text style={styles.obsFooterNotice}>
+              {settings?.pdfFooter || 'Documento oficial generado sistemáticamente.'}
+            </Text>
+          </View>
+        </Page>
+      )}
     </Document>
   );
 }

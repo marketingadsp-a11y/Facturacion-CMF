@@ -389,6 +389,9 @@ export interface StudentGrade {
   cycleId: string;
   bimestre: Bimestre;
   subjects: Record<string, number | string>;
+  subjectObservations?: Record<string, string>; // Observación por materia académica (ej. clave: nombre de materia)
+  observations?: Record<string, string>; // Alias de respaldo
+  generalObservation?: string;
   conduct: number | string;
   uniform: number | string;
   attendance: number | string;
