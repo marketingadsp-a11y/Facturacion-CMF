@@ -576,6 +576,18 @@ export default function AcademicControl() {
     });
   }, [students, filterLevel, filterGrade, filterGroup, filterCycleId, settings?.currentCycleId, restrictedLevels, restrictedGrades, restrictedGroups]);
 
+  // Teacher assigned to current group
+  const currentGroupTeacher = useMemo(() => {
+    if (!filterLevel) return '';
+    const match = users.find(u => 
+      u.role === 'Docente' && 
+      u.assignedLevel === filterLevel && 
+      (!u.assignedGrade || u.assignedGrade === filterGrade) && 
+      (!u.assignedGroup || u.assignedGroup === filterGroup)
+    );
+    return match?.name || '';
+  }, [users, filterLevel, filterGrade, filterGroup]);
+
   return (
     <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
       {/* Compact Header */}
@@ -2356,6 +2368,7 @@ export default function AcademicControl() {
         level={filterLevel}
         grade={filterGrade}
         group={filterGroup}
+        teacherName={currentGroupTeacher}
       />
     </div>
   );

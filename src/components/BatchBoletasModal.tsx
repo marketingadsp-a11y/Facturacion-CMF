@@ -51,6 +51,7 @@ interface BatchBoletasModalProps {
   level: string;
   grade: string;
   group: string;
+  teacherName?: string;
 }
 
 export default function BatchBoletasModal({
@@ -63,7 +64,8 @@ export default function BatchBoletasModal({
   cycle,
   level,
   grade,
-  group
+  group,
+  teacherName
 }: BatchBoletasModalProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
@@ -131,6 +133,7 @@ export default function BatchBoletasModal({
             subjects={studentSubjects}
             settings={settings}
             cycle={cycle}
+            teacherName={teacherName}
           />
         );
 

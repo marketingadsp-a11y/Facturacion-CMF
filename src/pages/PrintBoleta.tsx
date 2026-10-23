@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
+import { Student, StudentGrade, AppSettings, SchoolCycle, Subject, AppUser } from '../types';
 import ReportCardPDF from '../components/ReportCardPDF';
 import { PDFViewer } from '@react-pdf/renderer';
 import { GraduationCap, Clock } from 'lucide-react';
@@ -14,6 +14,7 @@ export default function PrintBoleta() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [cycle, setCycle] = useState<SchoolCycle | null>(null);
+  const [teacherName, setTeacherName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +42,24 @@ export default function PrintBoleta() {
             .map(d => ({ id: d.id, ...d.data() } as Subject))
             .filter(s => s.level?.toLowerCase().trim() === studentData.level?.toLowerCase().trim());
           setSubjects(filteredSubjects);
+
+          // Fetch assigned teacher for Preescolar or Primaria
+          try {
+            const usersSnap = await getDocs(collection(db, 'users'));
+            const teacher = usersSnap.docs
+              .map(d => ({ id: d.id, ...d.data() } as AppUser))
+              .find(u => 
+                u.role === 'Docente' && 
+                u.assignedLevel?.toLowerCase().trim() === studentData.level?.toLowerCase().trim() && 
+                (!u.assignedGrade || u.assignedGrade === studentData.grade) && 
+                (!u.assignedGroup || u.assignedGroup === studentData.group)
+              );
+            if (teacher) {
+              setTeacherName(teacher.name);
+            }
+          } catch (tErr) {
+            console.warn("Could not fetch teacher:", tErr);
+          }
         }
 
         // Fetch Cycle
@@ -126,6 +145,7 @@ export default function PrintBoleta() {
           subjects={subjects}
           settings={settings}
           cycle={cycle}
+          teacherName={teacherName}
         />
       </PDFViewer>
     </div>
