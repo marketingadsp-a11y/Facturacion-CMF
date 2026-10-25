@@ -719,7 +719,7 @@ export default function ReportCardPDF({
             {isPreescolarOrPrimaria && (
               <View style={[styles.studentFieldLast, { flex: 3.2 }]}>
                 <Text style={styles.fieldLabel}>DOCENTE ASIGNADO:</Text>
-                <Text style={styles.fieldValue} numberOfLines={1}>
+                <Text style={styles.fieldValue}>
                   {teacherName || student.teacherName || '—'}
                 </Text>
               </View>

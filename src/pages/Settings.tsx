@@ -59,6 +59,7 @@ import { es } from 'date-fns/locale';
 import { formatCurrency, cn } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
 import ChargesCatalog from '../components/settings/ChargesCatalog';
+import CriticalZoneManager from '../components/settings/CriticalZoneManager';
 import { loadExampleData } from '../services/exampleDataService';
 import { toast } from 'react-toastify';
 
@@ -2742,86 +2743,10 @@ export default function Settings() {
 
           {activeTab === 'danger' && userProfile?.role === 'Superadministrador' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="px-8 py-6 border-b border-slate-50 bg-red-50/50 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-100">
-                      <AlertTriangle size={20} />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-black text-red-900 uppercase tracking-tight">Zona Crítica</h2>
-                      <p className="text-[10px] text-red-700/60 font-bold uppercase tracking-widest">Acciones irreversibles</p>
-                    </div>
-                  </div>
-                  
-                  <div className="p-8 space-y-8">
-                    <div className="p-8 bg-red-50 rounded-xl border border-red-100 relative overflow-hidden">
-                       <div className="absolute -top-10 -right-10 text-red-100/50 rotate-12">
-                          <AlertCircle size={160} />
-                       </div>
-                       <div className="relative z-10 space-y-6">
-                         <div>
-                           <h3 className="text-xl font-black text-red-900 mb-2">Mantenimiento de Datos</h3>
-                           <p className="text-sm text-red-700 font-medium leading-relaxed max-w-2xl">
-                             Estas herramientas permiten gestionar el estado de la base de datos. Úsalas con extrema precaución ya que pueden afectar la integridad de la información escolar.
-                           </p>
-                         </div>
-                         
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                            <button
-                              onClick={async () => {
-                                if (!window.confirm('¿Cargar datos de ejemplo? Esto agregará información ficticia para demostración.')) return;
-                                try {
-                                  setLoading(true);
-                                  await loadExampleData();
-                                  alert('Datos cargados. La página se recargará.');
-                                  window.location.reload();
-                                } catch (error) {
-                                  alert('Error: ' + error.message);
-                                } finally {
-                                  setLoading(false);
-                                }
-                              }}
-                              className="group p-6 bg-white rounded-xl border border-red-100 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-100 transition-all text-left"
-                            >
-                               <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                  <Database size={24} />
-                               </div>
-                               <p className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">Cargar Alumnos Demo</p>
-                               <p className="text-[10px] text-slate-500 font-bold">Poblar sistema con datos ficticios</p>
-                            </button>
-
-                            <button
-                              onClick={async () => {
-                                const confirm1 = window.confirm('¿ESTÁS SEGURO? Se borrarán todos los alumnos y pagos.');
-                                if (!confirm1) return;
-                                const confirm2 = window.prompt('Escribe "ELIMINAR TODO" para confirmar:');
-                                if (confirm2 !== 'ELIMINAR TODO') return;
-
-                                try {
-                                  const collections = ['students', 'payments', 'expenses', 'cycles', 'announcements', 'grades', 'attendance', 'reception_visits', 'bimestreLocks', 'enrollments'];
-                                  for (const coll of collections) {
-                                    const snap = await getDocs(collection(db, coll));
-                                    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, coll, d.id))));
-                                  }
-                                  alert('Sistema restablecido.');
-                                  window.location.reload();
-                                } catch (error) {
-                                  alert('Error al borrar.');
-                                }
-                              }}
-                              className="group p-6 bg-white rounded-xl border border-red-100 hover:border-red-600 hover:shadow-xl hover:shadow-red-100 transition-all text-left"
-                            >
-                               <div className="w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center mb-4 group-hover:bg-red-600 group-hover:text-white transition-all">
-                                  <Trash2 size={24} />
-                               </div>
-                               <p className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1 text-red-600">Restablecer Todo</p>
-                               <p className="text-[10px] text-slate-500 font-bold">Borrar información operativa permanentemente</p>
-                            </button>
-                       </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <CriticalZoneManager 
+                cycles={cycles} 
+                currentCycleId={settings?.currentCycleId} 
+              />
             </div>
           )}
 

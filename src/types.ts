@@ -25,6 +25,8 @@ export interface Student {
   registrationCode?: string; // 5-digit code for parent registration
   photoUrl?: string;
   matricula?: string;
+  listNumber?: string;
+  teacherName?: string;
   cycleId?: string;
   cycles?: string[];
   gradeHistory?: Record<string, { level: string; grade: string; group?: string }>;
