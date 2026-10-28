@@ -282,6 +282,7 @@ export interface AppSettings {
   schoolName: string;
   legalName: string;
   logoUrl?: string;
+  levelLogos?: Record<string, string>; // Logotipo por nivel educativo para boletas oficiales
   facturapiApiKey?: string;
   facturapiSandbox: boolean;
   conektaPublicKey?: string;
@@ -349,7 +350,7 @@ export interface LevelEvaluationConfig {
   periodCount: number; // e.g. 3 or 5
   periodType: 'Trimestres' | 'Bimestres' | 'Semestres' | 'Cuatrimestres' | 'Personalizado';
   periodNames?: string[]; // e.g. ["1er Trimestre", "2do Trimestre", "3er Trimestre"]
-  gradingScale?: GradingScale; // 'letters' (Preescolar A-D), 'numeric_10' (0-10), 'numeric_100' (0-100)
+  gradingScale?: GradingScale; // 'letters' (Preescolar A, E, ED, RA), 'numeric_10' (0-10), 'numeric_100' (0-100)
   enableActivities?: boolean; // Permite a los docentes registrar columnas de actividades y evaluarlas
   enableSubjectAttendance?: boolean; // Permite pase de lista individual por materia
 }
@@ -376,10 +377,13 @@ export interface Subject {
   id: string;
   name: string;
   level: string; // Preescolar, Primaria, etc.
-  category?: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos';
+  category?: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos' | 'Recursamiento';
   linkedSubjectId?: string; // Optional: ID of an Academic subject this Autonomía Curricular subject contributes to
   linkedSubjectName?: string; // Optional: Name of the Academic subject (e.g. "De lo Humano y lo Comunitario")
   isAttendanceCount?: boolean; // When true, student absences (Faltas) automatically sum into this subject
+  isTae?: boolean; // Trayectoria de Aprendizaje Especializante (Materia optativa/especializante)
+  taeStudentMode?: 'all' | 'specific'; // 'all' (todos los alumnos del nivel) o 'specific' (solo alumnos asignados)
+  taeStudentIds?: string[]; // IDs de alumnos asignados cuando taeStudentMode === 'specific'
   createdAt: Timestamp;
 }
 

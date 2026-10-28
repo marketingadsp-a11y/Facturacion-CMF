@@ -51,7 +51,8 @@ import {
   ChevronUp,
   Layers,
   FileSpreadsheet,
-  ClipboardList
+  ClipboardList,
+  Upload
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -73,6 +74,7 @@ export default function Settings() {
     schoolName: 'Colegio México Franciscano',
     legalName: 'ASOCIACION EDUCADORA DEL SUR DE JALISCO',
     logoUrl: '',
+    levelLogos: {},
     facturapiApiKey: '',
     facturapiSandbox: true,
     conektaPublicKey: '',
@@ -2114,7 +2116,7 @@ export default function Settings() {
                                 currentConfig.gradingScale === 'numeric_100' ? "bg-purple-50 text-purple-700 border-purple-200" :
                                 "bg-blue-50 text-blue-700 border-blue-200"
                               )}>
-                                {currentConfig.gradingScale === 'letters' ? 'Letras (A - D)' :
+                                {currentConfig.gradingScale === 'letters' ? 'Letras (A, E, ED, RA)' :
                                  currentConfig.gradingScale === 'numeric_100' ? 'Escala 0 a 100' : 'Escala 0 a 10'}
                               </span>
                             </div>
@@ -2209,7 +2211,7 @@ export default function Settings() {
                                   Tipo de Calificación y Escala de Promedio
                                 </label>
                                 <p className="text-xs text-slate-500 font-medium">
-                                  {currentConfig.gradingScale === 'letters' && 'Cualitativa con letras: A (Destacado), B (Satisfactorio), C (Suficiente), D (Insuficiente). El promedio se calculará en letras.'}
+                                  {currentConfig.gradingScale === 'letters' && 'Cualitativa con letras: A (Avanzado), E (Esperado), ED (En Desarrollo), RA (Requiere Apoyo). El promedio se calculará en letras.'}
                                   {currentConfig.gradingScale === 'numeric_10' && 'Escala decimal estándar de 0 a 10 puntos (promedios con un decimal en rango 0 - 10).'}
                                   {currentConfig.gradingScale === 'numeric_100' && 'Escala numérica entera de 0 a 100 puntos (promedios en rango 0 - 100 sin decimales).'}
                                 </p>
@@ -2233,7 +2235,7 @@ export default function Settings() {
                                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
                                   )}
                                 >
-                                  <span>Letras (A - D)</span>
+                                  <span>Letras (A, E, ED, RA)</span>
                                   <span className={cn("text-[9px] px-1 rounded font-bold", currentConfig.gradingScale === 'letters' ? "bg-emerald-700 text-emerald-100" : "bg-slate-200 text-slate-600")}>Preescolar</span>
                                 </button>
 
@@ -2419,6 +2421,195 @@ export default function Settings() {
                                 </button>
                               );
                             })()}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(!settings.academicLevels || settings.academicLevels.length === 0) && (
+                      <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <AlertCircle className="mx-auto text-slate-300 mb-2" size={32} />
+                        <p className="text-sm font-bold text-slate-400">Primero configura los Niveles Educativos arriba.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card: Logotipos por Nivel Educativo (Boletas) */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <ImageIcon size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Logotipos por Nivel (Boletas Oficiales)</h2>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Personaliza el logotipo que se imprime en las boletas de cada nivel educativo</p>
+                    </div>
+                  </div>
+                  {settings.logoUrl && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span>Logo General Activo</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
+                    <AlertCircle className="text-indigo-600 shrink-0 mt-0.5" size={18} />
+                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                      Cada nivel educativo puede tener su propio logotipo institucional para imprimirse en la cabecera de las boletas de calificaciones. Si un nivel no tiene un logo específico asignado, se utilizará automáticamente el <strong>Logotipo Institucional General</strong> de la pestaña General.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {settings.academicLevels?.map((level) => {
+                      const customLogo = settings.levelLogos?.[level];
+                      const effectiveLogo = customLogo || settings.logoUrl;
+                      const hasCustom = Boolean(customLogo && customLogo.trim().length > 0);
+
+                      return (
+                        <div 
+                          key={level} 
+                          className={cn(
+                            "p-5 rounded-2xl border transition-all space-y-4",
+                            hasCustom 
+                              ? "bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/10" 
+                              : "bg-slate-50/60 border-slate-200"
+                          )}
+                        >
+                          {/* Level Header & Badge */}
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                              <span className={cn(
+                                "w-2.5 h-2.5 rounded-full",
+                                hasCustom ? "bg-indigo-600" : "bg-slate-400"
+                              )} />
+                              <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">{level}</h3>
+                            </div>
+                            <span className={cn(
+                              "text-[9px] font-black uppercase px-2.5 py-1 rounded-full border",
+                              hasCustom 
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200" 
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            )}>
+                              {hasCustom ? 'Logo Personalizado' : 'Logo General (Heredado)'}
+                            </span>
+                          </div>
+
+                          {/* Image preview & upload controls */}
+                          <div className="flex gap-4 items-center">
+                            <div className="w-20 h-20 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs relative group">
+                              {effectiveLogo ? (
+                                <img 
+                                  src={effectiveLogo} 
+                                  alt={`Logo ${level}`} 
+                                  className="w-full h-full object-contain p-2" 
+                                />
+                              ) : (
+                                <ImageIcon className="text-slate-300" size={32} />
+                              )}
+                            </div>
+
+                            <div className="flex-1 space-y-2">
+                              <input
+                                placeholder="URL del logo (https://...)"
+                                value={customLogo || ''}
+                                onChange={(e) => {
+                                  const updatedLogos = { ...(settings.levelLogos || {}) };
+                                  if (e.target.value.trim()) {
+                                    updatedLogos[level] = e.target.value;
+                                  } else {
+                                    delete updatedLogos[level];
+                                  }
+                                  setSettings({ ...settings, levelLogos: updatedLogos });
+                                }}
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                              />
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer border border-slate-200">
+                                  <Upload size={12} />
+                                  <span>Subir imagen</span>
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    className="hidden" 
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      
+                                      // If ImgBB API key exists, upload to ImgBB
+                                      if (settings.imgbbApiKey) {
+                                        try {
+                                          toast.info(`Subiendo logo de ${level}...`);
+                                          const fd = new FormData();
+                                          fd.append('image', file);
+                                          const res = await fetch(`https://api.imgbb.com/1/upload?key=${settings.imgbbApiKey}`, {
+                                            method: 'POST',
+                                            body: fd
+                                          });
+                                          const resData = await res.json();
+                                          if (resData.success && resData.data?.url) {
+                                            const updatedLogos = { ...(settings.levelLogos || {}) };
+                                            updatedLogos[level] = resData.data.url;
+                                            const newSettings = { ...settings, levelLogos: updatedLogos };
+                                            setSettings(newSettings);
+                                            await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                            toast.success(`Logo de ${level} subido con éxito`);
+                                          } else {
+                                            throw new Error(resData.error?.message || "Error al subir");
+                                          }
+                                        } catch (err: any) {
+                                          console.error("Error subiendo logo a ImgBB:", err);
+                                          toast.error(`Error al subir: ${err.message || err}`);
+                                        }
+                                      } else {
+                                        // Read as Base64 data URL
+                                        const reader = new FileReader();
+                                        reader.onload = async (ev) => {
+                                          const dataUrl = ev.target?.result as string;
+                                          if (dataUrl) {
+                                            const updatedLogos = { ...(settings.levelLogos || {}) };
+                                            updatedLogos[level] = dataUrl;
+                                            const newSettings = { ...settings, levelLogos: updatedLogos };
+                                            setSettings(newSettings);
+                                            await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                            toast.success(`Logo de ${level} cargado con éxito`);
+                                          }
+                                        };
+                                        reader.readAsDataURL(file);
+                                      }
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                </label>
+
+                                {hasCustom && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const updatedLogos = { ...(settings.levelLogos || {}) };
+                                      delete updatedLogos[level];
+                                      const newSettings = { ...settings, levelLogos: updatedLogos };
+                                      setSettings(newSettings);
+                                      try {
+                                        await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                        toast.success(`Logo de ${level} restablecido al general`);
+                                      } catch (err) {
+                                        console.error("Error al restablecer logo:", err);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-red-600 hover:bg-red-50 text-[10px] font-bold rounded-lg transition-colors border border-red-200"
+                                  >
+                                    <Trash2 size={11} />
+                                    <span>Restablecer</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );

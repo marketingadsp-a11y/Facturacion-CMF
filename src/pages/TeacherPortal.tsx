@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, d
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
-import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel, isStudentEnrolledInSubject } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -701,7 +701,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   // Pure academic subjects only
   const pureAcademicSubjects = useMemo(() => {
     return activeLevelSubjects.filter(s => 
-      !s.category || s.category === 'Académica'
+      !s.category || s.category === 'Académica' || s.category === 'Recursamiento'
     );
   }, [activeLevelSubjects]);
 
@@ -860,6 +860,13 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     if (activeGroup) {
       list = list.filter(s => s.group === activeGroup);
     }
+
+    // Si el docente tiene materias asignadas en este nivel y todas son TAES con alumnos específicos,
+    // mostrar únicamente a los alumnos seleccionados/inscritos en dichas TAES.
+    if (isSpecificTeacher && activeLevelSubjects.length > 0 && activeLevelSubjects.every(s => s.isTae && s.taeStudentMode === 'specific')) {
+      list = list.filter(student => activeLevelSubjects.some(s => isStudentEnrolledInSubject(s, student.id)));
+    }
+
     return list.sort((a, b) => {
       const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
       const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
@@ -877,6 +884,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
     let hasAtLeastOneScore = false;
     for (const student of students) {
+      if (selectedSubject && !isStudentEnrolledInSubject(selectedSubject, student.id)) continue;
       const avg = getStudentActivityAverage(student.id, selectedSubjectId);
       if (avg.raw === '-') continue;
       hasAtLeastOneScore = true;
@@ -1303,6 +1311,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     let totalCount = 0;
 
     academicLevelSubjects.forEach(subj => {
+      if (!isStudentEnrolledInSubject(subj, studentId)) return;
       const { avgNumeric } = getSubjectCumulativeAverage(studentId, subj.name);
       if (avgNumeric !== null) {
         totalSum += avgNumeric;
@@ -1320,7 +1329,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const getGroupSubjectAverage = (subjectName: string, period?: number) => {
     let sum = 0;
     let count = 0;
+    const targetSubj = academicLevelSubjects.find(s => s.name === subjectName);
     filteredStudents.forEach(st => {
+      if (targetSubj && !isStudentEnrolledInSubject(targetSubj, st.id)) return;
       if (period !== undefined) {
         const gradeDoc = period === selectedBimestre 
           ? (grades[st.id] || cycleGradesByStudentAndPeriod[st.id]?.[period])
@@ -1569,6 +1580,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       const batches = [batch];
 
       students.forEach(student => {
+        if (subjObj && !isStudentEnrolledInSubject(subjObj, student.id)) return;
         const { raw, num } = getStudentActivityAverage(student.id, subjIdToSync);
         if (raw !== '-') {
           const valToSet = gradingScale === 'letters' ? raw : (num ?? (parseFloat(raw) || 0));
@@ -2004,6 +2016,27 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
     return nameA.localeCompare(nameB);
   });
+
+  const activityFilteredStudents = useMemo(() => {
+    if (selectedSubject?.isTae && selectedSubject.taeStudentMode === 'specific') {
+      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedSubject, s.id));
+    }
+    return filteredStudents;
+  }, [filteredStudents, selectedSubject]);
+
+  const attendanceFilteredStudents = useMemo(() => {
+    if (isSubjectAttendanceEnabledForCurrentLevel && selectedAttendanceSubject?.isTae && selectedAttendanceSubject.taeStudentMode === 'specific') {
+      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedAttendanceSubject, s.id));
+    }
+    return filteredStudents;
+  }, [filteredStudents, isSubjectAttendanceEnabledForCurrentLevel, selectedAttendanceSubject]);
+
+  const obsFilteredStudents = useMemo(() => {
+    if (selectedObsSubject?.isTae && selectedObsSubject.taeStudentMode === 'specific') {
+      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedObsSubject, s.id));
+    }
+    return filteredStudents;
+  }, [filteredStudents, selectedObsSubject]);
 
   // Listen to teachers for admin selection
   useEffect(() => {
@@ -2794,8 +2827,35 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
                               {/* Subject Periods & Average */}
                               {academicLevelSubjects.map((subj, sIdx) => {
-                                const { avgFormatted, avgNumeric, periodsData } = getSubjectCumulativeAverage(student.id, subj.name);
+                                const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
                                 const isLastSubj = sIdx === academicLevelSubjects.length - 1;
+
+                                if (!isEnrolled) {
+                                  return (
+                                    <React.Fragment key={`cell-${student.id}-${subj.id}`}>
+                                      {Array.from({ length: evalConfig.periodCount }).map((_, pIdx) => (
+                                        <td
+                                          key={`pcell-${student.id}-${subj.id}-${pIdx}`}
+                                          className="px-2 py-2 text-center text-xs tabular-nums text-slate-300 border-r border-slate-100 bg-slate-50/40 select-none"
+                                          title="No inscrito en esta TAE"
+                                        >
+                                          —
+                                        </td>
+                                      ))}
+                                      <td
+                                        className={cn(
+                                          "px-2.5 py-2 text-center bg-slate-50/70 text-slate-300 tabular-nums select-none",
+                                          !isLastSubj ? "border-r-[3px] border-r-slate-300" : ""
+                                        )}
+                                        title="No inscrito en esta TAE"
+                                      >
+                                        —
+                                      </td>
+                                    </React.Fragment>
+                                  );
+                                }
+
+                                const { avgFormatted, avgNumeric, periodsData } = getSubjectCumulativeAverage(student.id, subj.name);
 
                                 return (
                                   <React.Fragment key={`cell-${student.id}-${subj.id}`}>
@@ -2952,7 +3012,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               "bg-blue-50 text-blue-800 border-blue-300"
             )}>
               <span>Escala: <strong className="font-black">{
-                gradingScale === 'letters' ? 'Letras (A, B, C, D)' :
+                gradingScale === 'letters' ? 'Letras (A, E, ED, RA)' :
                 gradingScale === 'numeric_100' ? 'Numérica (0 a 100)' : 'Numérica (0 a 10)'
               }</strong></span>
             </span>
@@ -3152,6 +3212,23 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             pureAcademicSubjects.map((subj, idx) => {
                               const isLast = idx === pureAcademicSubjects.length - 1;
                               const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+
+                              if (!isEnrolled) {
+                                return (
+                                  <td 
+                                    key={subj.id} 
+                                    className={cn(
+                                      "px-1 py-1.5 bg-slate-50/50 text-center select-none",
+                                      (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
+                                    )}
+                                    title="No inscrito en esta TAE"
+                                  >
+                                    <span className="text-slate-300 font-bold text-xs">—</span>
+                                  </td>
+                                );
+                              }
+
                               const isAttendanceTracker = isAttendanceTrackingSubject(subj);
                               const autoAbsenceCount = isAttendanceTracker ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
                               const rawVal = isAttendanceTracker
@@ -3173,17 +3250,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
                                         rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                        rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                        rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                        rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                        rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                        rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                        rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
                                         "bg-slate-50 text-slate-400 border-transparent focus:bg-white focus:border-blue-400"
                                       )}
                                     >
                                       <option value="">-</option>
-                                      <option value="A">A - Destacado</option>
-                                      <option value="B">B - Bueno</option>
-                                      <option value="C">C - Suficiente</option>
-                                      <option value="D">D - Apoyo</option>
+                                      <option value="A">A - Avanzado</option>
+                                      <option value="E">E - Esperado</option>
+                                      <option value="ED">ED - En Desarrollo</option>
+                                      <option value="RA">RA - Requiere Apoyo</option>
                                     </select>
                                   ) : (
                                     <input
@@ -3213,6 +3290,23 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             autonomyCurricularSubjects.map((subj, idx) => {
                               const isLast = idx === autonomyCurricularSubjects.length - 1;
                               const hasNextGroup = personalDevLevelSubjects.length > 0;
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+
+                              if (!isEnrolled) {
+                                return (
+                                  <td 
+                                    key={subj.id} 
+                                    className={cn(
+                                      "px-1 py-1.5 bg-slate-50/50 text-center select-none",
+                                      (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
+                                    )}
+                                    title="No inscrito en esta TAE"
+                                  >
+                                    <span className="text-slate-300 font-bold text-xs">—</span>
+                                  </td>
+                                );
+                              }
+
                               const rawVal = studentGrade.subjects?.[subj.name] ?? '';
                               return (
                                 <td 
@@ -3230,17 +3324,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
                                         rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                        rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                        rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                        rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                        rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                        rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                        rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
                                         "bg-amber-50/40 text-amber-400 border-transparent focus:bg-white focus:border-amber-400"
                                       )}
                                     >
                                       <option value="">-</option>
-                                      <option value="A">A - Destacado</option>
-                                      <option value="B">B - Bueno</option>
-                                      <option value="C">C - Suficiente</option>
-                                      <option value="D">D - Apoyo</option>
+                                      <option value="A">A - Avanzado</option>
+                                      <option value="E">E - Esperado</option>
+                                      <option value="ED">ED - En Desarrollo</option>
+                                      <option value="RA">RA - Requiere Apoyo</option>
                                     </select>
                                   ) : (
                                     <input
@@ -3321,17 +3415,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
                                         gradeVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                        gradeVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                        gradeVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                        gradeVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                        gradeVal === 'E' || gradeVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                        gradeVal === 'ED' || gradeVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                        gradeVal === 'RA' || gradeVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
                                         "bg-indigo-50/30 text-indigo-400 border-transparent focus:bg-white focus:border-indigo-400"
                                       )}
                                     >
                                       <option value="">-</option>
-                                      <option value="A">A - Destacado</option>
-                                      <option value="B">B - Bueno</option>
-                                      <option value="C">C - Suficiente</option>
-                                      <option value="D">D - Apoyo</option>
+                                      <option value="A">A - Avanzado</option>
+                                      <option value="E">E - Esperado</option>
+                                      <option value="ED">ED - En Desarrollo</option>
+                                      <option value="RA">RA - Requiere Apoyo</option>
                                     </select>
                                   ) : (
                                     <input
@@ -3479,7 +3573,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
                 {pureAcademicSubjects.map(subj => {
                   const isSelected = selectedObsSubject?.id === subj.id;
-                  const filledCount = students.filter(st => {
+                  const enrolledStudents = students.filter(st => isStudentEnrolledInSubject(subj, st.id));
+                  const filledCount = enrolledStudents.filter(st => {
                     const obs = grades[st.id]?.subjectObservations?.[subj.name] || grades[st.id]?.observations?.[subj.name];
                     return obs && obs.trim().length > 0;
                   }).length;
@@ -3501,7 +3596,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         "text-[9px] px-1.5 py-0.2 rounded-full font-bold",
                         isSelected ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-600"
                       )}>
-                        {filledCount}/{students.length}
+                        {filledCount}/{enrolledStudents.length}
                       </span>
                     </button>
                   );
@@ -3521,16 +3616,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                       </span>
                     </div>
                     <span className="text-[11px] text-slate-400 font-bold">
-                      {students.length} {students.length === 1 ? 'alumno' : 'alumnos'}
+                      {obsFilteredStudents.length} {obsFilteredStudents.length === 1 ? 'alumno' : 'alumnos'}
                     </span>
                   </div>
 
                   {/* Student Rows List - Compact */}
                   <div className="space-y-2">
-                    {filteredStudents.map((student, idx) => {
+                    {obsFilteredStudents.map((student, idx) => {
                       const obs = grades[student.id]?.subjectObservations?.[selectedObsSubject.name] || grades[student.id]?.observations?.[selectedObsSubject.name] || '';
                       const charCount = obs.length;
-                      const isLong = charCount > 350;
+                      const isLong = charCount > 240;
                       const hasObs = obs.trim().length > 0;
 
                       return (
@@ -3568,18 +3663,19 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Escribir observación manual para ${student.name}...`}
                               rows={1}
+                              maxLength={240}
                               className="w-full text-xs py-1.5 px-3 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-slate-800 leading-normal transition-all placeholder:text-slate-300 resize-y min-h-[36px] disabled:bg-slate-100 disabled:cursor-not-allowed"
                             />
 
                             <span className={cn("text-[9px] font-bold shrink-0 tabular-nums w-14 text-right", isLong ? "text-amber-600 font-black" : "text-slate-400")}>
-                              {charCount}/350
+                              {charCount}/240
                             </span>
                           </div>
                         </div>
                       );
                     })}
 
-                    {filteredStudents.length === 0 && (
+                    {obsFilteredStudents.length === 0 && (
                       <div className="py-12 text-center text-slate-400 text-xs italic">
                         Sin alumnos que coincidan con la búsqueda
                       </div>
@@ -3596,12 +3692,13 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               {filteredStudents.map(student => {
                 const studentGrade = grades[student.id];
                 const studentObs = studentGrade?.subjectObservations || studentGrade?.observations || {};
+                const studentPureAcademicSubjects = pureAcademicSubjects.filter(s => isStudentEnrolledInSubject(s, student.id));
                 
-                const completedCount = pureAcademicSubjects.filter(s => {
+                const completedCount = studentPureAcademicSubjects.filter(s => {
                   const o = studentObs[s.name];
                   return o && o.trim().length > 0;
                 }).length;
-                const isAllCompleted = completedCount === pureAcademicSubjects.length;
+                const isAllCompleted = completedCount > 0 && completedCount === studentPureAcademicSubjects.length;
 
                 return (
                   <div
@@ -3626,17 +3723,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
                             : "bg-blue-50 text-blue-700 border border-blue-200"
                         )}>
-                          {completedCount} de {pureAcademicSubjects.length} materias completadas
+                          {completedCount} de {studentPureAcademicSubjects.length} materias completadas
                         </span>
                       </div>
                     </div>
 
                     {/* Academic Subjects Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                      {pureAcademicSubjects.map(subj => {
+                      {studentPureAcademicSubjects.map(subj => {
                         const obs = studentObs[subj.name] || '';
                         const charCount = obs.length;
-                        const isLong = charCount > 350;
+                        const isLong = charCount > 240;
 
                         return (
                           <div 
@@ -3648,7 +3745,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                 {subj.name}
                               </span>
                               <span className={cn("text-[9px] font-bold", isLong ? "text-amber-600 font-black" : "text-slate-400")}>
-                                {charCount} / 350
+                                {charCount} / 240
                               </span>
                             </div>
 
@@ -3658,6 +3755,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Observación de ${subj.name}...`}
                               rows={2}
+                              maxLength={240}
                               className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-slate-800 leading-relaxed transition-all placeholder:text-slate-300 resize-y disabled:bg-slate-100 disabled:cursor-not-allowed"
                             />
                           </div>
@@ -3887,7 +3985,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono">
-                    {filteredStudents.map((student, idx) => {
+                    {activityFilteredStudents.map((student, idx) => {
                       const avg = getStudentActivityAverage(student.id, selectedSubjectId);
                       return (
                         <tr key={student.id} className="hover:bg-blue-50/30 transition-colors">
@@ -3933,17 +4031,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     className={cn(
                                       "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
                                       rawScore === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                      rawScore === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                      rawScore === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                      rawScore === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                      rawScore === 'E' || rawScore === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                      rawScore === 'ED' || rawScore === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                      rawScore === 'RA' || rawScore === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
                                       "bg-white text-slate-400 border-slate-200 focus:border-blue-900"
                                     )}
                                   >
                                     <option value="">-</option>
-                                    <option value="A">A - Destacado</option>
-                                    <option value="B">B - Bueno</option>
-                                    <option value="C">C - Suficiente</option>
-                                    <option value="D">D - Apoyo</option>
+                                    <option value="A">A - Avanzado</option>
+                                    <option value="E">E - Esperado</option>
+                                    <option value="ED">ED - En Desarrollo</option>
+                                    <option value="RA">RA - Requiere Apoyo</option>
                                   </select>
                                 ) : (
                                   <input
@@ -4120,7 +4218,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filteredStudents.map((student, index) => {
+                  {attendanceFilteredStudents.map((student, index) => {
                     const att = attendance[student.id]?.status || 'Asistió';
                     const justReason = attendance[student.id]?.justificationReason;
                     
@@ -4253,7 +4351,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               </table>
             </div>
 
-            {filteredStudents.length === 0 && (
+            {attendanceFilteredStudents.length === 0 && (
               <div className="py-20 text-center bg-slate-50/20 italic">
                 <Users className="mx-auto text-slate-200 mb-2 opacity-30" size={32} />
                 <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Sin registros encontrados</p>

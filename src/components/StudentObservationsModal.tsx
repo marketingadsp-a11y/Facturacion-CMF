@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
-import { getLevelEvaluationConfig, isObservationsLevel, isPureAcademicSubject } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, isObservationsLevel, isPureAcademicSubject, isStudentEnrolledInSubject } from '../lib/evaluationUtils';
 import { 
   X, 
   Save, 
@@ -59,9 +59,11 @@ export default function StudentObservationsModal({
     if (!student?.level) return [];
     const studentLvl = student.level.toLowerCase().trim();
     return subjects.filter(s => 
-      s.level?.toLowerCase().trim() === studentLvl && isPureAcademicSubject(s)
+      s.level?.toLowerCase().trim() === studentLvl &&
+      isPureAcademicSubject(s) &&
+      isStudentEnrolledInSubject(s, student.id)
     );
-  }, [subjects, student?.level]);
+  }, [subjects, student?.level, student?.id]);
 
   // Load grades/observations for this student and current cycle
   useEffect(() => {
@@ -279,7 +281,7 @@ export default function StudentObservationsModal({
                 {academicSubjects.map((subj) => {
                   const currentText = observations[subj.name] || '';
                   const charCount = currentText.length;
-                  const isLong = charCount > 350;
+                  const isLong = charCount > 240;
 
                   return (
                     <div 
@@ -300,7 +302,7 @@ export default function StudentObservationsModal({
                         {/* Character counter */}
                         <div className="text-[10px] font-bold">
                           <span className={isLong ? "text-amber-600 font-black" : "text-slate-400"}>
-                            {charCount} / 350 carac.
+                            {charCount} / 240 carac.
                           </span>
                         </div>
                       </div>
@@ -311,6 +313,7 @@ export default function StudentObservationsModal({
                         onChange={(e) => handleObservationChange(subj.name, e.target.value)}
                         placeholder={`Escribe observaciones, fortalezas y recomendaciones para ${student.name} en ${subj.name}...`}
                         rows={3}
+                        maxLength={240}
                         className="w-full text-xs p-3 border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-slate-800 leading-relaxed transition-all placeholder:text-slate-300 resize-y"
                       />
                     </div>

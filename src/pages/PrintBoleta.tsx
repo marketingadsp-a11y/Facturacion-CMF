@@ -4,8 +4,9 @@ import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firesto
 import { db } from '../firebase';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject, AppUser } from '../types';
 import ReportCardPDF from '../components/ReportCardPDF';
-import { PDFViewer } from '@react-pdf/renderer';
-import { GraduationCap, Clock } from 'lucide-react';
+import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
+import { GraduationCap, Clock, FileDown, Maximize2, Minimize2, X } from 'lucide-react';
+import { cn } from '../lib/utils';
 
 export default function PrintBoleta() {
   const { studentId } = useParams();
@@ -16,6 +17,7 @@ export default function PrintBoleta() {
   const [cycle, setCycle] = useState<SchoolCycle | null>(null);
   const [teacherName, setTeacherName] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [fitMode, setFitMode] = useState<'adapted' | 'full'>('adapted');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -137,17 +139,115 @@ export default function PrintBoleta() {
   }
 
   return (
-    <div className="bg-slate-900 h-screen w-screen m-0 p-0 overflow-hidden flex flex-col">
-      <PDFViewer width="100%" height="100%" className="flex-1 border-none">
-        <ReportCardPDF 
-          student={student}
-          grades={grades}
-          subjects={subjects}
-          settings={settings}
-          cycle={cycle}
-          teacherName={teacherName}
-        />
-      </PDFViewer>
+    <div className="bg-slate-950 h-screen w-full m-0 p-0 overflow-hidden flex flex-col font-sans select-none">
+      {/* Top Bar with Student Info & Controls */}
+      <header className="w-full bg-[#F8F9FA] border-b border-slate-200/90 z-10 shadow-xs shrink-0">
+        <div
+          className={cn(
+            "w-full mx-auto px-3 sm:px-4 md:px-6 py-2.5 flex items-center justify-between gap-3 transition-all duration-300",
+            fitMode === 'adapted' ? "max-w-4xl xl:max-w-5xl" : "max-w-full"
+          )}
+        >
+          {/* Student Info */}
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xs sm:text-sm font-black uppercase text-black truncate tracking-tight">
+              {student.lastName} {student.name}
+            </h1>
+            <p className="text-[10px] text-slate-800 font-bold uppercase tracking-wider truncate">
+              {student.level} • {student.grade} "{student.group}" • {cycle.name}
+            </p>
+          </div>
+
+          {/* Action Controls */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Width Mode Selector */}
+            <div className="flex items-center bg-slate-200/70 p-1 rounded-xl border border-slate-300/70 text-xs">
+              <button
+                type="button"
+                onClick={() => setFitMode('adapted')}
+                className={cn(
+                  "px-2 sm:px-2.5 py-1 rounded-lg font-bold text-[10px] sm:text-[11px] transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer",
+                  fitMode === 'adapted'
+                    ? "bg-blue-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-black hover:bg-slate-300/50"
+                )}
+                title="Ajustado proporcional al monitor (Carta)"
+              >
+                <Minimize2 size={12} />
+                <span className="hidden sm:inline">Ajustado</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFitMode('full')}
+                className={cn(
+                  "px-2 sm:px-2.5 py-1 rounded-lg font-bold text-[10px] sm:text-[11px] transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer",
+                  fitMode === 'full'
+                    ? "bg-blue-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-black hover:bg-slate-300/50"
+                )}
+                title="Ancho completo de pantalla"
+              >
+                <Maximize2 size={12} />
+                <span className="hidden sm:inline">Completo</span>
+              </button>
+            </div>
+
+            <PDFDownloadLink
+              document={
+                <ReportCardPDF 
+                  student={student}
+                  grades={grades}
+                  subjects={subjects}
+                  settings={settings}
+                  cycle={cycle}
+                  teacherName={teacherName}
+                />
+              }
+              fileName={`Boleta_${student.lastName}_${student.name}.pdf`.replace(/\s+/g, '_')}
+              className="px-2.5 sm:px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer border border-blue-950/20"
+            >
+              {({ loading: pdfLoading }) => (
+                <>
+                  <FileDown size={14} />
+                  <span className="hidden sm:inline">{pdfLoading ? 'Generando...' : 'Descargar'}</span>
+                </>
+              )}
+            </PDFDownloadLink>
+
+            <button
+              type="button"
+              onClick={() => window.close()}
+              className="p-1.5 text-slate-500 hover:text-black hover:bg-slate-200/80 rounded-xl transition-all cursor-pointer"
+              title="Cerrar ventana"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Responsive Centered Viewer Area */}
+      <main className="flex-1 w-full bg-slate-950 p-2 sm:p-4 md:p-6 flex items-center justify-center overflow-hidden">
+        <div
+          className={cn(
+            "h-full w-full transition-all duration-300 flex flex-col overflow-hidden shadow-2xl",
+            fitMode === 'adapted'
+              ? "max-w-4xl xl:max-w-5xl rounded-2xl border border-slate-800/80 bg-slate-900"
+              : "max-w-full rounded-none sm:rounded-xl border border-slate-800/80 bg-slate-900"
+          )}
+        >
+          <PDFViewer width="100%" height="100%" className="w-full h-full border-none flex-1">
+            <ReportCardPDF 
+              student={student}
+              grades={grades}
+              subjects={subjects}
+              settings={settings}
+              cycle={cycle}
+              teacherName={teacherName}
+            />
+          </PDFViewer>
+        </div>
+      </main>
     </div>
   );
 }

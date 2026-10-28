@@ -1,22 +1,25 @@
 import { AppSettings, LevelEvaluationConfig, GradingScale, StudentGrade, Subject } from '../types';
 
+export type QualitativeGradeLetter = 'A' | 'E' | 'ED' | 'RA';
+export type LegacyGradeLetter = 'B' | 'C' | 'D';
+
 export interface PreescolarGradeLetter {
-  letter: 'A' | 'B' | 'C' | 'D';
+  letter: QualitativeGradeLetter;
   label: string;
   description: string;
-  score: number; // A=10, B=8, C=6, D=5 for averaging
+  score: number; // A=10, E=8, ED=6, RA=5 for averaging
 }
 
 export const PREESCOLAR_LETTERS: PreescolarGradeLetter[] = [
-  { letter: 'A', label: 'A (Destacado / Excelente)', description: 'Destacado / Excelente', score: 10 },
-  { letter: 'B', label: 'B (Satisfactorio / Bueno)', description: 'Satisfactorio / Bueno', score: 8 },
-  { letter: 'C', label: 'C (Suficiente / En Proceso)', description: 'Suficiente / En Proceso', score: 6 },
-  { letter: 'D', label: 'D (Insuficiente / Requiere Apoyo)', description: 'Insuficiente / Requiere Apoyo', score: 5 },
+  { letter: 'A', label: 'A (Avanzado)', description: 'Avanzado', score: 10 },
+  { letter: 'E', label: 'E (Esperado)', description: 'Esperado', score: 8 },
+  { letter: 'ED', label: 'ED (En Desarrollo)', description: 'En Desarrollo', score: 6 },
+  { letter: 'RA', label: 'RA (Requiere Apoyo)', description: 'Requiere Apoyo', score: 5 },
 ];
 
 /**
  * Returns default grading scale for a given level name:
- * - Preescolar: 'letters' (A, B, C, D)
+ * - Preescolar: 'letters' (A, E, ED, RA)
  * - Preparatoria / Bachillerato: 'numeric_100' (0 - 100)
  * - Primaria / Secundaria / others: 'numeric_10' (0 - 10)
  */
@@ -56,30 +59,30 @@ export function getGradingScale(settings: AppSettings | null, levelName?: string
 }
 
 /**
- * Converts a letter (A, B, C, D) to its point equivalent (A=10, B=8, C=6, D=5)
+ * Converts a letter (A, E, ED, RA or legacy B, C, D) to its point equivalent (A=10, E/B=8, ED/C=6, RA/D=5)
  */
 export function letterToPoints(letter: string): number | null {
   const clean = letter.toUpperCase().trim();
   if (clean === 'A') return 10;
-  if (clean === 'B') return 8;
-  if (clean === 'C') return 6;
-  if (clean === 'D') return 5;
+  if (clean === 'E' || clean === 'B') return 8;
+  if (clean === 'ED' || clean === 'C') return 6;
+  if (clean === 'RA' || clean === 'D') return 5;
   return null;
 }
 
 /**
- * Converts a numerical score back to letter grade (A, B, C, D)
+ * Converts a numerical score back to letter grade (A, E, ED, RA)
  * Cutoffs:
- * >= 9.0  -> A
- * >= 7.0  -> B (midpoint between 8 and 6 is 7.0)
- * >= 5.5  -> C (midpoint between 6 and 5 is 5.5)
- * < 5.5   -> D
+ * >= 9.0  -> A (Avanzado)
+ * >= 7.0  -> E (Esperado - midpoint between 8 and 6 is 7.0)
+ * >= 5.5  -> ED (En Desarrollo - midpoint between 6 and 5 is 5.5)
+ * < 5.5   -> RA (Requiere Apoyo)
  */
-export function pointsToLetter(points: number): 'A' | 'B' | 'C' | 'D' {
+export function pointsToLetter(points: number): QualitativeGradeLetter {
   if (points >= 9.0) return 'A';
-  if (points >= 7.0) return 'B';
-  if (points >= 5.5) return 'C';
-  return 'D';
+  if (points >= 7.0) return 'E';
+  if (points >= 5.5) return 'ED';
+  return 'RA';
 }
 
 /**
@@ -99,7 +102,7 @@ export function gradeToNumeric(grade: number | string | undefined | null, scale:
 
 /**
  * Formats an average according to the level's scale:
- * - 'letters': returns 'A' | 'B' | 'C' | 'D'
+ * - 'letters': returns 'A' | 'E' | 'ED' | 'RA'
  * - 'numeric_100': returns rounded whole integer string (e.g. '88', '95', '100')
  * - 'numeric_10': returns 1 decimal string (e.g. '8.8', '9.5')
  */
@@ -417,7 +420,7 @@ export function isObservationsLevel(levelName?: string): boolean {
  */
 export function isPureAcademicSubject(subject: Subject): boolean {
   if (!subject) return false;
-  return !subject.category || subject.category === 'Académica';
+  return !subject.category || subject.category === 'Académica' || subject.category === 'Recursamiento';
 }
 
 /**
@@ -438,5 +441,18 @@ export function getSubjectObservation(
     return bg.observations[subjectName];
   }
   return '';
+}
+
+/**
+ * Checks whether a student is enrolled in a subject.
+ * - Non-TAE subjects apply to all students.
+ * - TAE subjects with taeStudentMode === 'all' apply to all students in the level.
+ * - TAE subjects with taeStudentMode === 'specific' apply only to students listed in taeStudentIds.
+ */
+export function isStudentEnrolledInSubject(subject: Subject, studentId: string): boolean {
+  if (!subject) return false;
+  if (!subject.isTae) return true;
+  if (!subject.taeStudentMode || subject.taeStudentMode === 'all') return true;
+  return Boolean(subject.taeStudentIds && subject.taeStudentIds.includes(studentId));
 }
 

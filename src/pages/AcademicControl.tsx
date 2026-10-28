@@ -20,18 +20,19 @@ import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
 import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade, isObservationsLevel } from '../lib/evaluationUtils';
 import { sendWelcomeEmail } from '../services/mailService';
+import { toast } from 'react-toastify';
 
 export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
-  const defaultTab = (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects') 
+  const defaultTab = (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects' || requestedTab === 'taes') 
     ? requestedTab 
     : 'studentList';
-  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects' | 'taes'>(defaultTab);
 
   useEffect(() => {
-    if (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects') {
+    if (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects' || requestedTab === 'taes') {
       setActiveTab(requestedTab);
     }
   }, [requestedTab]);
@@ -640,6 +641,18 @@ export default function AcademicControl() {
             >
               Materias
             </button>
+            <button
+              onClick={() => setActiveTab('taes')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5",
+                activeTab === 'taes' 
+                  ? "bg-blue-900 text-white shadow-sm" 
+                  : "text-slate-400 hover:text-blue-950"
+              )}
+            >
+              <Sparkles size={11} className={activeTab === 'taes' ? "text-blue-200" : "text-slate-400"} />
+              TAES
+            </button>
           </div>
           {activeTab === 'studentList' && (
             <button
@@ -1022,8 +1035,8 @@ export default function AcademicControl() {
                                 "text-[10px] font-black px-1.5 py-0.5 rounded",
                                 scale === 'letters'
                                   ? (finalAvgDisplay === 'A' ? "bg-emerald-50 text-emerald-600 border border-emerald-200 group-hover:bg-emerald-500 group-hover:text-white" :
-                                     finalAvgDisplay === 'B' ? "bg-blue-50 text-blue-600 border border-blue-200 group-hover:bg-blue-600 group-hover:text-white" :
-                                     finalAvgDisplay === 'C' ? "bg-amber-50 text-amber-600 border border-amber-200 group-hover:bg-amber-500 group-hover:text-white" :
+                                     finalAvgDisplay === 'E' || finalAvgDisplay === 'B' ? "bg-blue-50 text-blue-600 border border-blue-200 group-hover:bg-blue-600 group-hover:text-white" :
+                                     finalAvgDisplay === 'ED' || finalAvgDisplay === 'C' ? "bg-amber-50 text-amber-600 border border-amber-200 group-hover:bg-amber-500 group-hover:text-white" :
                                      "bg-rose-50 text-rose-600 border border-rose-200 group-hover:bg-rose-500 group-hover:text-white")
                                   : (scale === 'numeric_100'
                                      ? (Number(finalAvgDisplay) < 60 ? "bg-rose-50 text-rose-600 group-hover:bg-rose-500 group-hover:text-white" : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white")
@@ -1092,6 +1105,16 @@ export default function AcademicControl() {
 
       {activeTab === 'subjects' && (
         <SubjectsManagement subjects={subjects} settings={settings} availableLevels={availableLevels} />
+      )}
+
+      {activeTab === 'taes' && (
+        <TaesManagement
+          subjects={subjects}
+          students={students}
+          settings={settings}
+          availableLevels={availableLevels}
+          onGoToSubjects={() => setActiveTab('subjects')}
+        />
       )}
 
       {/* Select Group Modal */}
@@ -2406,10 +2429,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
   const [newSubject, setNewSubject] = useState<{
     name: string;
     level: string;
-    category: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos';
+    category: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos' | 'Recursamiento';
     linkedSubjectName: string;
     isAttendanceCount: boolean;
-  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false });
+    isTae: boolean;
+  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
@@ -2420,12 +2444,30 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
     { key: 'Académica', label: 'Académica', color: 'blue', icon: '📘' },
     { key: 'Autonomía Curricular', label: 'Autonomía Curricular', color: 'amber', icon: '🎨' },
     { key: 'Desarrollo Personal', label: 'Desarrollo Personal', color: 'indigo', icon: '🧠' },
+    { key: 'Recursamiento', label: 'Recursamiento', color: 'rose', icon: '🔄' },
   ];
 
   const getCategoryColor = (cat: string) => {
     if (cat === 'Autonomía Curricular') return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', header: 'bg-amber-50/80 border-amber-100', headerText: 'text-amber-600' };
     if (cat === 'Desarrollo Personal' || cat === 'Aspectos Formativos') return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', header: 'bg-indigo-50/80 border-indigo-100', headerText: 'text-indigo-600' };
+    if (cat === 'Recursamiento') return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', header: 'bg-rose-50/80 border-rose-100', headerText: 'text-rose-600' };
     return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', header: 'bg-blue-50/80 border-blue-100', headerText: 'text-blue-600' };
+  };
+
+  const handleMoveCategory = async (subject: Subject, newCategory: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Recursamiento') => {
+    if (subject.category === newCategory) return;
+    try {
+      await updateDoc(doc(db, 'subjects', subject.id), {
+        category: newCategory,
+        linkedSubjectName: newCategory === 'Autonomía Curricular' ? (subject.linkedSubjectName || null) : null,
+        isAttendanceCount: (newCategory === 'Desarrollo Personal' || (newCategory as any) === 'Aspectos Formativos') ? !!subject.isAttendanceCount : false,
+        updatedAt: serverTimestamp()
+      });
+      toast.success(`Materia "${subject.name}" movida a ${newCategory}.`);
+    } catch (err) {
+      console.error("Error moving subject category:", err);
+      toast.error("Error al mover la materia de categoría");
+    }
   };
 
   const handleCreateSubject = async () => {
@@ -2451,9 +2493,13 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         category: newSubject.category,
         linkedSubjectName: newSubject.category === 'Autonomía Curricular' ? (newSubject.linkedSubjectName || null) : null,
         isAttendanceCount: (newSubject.category === 'Desarrollo Personal' || newSubject.category === 'Aspectos Formativos') ? !!newSubject.isAttendanceCount : false,
+        isTae: !!newSubject.isTae,
+        taeStudentMode: newSubject.isTae ? 'all' : null,
+        taeStudentIds: [],
         createdAt: serverTimestamp()
       });
-      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false });
+      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false });
+      toast.success(newSubject.isTae ? `Materia TAE "${cleanName}" creada. Configura sus alumnos en la pestaña TAES.` : `Materia "${cleanName}" creada correctamente.`);
     } catch (error) {
       console.error("Error creating subject:", error);
       alert("Error al crear materia");
@@ -2483,8 +2529,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         category: editingSubject.category || 'Académica',
         linkedSubjectName: editingSubject.category === 'Autonomía Curricular' ? (editingSubject.linkedSubjectName || null) : null,
         isAttendanceCount: (editingSubject.category === 'Desarrollo Personal' || editingSubject.category === 'Aspectos Formativos') ? !!editingSubject.isAttendanceCount : false,
+        isTae: !!editingSubject.isTae,
+        taeStudentMode: editingSubject.isTae ? (editingSubject.taeStudentMode || 'all') : null,
         updatedAt: serverTimestamp()
       });
+      toast.success("Materia actualizada correctamente.");
       setEditingSubject(null);
     } catch (error) {
       console.error("Error updating subject:", error);
@@ -2497,10 +2546,9 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
   const handleDeleteSubject = async (id: string) => {
     if (!window.confirm("¿Estás seguro de eliminar esta materia? Esto podría afectar la visualización de calificaciones anteriores.")) return;
     try {
-      // In a real app we'd use deleteDoc, but let's be careful with foreign keys. 
-      // For now just delete.
       const { deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'subjects', id));
+      toast.success("Materia eliminada.");
     } catch (error) {
       console.error("Error deleting subject:", error);
       alert("Error al eliminar materia");
@@ -2541,9 +2589,13 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
           category: subj.category || 'Académica',
           linkedSubjectName: subj.linkedSubjectName || null,
           isAttendanceCount: !!subj.isAttendanceCount,
+          isTae: !!subj.isTae,
+          taeStudentMode: subj.isTae ? (subj.taeStudentMode || 'all') : null,
+          taeStudentIds: subj.isTae ? (subj.taeStudentIds || []) : [],
           createdAt: serverTimestamp()
         });
       }
+      toast.success(`${toCreate.length} materias copiadas a ${targetLevel}.`);
       setCopyingLevel(null);
     } catch (error) {
       console.error("Error copying subjects:", error);
@@ -2560,7 +2612,10 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
 
   const normalizeCategory = (cat?: string) => {
     if (cat === 'Aspectos Formativos') return 'Desarrollo Personal';
-    return cat || 'Académica';
+    if (cat === 'Recursamiento') return 'Recursamiento';
+    if (cat === 'Autonomía Curricular') return 'Autonomía Curricular';
+    if (cat === 'Desarrollo Personal') return 'Desarrollo Personal';
+    return 'Académica';
   };
 
   return (
@@ -2570,7 +2625,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2rem] mb-6 flex items-center gap-2 italic">
           <Plus size={16} className="text-blue-500" /> Registrar Nueva Materia
         </h2>
-        <div className={cn("grid grid-cols-1 gap-4 items-end", (newSubject.category === 'Autonomía Curricular' || newSubject.category === 'Desarrollo Personal') ? "md:grid-cols-5" : "md:grid-cols-4")}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 xl:grid-cols-6 gap-4 items-end">
           <FormInput 
             label="Nombre de la Materia" 
             placeholder="Ej. Matemáticas I, Inglés..."
@@ -2598,6 +2653,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
               <option value="Académica">Académica (Base)</option>
               <option value="Autonomía Curricular">Autonomía Curricular</option>
               <option value="Desarrollo Personal">Desarrollo Personal / Conducta</option>
+              <option value="Recursamiento">Recursamiento</option>
             </select>
           </div>
           {newSubject.category === 'Autonomía Curricular' && (
@@ -2637,6 +2693,22 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
               </label>
             </div>
           )}
+          <div>
+            <label className="block text-[10px] font-black text-blue-900 uppercase tracking-widest mb-1.5 ml-1">
+              Modalidad TAE
+            </label>
+            <label className="flex items-center gap-2 px-3 py-3 bg-blue-50/60 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-100/50 transition-colors">
+              <input
+                type="checkbox"
+                checked={!!newSubject.isTae}
+                onChange={(e) => setNewSubject({ ...newSubject, isTae: e.target.checked })}
+                className="w-4 h-4 text-blue-900 rounded border-blue-300 focus:ring-blue-900 cursor-pointer"
+              />
+              <span className="text-[11px] font-bold text-blue-950 uppercase tracking-tight leading-none">
+                ¿Es TAE?
+              </span>
+            </label>
+          </div>
           <button
             onClick={handleCreateSubject}
             disabled={isSaving}
@@ -2738,11 +2810,12 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       category: e.target.value as any,
                                       linkedSubjectName: e.target.value === 'Autonomía Curricular' ? editingSubject.linkedSubjectName : undefined
                                     })}
-                                    className="bg-white border border-blue-200 rounded px-1 py-1 text-[8px] font-black uppercase"
+                                    className="bg-white border border-blue-200 rounded px-1.5 py-1 text-[9px] font-black uppercase"
                                   >
-                                    <option value="Académica">Aca.</option>
+                                    <option value="Académica">Académica</option>
                                     <option value="Autonomía Curricular">Aut. Curr.</option>
                                     <option value="Desarrollo Personal">Des. Personal</option>
+                                    <option value="Recursamiento">Recursamiento</option>
                                   </select>
                                   {normalizeCategory(editingSubject.category) === 'Autonomía Curricular' && (
                                     <select
@@ -2770,6 +2843,15 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       <span>Suma Faltas</span>
                                     </label>
                                   )}
+                                  <label className="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-blue-900 cursor-pointer" title="Marcar como materia TAE">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!editingSubject.isTae}
+                                      onChange={(e) => setEditingSubject({ ...editingSubject, isTae: e.target.checked })}
+                                      className="w-3 h-3 text-blue-900 rounded"
+                                    />
+                                    <span>Es TAE</span>
+                                  </label>
                                   <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
                                   <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>
                                 </div>
@@ -2777,6 +2859,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                 <>
                                   <div className="flex flex-col min-w-0 pr-2">
                                     <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic truncate">{subj.name}</span>
+                                    {subj.isTae && (
+                                      <span className="text-[9px] font-black text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
+                                        <Sparkles size={10} className="text-blue-700" /> TAE {subj.taeStudentMode === 'specific' ? `(${subj.taeStudentIds?.length || 0} alumnos)` : '(Todos los alumnos)'}
+                                      </span>
+                                    )}
                                     {subj.linkedSubjectName && (
                                       <span className="text-[9px] font-bold text-amber-600 flex items-center gap-1 mt-0.5">
                                         <Link2 size={10} /> Suma a: {subj.linkedSubjectName}
@@ -2788,16 +2875,29 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                                    <select
+                                      value={normalizeCategory(subj.category)}
+                                      onChange={(e) => handleMoveCategory(subj, e.target.value as any)}
+                                      className="bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded px-1.5 py-0.5 text-[8px] font-black uppercase text-slate-700 outline-none cursor-pointer transition-colors"
+                                      title="Mover categoría de la materia"
+                                    >
+                                      <option value="Académica">Académica</option>
+                                      <option value="Autonomía Curricular">Aut. Curr.</option>
+                                      <option value="Desarrollo Personal">Des. Personal</option>
+                                      <option value="Recursamiento">Recursamiento</option>
+                                    </select>
                                     <button 
                                       onClick={() => setEditingSubject(subj)}
                                       className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                      title="Editar materia"
                                     >
                                       <Edit2 size={12} />
                                     </button>
                                     <button 
                                       onClick={() => handleDeleteSubject(subj.id)}
                                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                      title="Eliminar materia"
                                     >
                                       <Trash2 size={12} />
                                     </button>
@@ -2820,6 +2920,494 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function TaesManagement({
+  subjects,
+  students,
+  settings,
+  availableLevels,
+  onGoToSubjects
+}: {
+  subjects: Subject[];
+  students: Student[];
+  settings: AppSettings | null;
+  availableLevels?: string[];
+  onGoToSubjects: () => void;
+}) {
+  const levels = (availableLevels && availableLevels.length > 0) ? availableLevels : (settings?.academicLevels || []);
+  const [selectedLevelFilter, setSelectedLevelFilter] = useState<string>('all');
+  const [taeSearch, setTaeSearch] = useState<string>('');
+
+  // Modal student assignment state
+  const [managingTae, setManagingTae] = useState<Subject | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [modalSearchTerm, setModalSearchTerm] = useState<string>('');
+  const [modalGradeFilter, setModalGradeFilter] = useState<string>('all');
+  const [modalGroupFilter, setModalGroupFilter] = useState<string>('all');
+  const [isSavingAssignment, setIsSavingAssignment] = useState<boolean>(false);
+
+  // All subjects marked as TAE
+  const taes = useMemo(() => {
+    return subjects.filter(s => !!s.isTae);
+  }, [subjects]);
+
+  // Counts of TAES per level
+  const countsByLevel = useMemo(() => {
+    const map: Record<string, number> = {};
+    levels.forEach(lvl => {
+      map[lvl] = taes.filter(t => (t.level || '').toLowerCase().trim() === lvl.toLowerCase().trim()).length;
+    });
+    return map;
+  }, [levels, taes]);
+
+  // Filtered TAES by level and search term
+  const filteredTaes = useMemo(() => {
+    return taes.filter(t => {
+      const matchesLevel = selectedLevelFilter === 'all' || (t.level?.toLowerCase().trim() === selectedLevelFilter.toLowerCase().trim());
+      const matchesSearch = !taeSearch.trim() || t.name.toLowerCase().includes(taeSearch.toLowerCase().trim());
+      return matchesLevel && matchesSearch;
+    });
+  }, [taes, selectedLevelFilter, taeSearch]);
+
+  const handleToggleMode = async (tae: Subject, mode: 'all' | 'specific') => {
+    try {
+      await updateDoc(doc(db, 'subjects', tae.id), {
+        taeStudentMode: mode,
+        updatedAt: serverTimestamp()
+      });
+      if (mode === 'all') {
+        toast.success(`TAE asignada a todos los alumnos.`);
+      } else {
+        openAssignModal({ ...tae, taeStudentMode: 'specific' });
+      }
+    } catch (err) {
+      console.error("Error updating TAE mode:", err);
+      toast.error("Error al actualizar la modalidad");
+    }
+  };
+
+  const openAssignModal = (tae: Subject) => {
+    setManagingTae(tae);
+    setSelectedStudentIds(tae.taeStudentIds || []);
+    setModalSearchTerm('');
+    setModalGradeFilter('all');
+    setModalGroupFilter('all');
+  };
+
+  const handleSaveStudents = async () => {
+    if (!managingTae) return;
+    setIsSavingAssignment(true);
+    try {
+      await updateDoc(doc(db, 'subjects', managingTae.id), {
+        taeStudentMode: 'specific',
+        taeStudentIds: selectedStudentIds,
+        updatedAt: serverTimestamp()
+      });
+      toast.success(`Alumnos asignados correctamente.`);
+      setManagingTae(null);
+    } catch (err) {
+      console.error("Error saving TAE students:", err);
+      toast.error("Error al guardar alumnos");
+    } finally {
+      setIsSavingAssignment(false);
+    }
+  };
+
+  // Eligible students for the TAE's level
+  const eligibleStudents = useMemo(() => {
+    if (!managingTae) return [];
+    const lvl = managingTae.level?.toLowerCase().trim();
+    return students.filter(st => {
+      const stLvl = st.level?.toLowerCase().trim();
+      return stLvl === lvl;
+    });
+  }, [managingTae, students]);
+
+  // Distinct grades & groups in eligible students
+  const modalAvailableGrades = useMemo(() => {
+    const setG = new Set<string>();
+    eligibleStudents.forEach(st => {
+      if (st.grade) setG.add(st.grade);
+    });
+    return Array.from(setG).sort();
+  }, [eligibleStudents]);
+
+  const modalAvailableGroups = useMemo(() => {
+    const setGr = new Set<string>();
+    eligibleStudents.forEach(st => {
+      if (st.group) setGr.add(st.group);
+    });
+    return Array.from(setGr).sort();
+  }, [eligibleStudents]);
+
+  // Filtered students inside modal
+  const modalFilteredStudents = useMemo(() => {
+    return eligibleStudents.filter(st => {
+      if (modalGradeFilter !== 'all' && st.grade !== modalGradeFilter) return false;
+      if (modalGroupFilter !== 'all' && st.group !== modalGroupFilter) return false;
+      if (modalSearchTerm.trim()) {
+        const query = modalSearchTerm.toLowerCase().trim();
+        const full = `${st.name || ''} ${st.lastName || ''} ${st.motherLastName || ''} ${st.curp || ''} ${st.id || ''}`.toLowerCase();
+        if (!full.includes(query)) return false;
+      }
+      return true;
+    }).sort((a, b) => {
+      const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
+      const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [eligibleStudents, modalGradeFilter, modalGroupFilter, modalSearchTerm]);
+
+  const toggleStudentSelection = (studentId: string) => {
+    setSelectedStudentIds(prev => 
+      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+    );
+  };
+
+  const selectAllVisible = () => {
+    const visibleIds = modalFilteredStudents.map(s => s.id);
+    setSelectedStudentIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+  };
+
+  const deselectAllVisible = () => {
+    const visibleIds = new Set(modalFilteredStudents.map(s => s.id));
+    setSelectedStudentIds(prev => prev.filter(id => !visibleIds.has(id)));
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Top Filter Bar: Level pills + Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <button
+            onClick={() => setSelectedLevelFilter('all')}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shrink-0 cursor-pointer",
+              selectedLevelFilter === 'all'
+                ? "bg-blue-900 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            )}
+          >
+            <span>Todos</span>
+            <span className={cn(
+              "text-[9px] px-1.5 py-0.2 rounded font-bold",
+              selectedLevelFilter === 'all' ? "bg-blue-800 text-blue-100" : "bg-white text-slate-600"
+            )}>
+              {taes.length}
+            </span>
+          </button>
+
+          {levels.map(lvl => {
+            const count = countsByLevel[lvl] || 0;
+            const isSelected = selectedLevelFilter.toLowerCase().trim() === lvl.toLowerCase().trim();
+            return (
+              <button
+                key={lvl}
+                onClick={() => setSelectedLevelFilter(lvl)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shrink-0 cursor-pointer",
+                  isSelected
+                    ? "bg-blue-900 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                )}
+              >
+                <span>{lvl}</span>
+                <span className={cn(
+                  "text-[9px] px-1.5 py-0.2 rounded font-bold",
+                  isSelected ? "bg-blue-800 text-blue-100" : "bg-white text-slate-600"
+                )}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="relative w-full sm:w-60">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+          <input
+            placeholder="Buscar TAE..."
+            value={taeSearch}
+            onChange={(e) => setTaeSearch(e.target.value)}
+            className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold w-full outline-none focus:bg-white focus:border-blue-900 uppercase"
+          />
+        </div>
+      </div>
+
+      {/* TAES Grid / Empty State */}
+      {taes.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            No hay materias marcadas como TAE
+          </p>
+          <button
+            onClick={onGoToSubjects}
+            className="px-4 py-2 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+          >
+            Ir a Materias
+          </button>
+        </div>
+      ) : filteredTaes.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400 text-xs font-bold uppercase">
+          Sin TAES para este filtro
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredTaes.map(tae => {
+            const isSpecific = tae.taeStudentMode === 'specific';
+            const assignedCount = (tae.taeStudentIds || []).length;
+
+            return (
+              <div
+                key={tae.id}
+                className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col justify-between gap-3 hover:border-slate-300 transition-colors"
+              >
+                <div>
+                  <span className="inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200">
+                    {tae.level}
+                  </span>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight mt-1.5 truncate" title={tae.name}>
+                    {tae.name}
+                  </h3>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  {/* Segmented Switch */}
+                  <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-100 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleMode(tae, 'all')}
+                      className={cn(
+                        "py-1 text-[10px] font-black uppercase tracking-wider rounded transition-all cursor-pointer",
+                        !isSpecific
+                          ? "bg-blue-900 text-white"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleMode(tae, 'specific')}
+                      className={cn(
+                        "py-1 text-[10px] font-black uppercase tracking-wider rounded transition-all cursor-pointer",
+                        isSpecific
+                          ? "bg-blue-900 text-white"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      Específicos
+                    </button>
+                  </div>
+
+                  {isSpecific ? (
+                    <button
+                      type="button"
+                      onClick={() => openAssignModal(tae)}
+                      className="w-full py-1.5 px-3 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                    >
+                      <Users size={12} />
+                      <span>Alumnos ({assignedCount})</span>
+                    </button>
+                  ) : (
+                    <div className="py-1.5 text-center text-xs font-bold text-slate-500 uppercase bg-slate-50 rounded-lg border border-slate-200/60">
+                      Todos los alumnos
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal: Asignar Alumnos a TAE */}
+      <AnimatePresence>
+        {managingTae && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setManagingTae(null)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden z-10 flex flex-col max-h-[85vh]"
+            >
+              {/* Header */}
+              <div className="px-5 py-4 bg-blue-900 text-white flex items-center justify-between gap-4 shrink-0">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-black uppercase tracking-wide truncate">
+                    {managingTae.name}
+                  </h2>
+                  <p className="text-[10px] font-bold text-blue-200 uppercase mt-0.5">
+                    {managingTae.level} • Asignación de Alumnos
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setManagingTae(null)}
+                  className="p-1 text-white/80 hover:text-white rounded transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-2 shrink-0">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                    <input
+                      placeholder="Buscar alumno..."
+                      value={modalSearchTerm}
+                      onChange={(e) => setModalSearchTerm(e.target.value)}
+                      className="pl-7 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold w-full outline-none focus:border-blue-900 uppercase"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <select
+                      value={modalGradeFilter}
+                      onChange={(e) => setModalGradeFilter(e.target.value)}
+                      className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none uppercase"
+                    >
+                      <option value="all">Grado: Todos</option>
+                      {modalAvailableGrades.map(g => (
+                        <option key={g} value={g}>Grado: {g}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={modalGroupFilter}
+                      onChange={(e) => setModalGroupFilter(e.target.value)}
+                      className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none uppercase"
+                    >
+                      <option value="all">Grupo: Todos</option>
+                      {modalAvailableGroups.map(gr => (
+                        <option key={gr} value={gr}>Grupo: {gr}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 text-xs pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllVisible}
+                      className="text-[10px] font-black uppercase text-blue-900 hover:text-blue-950 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      Seleccionar visibles ({modalFilteredStudents.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deselectAllVisible}
+                      className="text-[10px] font-black uppercase text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      Deseleccionar
+                    </button>
+                  </div>
+
+                  <span className="text-[11px] font-black text-blue-950">
+                    {selectedStudentIds.length} seleccionados de {eligibleStudents.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Student Rows */}
+              <div className="flex-1 overflow-y-auto p-2 divide-y divide-slate-100">
+                {modalFilteredStudents.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 text-xs font-bold uppercase">
+                    Sin alumnos que coincidan
+                  </div>
+                ) : (
+                  modalFilteredStudents.map(student => {
+                    const isSelected = selectedStudentIds.includes(student.id);
+
+                    return (
+                      <div
+                        key={student.id}
+                        onClick={() => toggleStudentSelection(student.id)}
+                        className={cn(
+                          "py-2 px-3 rounded-lg transition-colors flex items-center justify-between gap-3 cursor-pointer select-none",
+                          isSelected ? "bg-blue-50/70" : "hover:bg-slate-50"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="w-4 h-4 text-blue-900 rounded border-slate-300 focus:ring-blue-900 cursor-pointer"
+                          />
+
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase text-slate-900 truncate">
+                              {student.lastName} {student.motherLastName} {student.name}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-medium uppercase">
+                              {student.grade || ''} "{student.group || ''}" • Matrícula: {student.id.substring(0, 8)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className={cn(
+                          "text-[9px] font-black uppercase px-2 py-0.5 rounded shrink-0",
+                          isSelected ? "bg-blue-900 text-white" : "bg-slate-100 text-slate-400"
+                        )}>
+                          {isSelected ? 'Inscrito' : 'No'}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <span className="text-xs font-bold text-slate-500">
+                  Total: <strong>{selectedStudentIds.length}</strong>
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setManagingTae(null)}
+                    disabled={isSavingAssignment}
+                    className="px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveStudents}
+                    disabled={isSavingAssignment}
+                    className="px-4 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingAssignment ? (
+                      <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Check size={13} strokeWidth={3} />
+                    )}
+                    <span>Guardar ({selectedStudentIds.length})</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -7,7 +7,8 @@ import {
   formatAverage, 
   getEffectiveSubjectGrade, 
   isObservationsLevel, 
-  getSubjectObservation 
+  getSubjectObservation,
+  isStudentEnrolledInSubject
 } from '../lib/evaluationUtils';
 
 const styles = StyleSheet.create({
@@ -517,22 +518,53 @@ export default function ReportCardPDF({
   const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
   const isPreescolarOrPrimaria = isObservationsLevel(student.level);
 
-  const proxiedLogo = settings?.logoUrl && settings.logoUrl.length > 0 
-    ? `/api/proxy/image?url=${encodeURIComponent(settings.logoUrl)}`
+  // Level-specific logo with fallback to general school logo
+  const studentLevel = student?.level?.trim();
+  let rawLogo = settings?.logoUrl;
+  if (studentLevel && settings?.levelLogos) {
+    if (settings.levelLogos[studentLevel]) {
+      rawLogo = settings.levelLogos[studentLevel];
+    } else {
+      const matchedKey = Object.keys(settings.levelLogos).find(
+        k => k.trim().toLowerCase() === studentLevel.toLowerCase()
+      );
+      if (matchedKey && settings.levelLogos[matchedKey]) {
+        rawLogo = settings.levelLogos[matchedKey];
+      }
+    }
+  }
+
+  const proxiedLogo = rawLogo && rawLogo.length > 0 
+    ? (rawLogo.startsWith('data:') ? rawLogo : `/api/proxy/image?url=${encodeURIComponent(rawLogo)}`)
     : null;
 
-  // Separate subjects into 3 categories as requested
-  const academicSubjects = subjects
-    .filter(s => s.category !== 'Autonomía Curricular' && s.category !== 'Aspectos Formativos' && s.category !== 'Desarrollo Personal')
+  // Filter subjects for this specific student:
+  // Non-TAE subjects apply to all students.
+  // TAE subjects apply only if the student is enrolled in this TAE.
+  const studentSubjects = subjects.filter(s => isStudentEnrolledInSubject(s, student.id));
+
+  // Separate subjects into categories as requested
+  const academicSubjects = studentSubjects
+    .filter(s => s.category !== 'Autonomía Curricular' && s.category !== 'Aspectos Formativos' && s.category !== 'Desarrollo Personal' && s.category !== 'Recursamiento')
     .map(s => s.name);
 
-  const curricularSubjects = subjects
+  const recursamientoSubjects = studentSubjects
+    .filter(s => s.category === 'Recursamiento')
+    .map(s => s.name);
+
+  const curricularSubjects = studentSubjects
     .filter(s => s.category === 'Autonomía Curricular')
     .map(s => s.name);
 
-  const personalDevSubjects = subjects
+  const personalDevSubjects = studentSubjects
     .filter(s => s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal')
     .map(s => s.name);
+
+  const hasRecursamientoInLevel = subjects.some(s => 
+    s.category === 'Recursamiento' && (!s.level || s.level.toLowerCase().trim() === student.level?.toLowerCase().trim())
+  );
+
+  const observationSubjects = [...academicSubjects, ...recursamientoSubjects];
 
   // Behavioral aspects mapping (conducta, uniforme, faltas)
   const behaviorMap: Record<string, 'conduct' | 'uniform' | 'attendance' | 'tasksNotDone' | 'tardies' | 'cleanliness'> = {
@@ -548,8 +580,8 @@ export default function ReportCardPDF({
   };
 
   const getGrade = (subject: string, bimestre: number): string | number => {
-    // If it's an academic subject, compute effective grade taking into account linked autonomy subjects
-    const isAcademic = academicSubjects.includes(subject);
+    // If it's an academic or recursamiento subject, compute effective grade taking into account linked autonomy subjects
+    const isAcademic = academicSubjects.includes(subject) || recursamientoSubjects.includes(subject);
     if (isAcademic) {
       const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale);
       if (effective.rawValue !== '-') {
@@ -889,13 +921,59 @@ export default function ReportCardPDF({
         </View>
 
         {/* ----------------------------------------------------
+            SECCIÓN 4: RECURSAMIENTO
+            ---------------------------------------------------- */}
+        {(recursamientoSubjects.length > 0 || hasRecursamientoInLevel) && (
+          <View wrap={false}>
+            <View style={styles.sectionBanner}>
+              <Text style={styles.sectionBannerText}>IV. RECURSAMIENTO</Text>
+              <Text style={[styles.sectionBannerText, { fontSize: 6, color: '#CBD5E1' }]}>
+                REGULARIZACIÓN Y RECUPERACIÓN ACADÉMICA
+              </Text>
+            </View>
+            <View style={styles.table}>
+              <View style={styles.tableHeaderRow}>
+                <Text style={styles.tableHeaderSubject}>Asignatura en Recursamiento</Text>
+                {periodIndices.map(num => (
+                  <Text key={`th-rec-${num}`} style={styles.tableHeaderPeriod}>
+                    {evalConfig.periodNames?.[num - 1] || `${num}º`}
+                  </Text>
+                ))}
+                <Text style={styles.tableHeaderAvg}>PROM</Text>
+              </View>
+
+              {recursamientoSubjects.length > 0 ? (
+                recursamientoSubjects.map((subj, idx) => (
+                  <View 
+                    key={`row-rec-${idx}`} 
+                    style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
+                  >
+                    <Text style={styles.tableCellSubject}>{subj}</Text>
+                    {periodIndices.map(num => (
+                      <Text key={`g-rec-${subj}-${num}`} style={styles.tableCellPeriod}>
+                        {getGrade(subj, num)}
+                      </Text>
+                    ))}
+                    <Text style={styles.tableCellAvg}>
+                      {getSubjectAvg(subj)}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.emptyRowText}>Sin asignaturas en recursamiento</Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ----------------------------------------------------
             PROMEDIO FINAL DEL CICLO & ESCALA
             ---------------------------------------------------- */}
         <View style={styles.cycleSummaryBox}>
           <View style={styles.scaleNotice}>
             {scale === 'letters' ? (
               <Text>
-                <Text style={{ fontWeight: 'bold' }}>ESCALA CUALITATIVA:</Text> A: Destacado • B: Satisfactorio • C: Suficiente • D: Requiere Apoyo.
+                <Text style={{ fontWeight: 'bold' }}>ESCALA CUALITATIVA:</Text> A: Avanzado • E: Esperado • ED: En Desarrollo • RA: Requiere Apoyo.
               </Text>
             ) : scale === 'numeric_100' ? (
               <Text>
@@ -922,10 +1000,7 @@ export default function ReportCardPDF({
         <View style={styles.signaturesContainer}>
           <View style={styles.signatureBlock}>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>
-              {teacherName || student.teacherName ? teacherName || student.teacherName : 'DOCENTE TITULAR / PROFESOR(A)'}
-            </Text>
-            <Text style={styles.signatureSub}>FIRMA DEL DOCENTE</Text>
+            <Text style={styles.signatureLabel}>FIRMA DEL DOCENTE</Text>
           </View>
 
           <View style={styles.sealBlock}>
@@ -934,10 +1009,7 @@ export default function ReportCardPDF({
 
           <View style={styles.signatureBlock}>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>
-              DIRECCIÓN DE NIVEL
-            </Text>
-            <Text style={styles.signatureSub}>CONTROL ESCOLAR</Text>
+            <Text style={styles.signatureLabel}>DIRECCIÓN DE NIVEL</Text>
           </View>
         </View>
       </Page>
@@ -1013,8 +1085,8 @@ export default function ReportCardPDF({
             </View>
 
             {/* Rows */}
-            {academicSubjects.length > 0 ? (
-              academicSubjects.map((subject, idx) => (
+            {observationSubjects.length > 0 ? (
+              observationSubjects.map((subject, idx) => (
                 <View 
                   key={`obs-row-${idx}`} 
                   style={[styles.obsTableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
@@ -1051,10 +1123,7 @@ export default function ReportCardPDF({
           <View style={styles.signaturesContainer}>
             <View style={styles.signatureBlock}>
               <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>
-                {teacherName || student.teacherName ? teacherName || student.teacherName : 'DOCENTE TITULAR / MAESTRO(A)'}
-              </Text>
-              <Text style={styles.signatureSub}>FIRMA DEL DOCENTE</Text>
+              <Text style={styles.signatureLabel}>FIRMA DEL DOCENTE</Text>
             </View>
 
             <View style={styles.sealBlock}>

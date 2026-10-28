@@ -11,7 +11,7 @@ import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import { calculateStudentDebts } from '../lib/paymentUtils';
-import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade, isStudentEnrolledInSubject, isPureAcademicSubject } from '../lib/evaluationUtils';
 
 const TAX_SYSTEMS = [
   { id: '601', name: 'General de Ley Personas Morales' },
@@ -952,9 +952,9 @@ export default function ParentDashboard() {
                 <div className="grid grid-cols-1 gap-8">
                   {students.filter(student => isStudentFeatureEnabled(student, 'grades')).map((student, sIdx) => {
                     const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
-                    const studentLevelSubjects = subjects.filter(sub => sub.level === student.level);
+                    const studentLevelSubjects = subjects.filter(sub => sub.level === student.level && isStudentEnrolledInSubject(sub, student.id));
                     const academicSubjectNames = studentLevelSubjects
-                      .filter(s => s.category === 'Académica' || !s.category)
+                      .filter(isPureAcademicSubject)
                       .map(s => s.name);
                     
                     const evalConfig = getLevelEvaluationConfig(settings, student.level);
@@ -986,8 +986,8 @@ export default function ParentDashboard() {
                     const badgeBg = overallAverage === '-' ? "bg-slate-100 text-slate-300" :
                       scale === 'letters'
                         ? (overallAverage === 'A' ? "bg-emerald-500 text-white" :
-                           overallAverage === 'B' ? "bg-blue-500 text-white" :
-                           overallAverage === 'C' ? "bg-amber-500 text-white" : "bg-rose-500 text-white")
+                           overallAverage === 'E' || overallAverage === 'B' ? "bg-blue-500 text-white" :
+                           overallAverage === 'ED' || overallAverage === 'C' ? "bg-amber-500 text-white" : "bg-rose-500 text-white")
                         : (scale === 'numeric_100'
                            ? (Number(overallAverage) >= 90 ? "bg-emerald-500 text-white" :
                               Number(overallAverage) >= 80 ? "bg-blue-500 text-white" :
@@ -1054,7 +1054,7 @@ export default function ParentDashboard() {
                                 </tr>
                               ) : (
                                 studentLevelSubjects.map((sub) => {
-                                  const isAcademic = sub.category === 'Académica' || !sub.category;
+                                  const isAcademic = isPureAcademicSubject(sub);
                                   const subjectPoints: number[] = [];
                                   periodIndices.forEach(b => {
                                     if (isAcademic) {
@@ -1104,8 +1104,8 @@ export default function ParentDashboard() {
                                         if (hasGrade) {
                                           if (scale === 'letters') {
                                             colorClass = rawGrade === 'A' ? "text-emerald-600 font-black" :
-                                                         rawGrade === 'B' ? "text-blue-600 font-black" :
-                                                         rawGrade === 'C' ? "text-amber-600 font-black" : "text-rose-600 font-black";
+                                                         rawGrade === 'E' || rawGrade === 'B' ? "text-blue-600 font-black" :
+                                                         rawGrade === 'ED' || rawGrade === 'C' ? "text-amber-600 font-black" : "text-rose-600 font-black";
                                           } else if (scale === 'numeric_100') {
                                             const n = Number(rawGrade);
                                             colorClass = n >= 90 ? "text-emerald-600 font-bold" : n >= 80 ? "text-blue-600 font-bold" : n >= 70 ? "text-amber-600 font-bold" : "text-rose-600 font-bold";
