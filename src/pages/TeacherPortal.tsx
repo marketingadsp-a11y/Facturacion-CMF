@@ -1042,6 +1042,40 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     };
   }, []);
 
+  // Helper to normalize Firestore grade docs that may contain legacy literal dot keys
+  const normalizeGradeDoc = (docId: string, raw: any): StudentGrade => {
+    const subjects = { ...(raw.subjects || {}) };
+    const subjectObservations = { ...(raw.subjectObservations || {}) };
+    const observations = { ...(raw.observations || {}) };
+
+    Object.keys(raw).forEach(key => {
+      if (key.startsWith('subjects.')) {
+        const subjName = key.slice('subjects.'.length);
+        if (raw[key] !== undefined && raw[key] !== null) {
+          subjects[subjName] = raw[key];
+        }
+      } else if (key.startsWith('subjectObservations.')) {
+        const subjName = key.slice('subjectObservations.'.length);
+        if (raw[key] !== undefined && raw[key] !== null) {
+          subjectObservations[subjName] = raw[key];
+        }
+      } else if (key.startsWith('observations.')) {
+        const subjName = key.slice('observations.'.length);
+        if (raw[key] !== undefined && raw[key] !== null) {
+          observations[subjName] = raw[key];
+        }
+      }
+    });
+
+    return {
+      ...raw,
+      id: docId,
+      subjects,
+      subjectObservations,
+      observations
+    };
+  };
+
   // Fetch grades for the selected bimestre
   useEffect(() => {
     if (!currentCycleId) return;
@@ -1055,8 +1089,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       (snap) => {
         const gradesMap: Record<string, StudentGrade> = {};
         snap.docs.forEach(doc => {
-          const data = doc.data() as StudentGrade;
-          gradesMap[data.studentId] = { ...data, id: doc.id };
+          const normalized = normalizeGradeDoc(doc.id, doc.data());
+          gradesMap[normalized.studentId] = normalized;
         });
 
         // Safely merge with local state to PREVENT remote snapshots from wiping out uncommitted inputs
@@ -1164,7 +1198,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         where('cycleId', '==', currentCycleId)
       ),
       (snap) => {
-        const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as StudentGrade));
+        const list = snap.docs.map(doc => normalizeGradeDoc(doc.id, doc.data()));
         setAllCycleGrades(list);
       },
       (error) => {
@@ -1475,14 +1509,21 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       };
 
       if (isSubject) {
+        let valToSave: any;
         if (value === '' || value === null || value === undefined) {
-          updateData[`subjects.${field}`] = deleteField();
+          valToSave = deleteField();
         } else if (gradingScale === 'letters') {
-          updateData[`subjects.${field}`] = String(value).toUpperCase().trim();
+          valToSave = String(value).toUpperCase().trim();
         } else {
           const num = parseFloat(String(value));
-          updateData[`subjects.${field}`] = isNaN(num) ? deleteField() : num;
+          valToSave = isNaN(num) ? deleteField() : num;
         }
+
+        updateData.subjects = {
+          [field]: valToSave
+        };
+        // Clean up legacy dot-notated literal field if it exists
+        updateData[`subjects.${field}`] = deleteField();
       } else {
         if (value === '' || value === null || value === undefined) {
           updateData[field] = 0;
@@ -1852,13 +1893,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         createdBy: userProfile?.id || 'system'
       };
 
-      if (trimmed) {
-        updateData[`subjectObservations.${subjectName}`] = trimmed;
-        updateData[`observations.${subjectName}`] = trimmed;
-      } else {
-        updateData[`subjectObservations.${subjectName}`] = deleteField();
-        updateData[`observations.${subjectName}`] = deleteField();
-      }
+      const valToSave = trimmed ? trimmed : deleteField();
+      updateData.subjectObservations = { [subjectName]: valToSave };
+      updateData.observations = { [subjectName]: valToSave };
+      updateData[`subjectObservations.${subjectName}`] = deleteField();
+      updateData[`observations.${subjectName}`] = deleteField();
 
       await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
       if (activeInputKeyRef.current !== dirtyKey) {
@@ -1962,18 +2001,23 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           createdBy: grade?.createdBy || userProfile?.id || 'system'
         };
 
-        // Granular update with dot notation so other subjects' observations are not overwritten
+        // Granular update with nested maps so other subjects' observations are not overwritten
+        const subjObsToUpdate: Record<string, any> = {};
+        const obsToUpdate: Record<string, any> = {};
         pureAcademicSubjects.forEach(s => {
           if (!isStudentEnrolledInSubject(s, student.id)) return;
           const obsText = (grade?.subjectObservations?.[s.name] ?? grade?.observations?.[s.name] ?? '').trim();
-          if (obsText) {
-            updateData[`subjectObservations.${s.name}`] = obsText;
-            updateData[`observations.${s.name}`] = obsText;
-          } else {
-            updateData[`subjectObservations.${s.name}`] = deleteField();
-            updateData[`observations.${s.name}`] = deleteField();
-          }
+          const val = obsText ? obsText : deleteField();
+          subjObsToUpdate[s.name] = val;
+          obsToUpdate[s.name] = val;
+          updateData[`subjectObservations.${s.name}`] = deleteField();
+          updateData[`observations.${s.name}`] = deleteField();
         });
+
+        if (Object.keys(subjObsToUpdate).length > 0) {
+          updateData.subjectObservations = subjObsToUpdate;
+          updateData.observations = obsToUpdate;
+        }
 
         curBatch.set(doc(db, 'grades', id), updateData, { merge: true });
 
@@ -2041,7 +2085,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
         const curBatch = batches[batches.length - 1];
 
-        // Granular update using dot notation so other teachers' subjects are preserved
+        // Granular update using nested maps so other teachers' subjects are preserved
         const updateData: Record<string, any> = {
           studentId: student.id,
           bimestre: selectedBimestre,
@@ -2051,20 +2095,27 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           createdBy: grade.createdBy || userProfile?.id || 'system'
         };
 
+        const subjectsToUpdate: Record<string, any> = {};
         activeLevelSubjects.forEach(s => {
           if (!isStudentEnrolledInSubject(s, student.id)) return;
           const val = grade.subjects?.[s.name];
           if (val !== undefined && val !== null && val !== '') {
             if (gradingScale === 'letters') {
-              updateData[`subjects.${s.name}`] = String(val).toUpperCase().trim();
+              subjectsToUpdate[s.name] = String(val).toUpperCase().trim();
             } else {
               const num = parseFloat(String(val));
-              updateData[`subjects.${s.name}`] = isNaN(num) ? val : num;
+              subjectsToUpdate[s.name] = isNaN(num) ? val : num;
             }
           } else if (val === '') {
-            updateData[`subjects.${s.name}`] = deleteField();
+            subjectsToUpdate[s.name] = deleteField();
           }
+          // Clean up legacy dot notation field
+          updateData[`subjects.${s.name}`] = deleteField();
         });
+
+        if (Object.keys(subjectsToUpdate).length > 0) {
+          updateData.subjects = subjectsToUpdate;
+        }
 
         curBatch.set(doc(db, 'grades', id), updateData, { merge: true });
 
@@ -2205,7 +2256,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         createdBy: userProfile.id
       };
       if (trackerSubj) {
-        updateData[`subjects.${trackerSubj.name}`] = newAbsenceCount;
+        updateData.subjects = { [trackerSubj.name]: newAbsenceCount };
+        updateData[`subjects.${trackerSubj.name}`] = deleteField();
       }
       await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
 

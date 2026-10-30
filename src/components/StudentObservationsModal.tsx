@@ -80,7 +80,20 @@ export default function StudentObservationsModal({
         const snap = await getDocs(q);
         const map: Record<number, StudentGrade> = {};
         snap.docs.forEach(d => {
-          const g = { id: d.id, ...d.data() } as StudentGrade;
+          const raw = d.data() as any;
+          const subjects = { ...(raw.subjects || {}) };
+          const subjectObservations = { ...(raw.subjectObservations || {}) };
+          const observations = { ...(raw.observations || {}) };
+          Object.keys(raw).forEach(key => {
+            if (key.startsWith('subjectObservations.')) {
+              const subjName = key.slice('subjectObservations.'.length);
+              if (raw[key] !== undefined && raw[key] !== null) subjectObservations[subjName] = raw[key];
+            } else if (key.startsWith('observations.')) {
+              const subjName = key.slice('observations.'.length);
+              if (raw[key] !== undefined && raw[key] !== null) observations[subjName] = raw[key];
+            }
+          });
+          const g = { id: d.id, ...raw, subjects, subjectObservations, observations } as StudentGrade;
           map[Number(g.bimestre)] = g;
         });
         setGradesByPeriod(map);

@@ -80,7 +80,39 @@ export default function PrintBoleta() {
             where('cycleId', '==', appSettings.currentCycleId)
           );
           const gradesSnap = await getDocs(gradesQuery);
-          const stGrades = gradesSnap.docs.map(d => ({ id: d.id, ...d.data() } as StudentGrade));
+          const stGrades = gradesSnap.docs.map(d => {
+            const raw = d.data() as any;
+            const subjects = { ...(raw.subjects || {}) };
+            const subjectObservations = { ...(raw.subjectObservations || {}) };
+            const observations = { ...(raw.observations || {}) };
+
+            Object.keys(raw).forEach(key => {
+              if (key.startsWith('subjects.')) {
+                const subjName = key.slice('subjects.'.length);
+                if (raw[key] !== undefined && raw[key] !== null) {
+                  subjects[subjName] = raw[key];
+                }
+              } else if (key.startsWith('subjectObservations.')) {
+                const subjName = key.slice('subjectObservations.'.length);
+                if (raw[key] !== undefined && raw[key] !== null) {
+                  subjectObservations[subjName] = raw[key];
+                }
+              } else if (key.startsWith('observations.')) {
+                const subjName = key.slice('observations.'.length);
+                if (raw[key] !== undefined && raw[key] !== null) {
+                  observations[subjName] = raw[key];
+                }
+              }
+            });
+
+            return {
+              ...raw,
+              id: d.id,
+              subjects,
+              subjectObservations,
+              observations
+            } as StudentGrade;
+          });
           setGrades(stGrades);
         }
       } catch (error) {

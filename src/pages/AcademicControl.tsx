@@ -120,7 +120,19 @@ export default function AcademicControl() {
     });
 
     const unsubGrades = onSnapshot(collection(db, 'grades'), (snap) => {
-      setGrades(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as StudentGrade)));
+      setGrades(snap.docs.map(doc => {
+        const raw = doc.data() as any;
+        const subjects = { ...(raw.subjects || {}) };
+        Object.keys(raw).forEach(key => {
+          if (key.startsWith('subjects.')) {
+            const subjName = key.slice('subjects.'.length);
+            if (raw[key] !== undefined && raw[key] !== null) {
+              subjects[subjName] = raw[key];
+            }
+          }
+        });
+        return { id: doc.id, ...raw, subjects } as StudentGrade;
+      }));
     });
 
     const unsubCycles = onSnapshot(collection(db, 'cycles'), (snap) => {
