@@ -2632,7 +2632,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <Calendar size={14} /> Asistencia
+              <Calendar size={14} /> <span>Asistencia</span>
             </button>
           )}
           {isGradingTabEnabled && (
@@ -2643,7 +2643,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <ClipboardList size={14} /> Calificaciones
+              <ClipboardList size={14} /> <span>Calificaciones</span>
             </button>
           )}
           {isObservationsTabEnabled && (
@@ -2654,7 +2654,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 activeTab === 'observations' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <MessageSquare size={14} /> Observaciones
+              <MessageSquare size={14} /> <span>Observaciones</span>
             </button>
           )}
           {isActivitiesTabEnabled && (
@@ -2665,7 +2665,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 activeTab === 'activities' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <BookOpen size={14} /> Actividades
+              <BookOpen size={14} /> <span>Actividades</span>
             </button>
           )}
           {isHorarioTabEnabled && (
@@ -2676,7 +2676,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <Calendar size={14} /> Mi Horario
+              <Calendar size={14} /> <span>Mi Horario</span>
             </button>
           )}
           {isCredencialTabEnabled && (
@@ -2687,7 +2687,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 activeTab === 'credencial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <CreditCard size={14} /> Credencial
+              <CreditCard size={14} /> <span>Credencial</span>
             </button>
           )}
         </div>
@@ -2961,7 +2961,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               activeTab === 'attendance' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <Calendar size={14} /> Asistencia
+            <Calendar size={14} /> <span>Asistencia</span>
           </button>
         )}
         {isGradingTabEnabled && (
@@ -2972,7 +2972,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               activeTab === 'grading' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <ClipboardList size={14} /> Calificaciones
+            <ClipboardList size={14} /> <span>Calificaciones</span>
           </button>
         )}
         {isObservationsTabEnabled && (
@@ -2983,7 +2983,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               activeTab === 'observations' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <MessageSquare size={14} /> Observaciones
+            <MessageSquare size={14} /> <span>Observaciones</span>
           </button>
         )}
         {isActivitiesTabEnabled && (
@@ -2994,7 +2994,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               activeTab === 'activities' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <BookOpen size={14} /> Actividades
+            <BookOpen size={14} /> <span>Actividades</span>
           </button>
         )}
         {isHorarioTabEnabled && (
@@ -3005,7 +3005,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               activeTab === 'horario' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <Calendar size={14} /> Mi Horario
+            <Calendar size={14} /> <span>Mi Horario</span>
           </button>
         )}
         {isCredencialTabEnabled && (
@@ -3016,7 +3016,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               activeTab === 'credencial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <CreditCard size={14} /> Credencial
+            <CreditCard size={14} /> <span>Credencial</span>
           </button>
         )}
       </div>
@@ -3473,7 +3473,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                           const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
                           return (
                             <th 
-                              key={subj.id} 
+                              key={`th-pure-${subj.id || subj.name}`} 
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-blue-50/30 text-blue-950",
                                 (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-200"
@@ -3497,7 +3497,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                           const hasNextGroup = personalDevLevelSubjects.length > 0;
                           return (
                             <th 
-                              key={subj.id} 
+                              key={`th-auto-${subj.id || subj.name}`} 
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-amber-50/60 text-amber-950 font-black",
                                 (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-200/70"
@@ -3521,7 +3521,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                           const isLast = idx === personalDevLevelSubjects.length - 1;
                           return (
                             <th 
-                              key={subj.id} 
+                              key={`th-dev-${subj.id || subj.name}`} 
                               title={`Desarrollo Personal: ${subj.name}`}
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[90px] max-w-[130px] whitespace-normal break-words leading-tight bg-indigo-50/70 text-indigo-900 font-black",
@@ -3580,7 +3580,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               if (!isEnrolled) {
                                 return (
                                   <td 
-                                    key={subj.id} 
+                                    key={`td-pure-${subj.id || subj.name}`} 
                                     className={cn(
                                       "px-1 py-1.5 bg-slate-50/50 text-center select-none",
                                       (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
@@ -3599,7 +3599,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                 : (studentGrade.subjects?.[subj.name] ?? '');
                               return (
                                 <td 
-                                  key={subj.id} 
+                                  key={`td-pure-${subj.id || subj.name}`} 
                                   className={cn(
                                     "px-1 py-1.5 bg-blue-50/5",
                                     (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
@@ -3659,7 +3659,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               if (!isEnrolled) {
                                 return (
                                   <td 
-                                    key={subj.id} 
+                                    key={`td-auto-${subj.id || subj.name}`} 
                                     className={cn(
                                       "px-1 py-1.5 bg-slate-50/50 text-center select-none",
                                       (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
@@ -3674,7 +3674,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               const rawVal = studentGrade.subjects?.[subj.name] ?? '';
                               return (
                                 <td 
-                                  key={subj.id} 
+                                  key={`td-auto-${subj.id || subj.name}`} 
                                   className={cn(
                                     "px-1 py-1.5 bg-amber-50/20",
                                     (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
@@ -3747,7 +3747,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
                               return (
                                 <td 
-                                  key={subj.id} 
+                                  key={`td-dev-${subj.id || subj.name}`} 
                                   className={cn(
                                     "px-1 py-1.5 bg-indigo-50/15",
                                     isLast ? (isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : "") : "border-r border-indigo-100/70"

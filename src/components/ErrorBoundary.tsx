@@ -43,13 +43,23 @@ export default class ErrorBoundary extends Component<Props, State> {
               </code>
             </div>
 
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
-            >
-              <RefreshCcw size={18} />
-              Recargar Aplicación
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold py-3 rounded-xl transition-all cursor-pointer text-sm"
+              >
+                Reintentar
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
+              >
+                <RefreshCcw size={16} />
+                Recargar
+              </button>
+            </div>
           </div>
         </div>
       );
