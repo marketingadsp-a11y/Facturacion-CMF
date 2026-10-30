@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, getDocs, writeBatch, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
@@ -119,6 +119,13 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const [isBimestreLocked, setIsBimestreLocked] = useState(false);
   const [lockedPeriods, setLockedPeriods] = useState<Record<number, boolean>>({});
   const hasManuallySelectedPeriodRef = useRef(false);
+
+  // Auto-saving & dirty tracking: prevents onSnapshot from wiping out inputs while teachers are actively typing
+  const dirtyFieldsRef = useRef<Map<string, { value: any; timestamp: number }>>(new Map());
+  const saveTimeoutRef = useRef<Record<string, any>>({});
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
+
   const [selectedLevel, setSelectedLevel] = useState<string>('');
   const [selectedGrade, setSelectedGrade] = useState<string>('');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
@@ -1050,14 +1057,89 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           const data = doc.data() as StudentGrade;
           gradesMap[data.studentId] = { ...data, id: doc.id };
         });
-        setGrades(gradesMap);
+
+        // Safely merge with local state to PREVENT remote snapshots from wiping out uncommitted inputs
+        setGrades(prev => {
+          const next: Record<string, StudentGrade> = { ...gradesMap };
+
+          Object.keys(prev).forEach(studentId => {
+            const localGrade = prev[studentId];
+            if (!localGrade) return;
+
+            const remoteGrade: StudentGrade = next[studentId] || {
+              id: `${studentId}_B${selectedBimestre}_${currentCycleId}`,
+              studentId,
+              bimestre: selectedBimestre,
+              cycleId: currentCycleId,
+              subjects: {},
+              subjectObservations: {},
+              observations: {},
+              conduct: 0,
+              uniform: 0,
+              attendance: 0,
+              tasksNotDone: 0,
+              tardies: 0,
+              cleanliness: 0,
+              updatedAt: null as any,
+              createdBy: ''
+            };
+
+            const mergedSubjects = { ...(remoteGrade.subjects || {}) };
+            let hasDirty = false;
+
+            if (localGrade.subjects) {
+              Object.entries(localGrade.subjects).forEach(([subjName, localVal]) => {
+                const dirtyKey = `subj::${studentId}::${subjName}`;
+                if (dirtyFieldsRef.current.has(dirtyKey)) {
+                  mergedSubjects[subjName] = localVal;
+                  hasDirty = true;
+                }
+              });
+            }
+
+            const mergedObs = { ...(remoteGrade.subjectObservations || remoteGrade.observations || {}) };
+            if (localGrade.subjectObservations) {
+              Object.entries(localGrade.subjectObservations).forEach(([subjName, localText]) => {
+                const dirtyKey = `obs::${studentId}::${subjName}`;
+                if (dirtyFieldsRef.current.has(dirtyKey)) {
+                  mergedObs[subjName] = localText;
+                  hasDirty = true;
+                }
+              });
+            }
+
+            let finalAttendance = remoteGrade.attendance;
+            if (dirtyFieldsRef.current.has(`field::${studentId}::attendance`)) {
+              finalAttendance = localGrade.attendance;
+              hasDirty = true;
+            }
+
+            if (hasDirty) {
+              next[studentId] = {
+                ...remoteGrade,
+                subjects: mergedSubjects,
+                subjectObservations: mergedObs,
+                observations: mergedObs,
+                attendance: finalAttendance
+              };
+            }
+          });
+
+          return next;
+        });
       },
       (error) => {
         console.error("Error loading grades:", error);
       }
     );
 
-    return () => unsubGrades();
+    return () => {
+      unsubGrades();
+      Object.keys(saveTimeoutRef.current).forEach(k => {
+        clearTimeout(saveTimeoutRef.current[k]);
+        delete saveTimeoutRef.current[k];
+      });
+    };
   }, [selectedBimestre, currentCycleId]);
 
   // Fetch all grades in active cycle across all periods for cumulative averages
@@ -1366,13 +1448,87 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     return formatAverage(sum, count, gradingScale);
   };
 
+  const saveSingleGrade = async (studentId: string, field: string, value: any, isSubject: boolean = false) => {
+    if (!currentCycleId || !selectedBimestre) return;
+    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+
+    const gradeId = `${studentId}_B${selectedBimestre}_${currentCycleId}`;
+    const dirtyKey = isSubject ? `subj::${studentId}::${field}` : `field::${studentId}::${field}`;
+
+    try {
+      setIsAutoSaving(true);
+      const updateData: Record<string, any> = {
+        studentId,
+        cycleId: currentCycleId,
+        bimestre: selectedBimestre,
+        updatedAt: serverTimestamp(),
+        createdBy: userProfile?.id || 'system'
+      };
+
+      if (isSubject) {
+        if (value === '' || value === null || value === undefined) {
+          updateData[`subjects.${field}`] = deleteField();
+        } else {
+          updateData[`subjects.${field}`] = value;
+        }
+      } else {
+        updateData[field] = value;
+      }
+
+      await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
+      dirtyFieldsRef.current.delete(dirtyKey);
+      setLastSavedTime(new Date());
+    } catch (err) {
+      console.error("Error auto-saving grade:", err);
+    } finally {
+      setIsAutoSaving(false);
+    }
+  };
+
+  const handleGradeBlur = (studentId: string, field: string, isSubject: boolean = false) => {
+    const dirtyKey = isSubject ? `subj::${studentId}::${field}` : `field::${studentId}::${field}`;
+    if (saveTimeoutRef.current[dirtyKey]) {
+      clearTimeout(saveTimeoutRef.current[dirtyKey]);
+      delete saveTimeoutRef.current[dirtyKey];
+    }
+    const currentEntry = dirtyFieldsRef.current.get(dirtyKey);
+    if (currentEntry) {
+      saveSingleGrade(studentId, field, currentEntry.value, isSubject);
+    }
+  };
+
   const handleGradeChange = (studentId: string, field: string, value: any, isSubject: boolean = false) => {
     if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+
+    let parsedVal: any = value;
+    if (isSubject) {
+      if (gradingScale === 'letters') {
+        parsedVal = value ? String(value).toUpperCase().trim() : '';
+      } else if (value === '' || value === null || value === undefined) {
+        parsedVal = '';
+      } else {
+        const num = parseFloat(value);
+        parsedVal = isNaN(num) ? '' : num;
+      }
+    } else {
+      if (gradingScale === 'letters') {
+        parsedVal = value ? String(value).toUpperCase().trim() : '';
+      } else if (value === '' || value === null || value === undefined) {
+        parsedVal = 0;
+      } else {
+        const num = parseFloat(value);
+        parsedVal = isNaN(num) ? 0 : num;
+      }
+    }
+
+    const dirtyKey = isSubject ? `subj::${studentId}::${field}` : `field::${studentId}::${field}`;
+    dirtyFieldsRef.current.set(dirtyKey, { value: parsedVal, timestamp: Date.now() });
+
     setGrades(prev => {
       const current = prev[studentId] || {
         studentId,
         bimestre: selectedBimestre,
-        cycleId: '', // Will be updated on save or if already fetched
+        cycleId: currentCycleId,
         subjects: {},
         conduct: 0,
         uniform: 0,
@@ -1385,16 +1541,6 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       };
 
       if (isSubject) {
-        let parsedVal: number | string = value;
-        if (gradingScale === 'letters') {
-          parsedVal = value ? String(value).toUpperCase().trim() : '';
-        } else if (value === '' || value === null || value === undefined) {
-          parsedVal = '';
-        } else {
-          const num = parseFloat(value);
-          parsedVal = isNaN(num) ? 0 : num;
-        }
-
         const nextSubjects = { ...current.subjects };
         if (parsedVal === '') {
           delete nextSubjects[field];
@@ -1411,24 +1557,23 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         };
       }
 
-      let parsedFieldVal: any = value;
-      if (gradingScale === 'letters') {
-        parsedFieldVal = value ? String(value).toUpperCase().trim() : '';
-      } else if (value === '' || value === null || value === undefined) {
-        parsedFieldVal = 0;
-      } else {
-        const num = parseFloat(value);
-        parsedFieldVal = isNaN(num) ? 0 : num;
-      }
-
       return {
         ...prev,
         [studentId]: {
           ...current,
-          [field]: parsedFieldVal
+          [field]: parsedVal
         }
       };
     });
+
+    // Debounced autosave (800ms)
+    if (saveTimeoutRef.current[dirtyKey]) {
+      clearTimeout(saveTimeoutRef.current[dirtyKey]);
+    }
+    saveTimeoutRef.current[dirtyKey] = setTimeout(() => {
+      saveSingleGrade(studentId, field, parsedVal, isSubject);
+      delete saveTimeoutRef.current[dirtyKey];
+    }, 800);
   };
 
   const handleSaveActivity = async () => {
@@ -1644,7 +1789,46 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
   };
 
+  const saveSingleObservation = async (studentId: string, subjectName: string, text: string) => {
+    if (!currentCycleId || !selectedBimestre) return;
+    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+
+    const gradeId = `${studentId}_B${selectedBimestre}_${currentCycleId}`;
+    const dirtyKey = `obs::${studentId}::${subjectName}`;
+
+    try {
+      setIsAutoSaving(true);
+      const trimmed = text.trim();
+      const updateData: Record<string, any> = {
+        studentId,
+        cycleId: currentCycleId,
+        bimestre: selectedBimestre,
+        updatedAt: serverTimestamp(),
+        createdBy: userProfile?.id || 'system'
+      };
+
+      if (trimmed) {
+        updateData[`subjectObservations.${subjectName}`] = trimmed;
+        updateData[`observations.${subjectName}`] = trimmed;
+      } else {
+        updateData[`subjectObservations.${subjectName}`] = deleteField();
+        updateData[`observations.${subjectName}`] = deleteField();
+      }
+
+      await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
+      dirtyFieldsRef.current.delete(dirtyKey);
+      setLastSavedTime(new Date());
+    } catch (err) {
+      console.error("Error auto-saving observation:", err);
+    } finally {
+      setIsAutoSaving(false);
+    }
+  };
+
   const handleObservationChange = (studentId: string, subjectName: string, text: string) => {
+    const dirtyKey = `obs::${studentId}::${subjectName}`;
+    dirtyFieldsRef.current.set(dirtyKey, { value: text, timestamp: Date.now() });
+
     setGrades(prev => {
       const studentGrade: StudentGrade = prev[studentId] || {
         studentId,
@@ -1675,34 +1859,70 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         }
       };
     });
+
+    if (saveTimeoutRef.current[dirtyKey]) {
+      clearTimeout(saveTimeoutRef.current[dirtyKey]);
+    }
+    saveTimeoutRef.current[dirtyKey] = setTimeout(() => {
+      saveSingleObservation(studentId, subjectName, text);
+      delete saveTimeoutRef.current[dirtyKey];
+    }, 1000);
   };
 
-
+  const handleObservationBlur = (studentId: string, subjectName: string) => {
+    const dirtyKey = `obs::${studentId}::${subjectName}`;
+    if (saveTimeoutRef.current[dirtyKey]) {
+      clearTimeout(saveTimeoutRef.current[dirtyKey]);
+      delete saveTimeoutRef.current[dirtyKey];
+    }
+    const currentEntry = dirtyFieldsRef.current.get(dirtyKey);
+    if (currentEntry) {
+      saveSingleObservation(studentId, subjectName, currentEntry.value);
+    }
+  };
 
   const handleSaveObservations = async () => {
     if (!hasPermission('grading', 'manage')) return;
     setIsSaving(true);
     try {
+      Object.keys(saveTimeoutRef.current).forEach(k => {
+        if (k.startsWith('obs::')) {
+          clearTimeout(saveTimeoutRef.current[k]);
+          delete saveTimeoutRef.current[k];
+        }
+      });
+
       const batch = writeBatch(db);
       let opCount = 0;
       const batches = [batch];
 
       students.forEach(student => {
         const grade = grades[student.id];
-        const obs = grade?.subjectObservations || grade?.observations || {};
-
         const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
         const curBatch = batches[batches.length - 1];
 
-        curBatch.set(doc(db, 'grades', id), {
+        const updateData: Record<string, any> = {
           studentId: student.id,
           bimestre: selectedBimestre,
           cycleId: currentCycleId,
-          subjectObservations: obs,
-          observations: obs,
           updatedAt: serverTimestamp(),
           createdBy: grade?.createdBy || userProfile?.id || 'system'
-        }, { merge: true });
+        };
+
+        // Granular update with dot notation so other subjects' observations are not overwritten
+        pureAcademicSubjects.forEach(s => {
+          if (!isStudentEnrolledInSubject(s, student.id)) return;
+          const obsText = (grade?.subjectObservations?.[s.name] ?? grade?.observations?.[s.name] ?? '').trim();
+          if (obsText) {
+            updateData[`subjectObservations.${s.name}`] = obsText;
+            updateData[`observations.${s.name}`] = obsText;
+          } else {
+            updateData[`subjectObservations.${s.name}`] = deleteField();
+            updateData[`observations.${s.name}`] = deleteField();
+          }
+        });
+
+        curBatch.set(doc(db, 'grades', id), updateData, { merge: true });
 
         opCount++;
         if (opCount % 400 === 0) batches.push(writeBatch(db));
@@ -1711,6 +1931,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       for (const b of batches) {
         await b.commit();
       }
+
+      for (const key of Array.from(dirtyFieldsRef.current.keys())) {
+        if (key.startsWith('obs::')) dirtyFieldsRef.current.delete(key);
+      }
+      setLastSavedTime(new Date());
 
       const periodLabel = evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType.charAt(0)}${selectedBimestre}`;
       setSavedStatus(`Observaciones de ${periodLabel} guardadas`);
@@ -1731,6 +1956,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     if (!hasPermission('grading', 'manage')) return;
     setIsSaving(true);
     try {
+      Object.keys(saveTimeoutRef.current).forEach(k => {
+        clearTimeout(saveTimeoutRef.current[k]);
+        delete saveTimeoutRef.current[k];
+      });
+
       const trackerSubj = activeLevelSubjects.find(isAttendanceTrackingSubject);
       const batch = writeBatch(db);
       let opCount = 0;
@@ -1755,21 +1985,30 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         const autoFaltas = trackerSubj ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
         const finalAttendance = autoFaltas !== null ? autoFaltas : (grade.attendance ?? 0);
 
-        const updatedSubjects = { ...(grade.subjects || {}) };
-        if (trackerSubj && autoFaltas !== null) {
-          updatedSubjects[trackerSubj.name] = autoFaltas;
-        }
-
         const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
         const curBatch = batches[batches.length - 1];
-        curBatch.set(doc(db, 'grades', id), {
-          ...grade,
-          attendance: finalAttendance,
-          subjects: updatedSubjects,
+
+        // Granular update using dot notation so other teachers' subjects are preserved
+        const updateData: Record<string, any> = {
+          studentId: student.id,
+          bimestre: selectedBimestre,
           cycleId: currentCycleId,
+          attendance: finalAttendance,
           updatedAt: serverTimestamp(),
-          createdBy: userProfile?.id || 'system'
-        }, { merge: true });
+          createdBy: grade.createdBy || userProfile?.id || 'system'
+        };
+
+        activeLevelSubjects.forEach(s => {
+          if (!isStudentEnrolledInSubject(s, student.id)) return;
+          const val = grade.subjects?.[s.name];
+          if (val !== undefined && val !== null && val !== '') {
+            updateData[`subjects.${s.name}`] = val;
+          } else if (val === '') {
+            updateData[`subjects.${s.name}`] = deleteField();
+          }
+        });
+
+        curBatch.set(doc(db, 'grades', id), updateData, { merge: true });
 
         opCount++;
         if (opCount % 400 === 0) batches.push(writeBatch(db));
@@ -1791,7 +2030,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           await b.commit();
         }
       }
+      dirtyFieldsRef.current.clear();
+      setLastSavedTime(new Date());
       setSavedStatus('¡Calificaciones guardadas!');
+      toast.success('¡Calificaciones guardadas exitosamente!');
       setTimeout(() => setSavedStatus(null), 3000);
     } catch (error) {
       console.error("Error saving grades:", error);
@@ -2532,6 +2774,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 </button>
               </>
             )}
+            {isAutoSaving ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 rounded text-[10px] font-black uppercase tracking-wider animate-pulse">
+                <div className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                <span>Guardando...</span>
+              </div>
+            ) : lastSavedTime ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-[10px] font-black uppercase tracking-wider">
+                <CheckCircle2 size={12} className="text-emerald-600" />
+                <span>Autoguardado</span>
+              </div>
+            ) : null}
             <button
               onClick={handleSaveAll}
               disabled={isSaving || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
@@ -3247,6 +3500,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
                                         rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
@@ -3272,6 +3526,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                                       placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
                                     />
@@ -3321,6 +3576,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
                                         rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
@@ -3346,6 +3602,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                                       placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
                                     />
@@ -3399,6 +3656,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                         handleGradeChange(student.id, subj.name, e.target.value, true);
                                         handleGradeChange(student.id, 'attendance', e.target.value, false);
                                       }}
+                                      onBlur={() => {
+                                        handleGradeBlur(student.id, subj.name, true);
+                                        handleGradeBlur(student.id, 'attendance', false);
+                                      }}
                                       className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all tabular-nums"
                                       placeholder="0"
                                     />
@@ -3410,6 +3671,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                         handleGradeChange(student.id, subj.name, e.target.value, true);
                                         if (legacyField) {
                                           handleGradeChange(student.id, legacyField, e.target.value, false);
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        handleGradeBlur(student.id, subj.name, true);
+                                        if (legacyField) {
+                                          handleGradeBlur(student.id, legacyField, false);
                                         }
                                       }}
                                       className={cn(
@@ -3440,6 +3707,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                         handleGradeChange(student.id, subj.name, e.target.value, true);
                                         if (legacyField) {
                                           handleGradeChange(student.id, legacyField, e.target.value, false);
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        handleGradeBlur(student.id, subj.name, true);
+                                        if (legacyField) {
+                                          handleGradeBlur(student.id, legacyField, false);
                                         }
                                       }}
                                       className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
@@ -3660,6 +3933,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             <textarea
                               value={obs}
                               onChange={(e) => handleObservationChange(student.id, selectedObsSubject.name, e.target.value)}
+                              onBlur={() => handleObservationBlur(student.id, selectedObsSubject.name)}
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Escribir observación manual para ${student.name}...`}
                               rows={1}
@@ -3752,6 +4026,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             <textarea
                               value={obs}
                               onChange={(e) => handleObservationChange(student.id, subj.name, e.target.value)}
+                              onBlur={() => handleObservationBlur(student.id, subj.name)}
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Observación de ${subj.name}...`}
                               rows={2}
