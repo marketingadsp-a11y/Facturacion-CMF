@@ -122,6 +122,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   // Auto-saving & dirty tracking: prevents onSnapshot from wiping out inputs while teachers are actively typing
   const dirtyFieldsRef = useRef<Map<string, { value: any; timestamp: number }>>(new Map());
+  const activeInputKeyRef = useRef<string | null>(null);
   const saveTimeoutRef = useRef<Record<string, any>>({});
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
@@ -1085,33 +1086,41 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             };
 
             const mergedSubjects = { ...(remoteGrade.subjects || {}) };
+            const mergedObs = { ...(remoteGrade.subjectObservations || remoteGrade.observations || {}) };
+            let finalAttendance = remoteGrade.attendance;
             let hasDirty = false;
 
-            if (localGrade.subjects) {
-              Object.entries(localGrade.subjects).forEach(([subjName, localVal]) => {
-                const dirtyKey = `subj::${studentId}::${subjName}`;
-                if (dirtyFieldsRef.current.has(dirtyKey)) {
-                  mergedSubjects[subjName] = localVal;
-                  hasDirty = true;
-                }
-              });
+            // 1. Check all dirty fields for this student in dirtyFieldsRef (even if set to empty string '')
+            for (const [dirtyKey, dirtyEntry] of dirtyFieldsRef.current.entries()) {
+              if (dirtyKey.startsWith(`subj::${studentId}::`)) {
+                const subjName = dirtyKey.slice(`subj::${studentId}::`.length);
+                mergedSubjects[subjName] = dirtyEntry.value;
+                hasDirty = true;
+              } else if (dirtyKey.startsWith(`obs::${studentId}::`)) {
+                const subjName = dirtyKey.slice(`obs::${studentId}::`.length);
+                mergedObs[subjName] = dirtyEntry.value;
+                hasDirty = true;
+              } else if (dirtyKey === `field::${studentId}::attendance`) {
+                finalAttendance = dirtyEntry.value;
+                hasDirty = true;
+              }
             }
 
-            const mergedObs = { ...(remoteGrade.subjectObservations || remoteGrade.observations || {}) };
-            if (localGrade.subjectObservations) {
-              Object.entries(localGrade.subjectObservations).forEach(([subjName, localText]) => {
-                const dirtyKey = `obs::${studentId}::${subjName}`;
-                if (dirtyFieldsRef.current.has(dirtyKey)) {
-                  mergedObs[subjName] = localText;
+            // 2. Protect the input currently being typed in by the user
+            if (activeInputKeyRef.current) {
+              if (activeInputKeyRef.current.startsWith(`subj::${studentId}::`)) {
+                const activeSubj = activeInputKeyRef.current.slice(`subj::${studentId}::`.length);
+                if (localGrade.subjects && activeSubj in localGrade.subjects) {
+                  mergedSubjects[activeSubj] = localGrade.subjects[activeSubj];
                   hasDirty = true;
                 }
-              });
-            }
-
-            let finalAttendance = remoteGrade.attendance;
-            if (dirtyFieldsRef.current.has(`field::${studentId}::attendance`)) {
-              finalAttendance = localGrade.attendance;
-              hasDirty = true;
+              } else if (activeInputKeyRef.current.startsWith(`obs::${studentId}::`)) {
+                const activeSubj = activeInputKeyRef.current.slice(`obs::${studentId}::`.length);
+                if (localGrade.subjectObservations && activeSubj in localGrade.subjectObservations) {
+                  mergedObs[activeSubj] = localGrade.subjectObservations[activeSubj];
+                  hasDirty = true;
+                }
+              }
             }
 
             if (hasDirty) {
@@ -1468,15 +1477,27 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       if (isSubject) {
         if (value === '' || value === null || value === undefined) {
           updateData[`subjects.${field}`] = deleteField();
+        } else if (gradingScale === 'letters') {
+          updateData[`subjects.${field}`] = String(value).toUpperCase().trim();
         } else {
-          updateData[`subjects.${field}`] = value;
+          const num = parseFloat(String(value));
+          updateData[`subjects.${field}`] = isNaN(num) ? deleteField() : num;
         }
       } else {
-        updateData[field] = value;
+        if (value === '' || value === null || value === undefined) {
+          updateData[field] = 0;
+        } else if (gradingScale === 'letters') {
+          updateData[field] = String(value).toUpperCase().trim();
+        } else {
+          const num = parseFloat(String(value));
+          updateData[field] = isNaN(num) ? 0 : num;
+        }
       }
 
       await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
-      dirtyFieldsRef.current.delete(dirtyKey);
+      if (activeInputKeyRef.current !== dirtyKey) {
+        dirtyFieldsRef.current.delete(dirtyKey);
+      }
       setLastSavedTime(new Date());
     } catch (err) {
       console.error("Error auto-saving grade:", err);
@@ -1487,14 +1508,26 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   const handleGradeBlur = (studentId: string, field: string, isSubject: boolean = false) => {
     const dirtyKey = isSubject ? `subj::${studentId}::${field}` : `field::${studentId}::${field}`;
+    activeInputKeyRef.current = null;
     if (saveTimeoutRef.current[dirtyKey]) {
       clearTimeout(saveTimeoutRef.current[dirtyKey]);
       delete saveTimeoutRef.current[dirtyKey];
     }
-    const currentEntry = dirtyFieldsRef.current.get(dirtyKey);
-    if (currentEntry) {
-      saveSingleGrade(studentId, field, currentEntry.value, isSubject);
+    const currentGrade = grades[studentId];
+    let rawVal = isSubject ? (currentGrade?.subjects?.[field] ?? '') : (currentGrade?.[field as keyof StudentGrade] ?? '');
+
+    // Clean up trailing dot e.g. "9." -> "9"
+    if (typeof rawVal === 'string' && rawVal.endsWith('.')) {
+      rawVal = rawVal.slice(0, -1);
+      handleGradeChange(studentId, field, rawVal, isSubject);
     }
+
+    saveSingleGrade(studentId, field, rawVal, isSubject);
+    setTimeout(() => {
+      if (activeInputKeyRef.current !== dirtyKey) {
+        dirtyFieldsRef.current.delete(dirtyKey);
+      }
+    }, 600);
   };
 
   const handleGradeChange = (studentId: string, field: string, value: any, isSubject: boolean = false) => {
@@ -1504,20 +1537,32 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     if (isSubject) {
       if (gradingScale === 'letters') {
         parsedVal = value ? String(value).toUpperCase().trim() : '';
-      } else if (value === '' || value === null || value === undefined) {
-        parsedVal = '';
       } else {
-        const num = parseFloat(value);
-        parsedVal = isNaN(num) ? '' : num;
+        const strVal = String(value ?? '').trim();
+        if (strVal === '') {
+          parsedVal = '';
+        } else {
+          // Allow only valid decimal numbers (digits and at most one decimal point)
+          if (!/^[0-9]*\.?[0-9]*$/.test(strVal)) return;
+          const maxAllowed = gradingScale === 'numeric_100' ? 100 : 10;
+          const numVal = parseFloat(strVal);
+          if (!isNaN(numVal) && numVal > maxAllowed) return;
+          parsedVal = strVal;
+        }
       }
     } else {
       if (gradingScale === 'letters') {
         parsedVal = value ? String(value).toUpperCase().trim() : '';
-      } else if (value === '' || value === null || value === undefined) {
-        parsedVal = 0;
       } else {
-        const num = parseFloat(value);
-        parsedVal = isNaN(num) ? 0 : num;
+        const strVal = String(value ?? '').trim();
+        if (strVal === '') {
+          parsedVal = '';
+        } else {
+          if (!/^[0-9]*\.?[0-9]*$/.test(strVal)) return;
+          const numVal = parseFloat(strVal);
+          if (!isNaN(numVal) && numVal > 100) return;
+          parsedVal = strVal;
+        }
       }
     }
 
@@ -1542,11 +1587,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
       if (isSubject) {
         const nextSubjects = { ...current.subjects };
-        if (parsedVal === '') {
-          delete nextSubjects[field];
-        } else {
-          nextSubjects[field] = parsedVal;
-        }
+        // Keep string/number value even if empty '' so rawVal evaluates to '' and input stays blank
+        nextSubjects[field] = parsedVal;
 
         return {
           ...prev,
@@ -1566,14 +1608,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       };
     });
 
-    // Debounced autosave (800ms)
+    // Debounced autosave (1200ms) - only if complete number, not trailing dot or empty
     if (saveTimeoutRef.current[dirtyKey]) {
       clearTimeout(saveTimeoutRef.current[dirtyKey]);
     }
-    saveTimeoutRef.current[dirtyKey] = setTimeout(() => {
-      saveSingleGrade(studentId, field, parsedVal, isSubject);
-      delete saveTimeoutRef.current[dirtyKey];
-    }, 800);
+    const isPartial = typeof parsedVal === 'string' && (parsedVal.endsWith('.') || parsedVal === '');
+    if (!isPartial) {
+      saveTimeoutRef.current[dirtyKey] = setTimeout(() => {
+        saveSingleGrade(studentId, field, parsedVal, isSubject);
+        delete saveTimeoutRef.current[dirtyKey];
+      }, 1200);
+    }
   };
 
   const handleSaveActivity = async () => {
@@ -1816,7 +1861,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       }
 
       await setDoc(doc(db, 'grades', gradeId), updateData, { merge: true });
-      dirtyFieldsRef.current.delete(dirtyKey);
+      if (activeInputKeyRef.current !== dirtyKey) {
+        dirtyFieldsRef.current.delete(dirtyKey);
+      }
       setLastSavedTime(new Date());
     } catch (err) {
       console.error("Error auto-saving observation:", err);
@@ -1871,14 +1918,20 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   const handleObservationBlur = (studentId: string, subjectName: string) => {
     const dirtyKey = `obs::${studentId}::${subjectName}`;
+    activeInputKeyRef.current = null;
     if (saveTimeoutRef.current[dirtyKey]) {
       clearTimeout(saveTimeoutRef.current[dirtyKey]);
       delete saveTimeoutRef.current[dirtyKey];
     }
-    const currentEntry = dirtyFieldsRef.current.get(dirtyKey);
-    if (currentEntry) {
-      saveSingleObservation(studentId, subjectName, currentEntry.value);
-    }
+    const currentGrade = grades[studentId];
+    const obsText = (currentGrade?.subjectObservations?.[subjectName] ?? currentGrade?.observations?.[subjectName] ?? '');
+    saveSingleObservation(studentId, subjectName, obsText);
+
+    setTimeout(() => {
+      if (activeInputKeyRef.current !== dirtyKey) {
+        dirtyFieldsRef.current.delete(dirtyKey);
+      }
+    }, 600);
   };
 
   const handleSaveObservations = async () => {
@@ -2002,7 +2055,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           if (!isStudentEnrolledInSubject(s, student.id)) return;
           const val = grade.subjects?.[s.name];
           if (val !== undefined && val !== null && val !== '') {
-            updateData[`subjects.${s.name}`] = val;
+            if (gradingScale === 'letters') {
+              updateData[`subjects.${s.name}`] = String(val).toUpperCase().trim();
+            } else {
+              const num = parseFloat(String(val));
+              updateData[`subjects.${s.name}`] = isNaN(num) ? val : num;
+            }
           } else if (val === '') {
             updateData[`subjects.${s.name}`] = deleteField();
           }
@@ -3500,6 +3558,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
@@ -3518,14 +3577,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     </select>
                                   ) : (
                                     <input
-                                      type="number"
+                                      type="text"
                                       inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                      min="0"
-                                      max={gradingScale === 'numeric_100' ? "100" : "10"}
-                                      step={gradingScale === 'numeric_100' ? "1" : "0.5"}
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                                       placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
@@ -3576,6 +3633,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className={cn(
                                         "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
@@ -3594,14 +3652,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     </select>
                                   ) : (
                                     <input
-                                      type="number"
+                                      type="text"
                                       inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                      min="0"
-                                      max={gradingScale === 'numeric_100' ? "100" : "10"}
-                                      step={gradingScale === 'numeric_100' ? "1" : "0.5"}
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={rawVal}
                                       onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => handleGradeBlur(student.id, subj.name, true)}
                                       className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                                       placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
@@ -3647,15 +3703,15 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                 >
                                   {isAttendanceTracker ? (
                                     <input
-                                      type="number"
-                                      min="0"
-                                      step="1"
+                                      type="text"
+                                      inputMode="numeric"
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={gradeVal}
                                       onChange={(e) => {
                                         handleGradeChange(student.id, subj.name, e.target.value, true);
                                         handleGradeChange(student.id, 'attendance', e.target.value, false);
                                       }}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => {
                                         handleGradeBlur(student.id, subj.name, true);
                                         handleGradeBlur(student.id, 'attendance', false);
@@ -3673,6 +3729,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                           handleGradeChange(student.id, legacyField, e.target.value, false);
                                         }
                                       }}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => {
                                         handleGradeBlur(student.id, subj.name, true);
                                         if (legacyField) {
@@ -3696,11 +3753,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     </select>
                                   ) : (
                                     <input
-                                      type="number"
+                                      type="text"
                                       inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                      min="0"
-                                      max={gradingScale === 'numeric_100' ? "100" : "10"}
-                                      step={gradingScale === 'numeric_100' ? "1" : "0.5"}
                                       disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                       value={gradeVal}
                                       onChange={(e) => {
@@ -3709,6 +3763,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                           handleGradeChange(student.id, legacyField, e.target.value, false);
                                         }
                                       }}
+                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
                                       onBlur={() => {
                                         handleGradeBlur(student.id, subj.name, true);
                                         if (legacyField) {
@@ -3933,6 +3988,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             <textarea
                               value={obs}
                               onChange={(e) => handleObservationChange(student.id, selectedObsSubject.name, e.target.value)}
+                              onFocus={() => { activeInputKeyRef.current = `obs::${student.id}::${selectedObsSubject.name}`; }}
                               onBlur={() => handleObservationBlur(student.id, selectedObsSubject.name)}
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Escribir observación manual para ${student.name}...`}
@@ -4026,6 +4082,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             <textarea
                               value={obs}
                               onChange={(e) => handleObservationChange(student.id, subj.name, e.target.value)}
+                              onFocus={() => { activeInputKeyRef.current = `obs::${student.id}::${subj.name}`; }}
                               onBlur={() => handleObservationBlur(student.id, subj.name)}
                               disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Observación de ${subj.name}...`}
