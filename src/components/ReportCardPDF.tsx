@@ -1,6 +1,9 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
+import ReportCardSecundaria1PDF from './ReportCardSecundaria1PDF';
+import ReportCardSecundaria2PDF from './ReportCardSecundaria2PDF';
+import ReportCardSecundaria3PDF from './ReportCardSecundaria3PDF';
 import { 
   getLevelEvaluationConfig, 
   gradeToNumeric, 
@@ -512,6 +515,53 @@ export default function ReportCardPDF({
   cycle,
   teacherName 
 }: ReportCardPDFProps) {
+  // Dedicated landscape boletas matching the official format for Secundaria (1°, 2°, 3°)
+  const studentLevelStr = (student?.level || '').toLowerCase().trim();
+  const isSecundaria = studentLevelStr.includes('secundaria');
+  const gradeStr = String(student?.grade || '').toLowerCase().trim();
+  const isPrimero = gradeStr.includes('1') || gradeStr.includes('primer');
+  const isSegundo = gradeStr.includes('2') || gradeStr.includes('segund');
+  const isTercero = gradeStr.includes('3') || gradeStr.includes('tercer');
+
+  if (isSecundaria) {
+    if (isPrimero) {
+      return (
+        <ReportCardSecundaria1PDF
+          student={student}
+          grades={grades}
+          subjects={subjects}
+          settings={settings}
+          cycle={cycle}
+          teacherName={teacherName}
+        />
+      );
+    }
+    if (isSegundo) {
+      return (
+        <ReportCardSecundaria2PDF
+          student={student}
+          grades={grades}
+          subjects={subjects}
+          settings={settings}
+          cycle={cycle}
+          teacherName={teacherName}
+        />
+      );
+    }
+    if (isTercero) {
+      return (
+        <ReportCardSecundaria3PDF
+          student={student}
+          grades={grades}
+          subjects={subjects}
+          settings={settings}
+          cycle={cycle}
+          teacherName={teacherName}
+        />
+      );
+    }
+  }
+
   const evalConfig = getLevelEvaluationConfig(settings, student.level);
   const scale = evalConfig.gradingScale || 'numeric_10';
   const periodCount = evalConfig.periodCount;
