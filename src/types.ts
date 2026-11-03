@@ -425,12 +425,14 @@ export interface Attendance {
 }
 
 export interface BimestreLock {
-  id: string; // bimestre_level_grade_group_cycleId
+  id: string; // bimestre_level_grade_group_cycleId or bimestre_level_grade_group_cycleId_subjectId
   bimestre: Bimestre;
   level: string;
   grade: string;
   group: string;
   cycleId: string;
+  subjectId?: string;
+  subjectName?: string;
   locked: boolean;
   lockedAt?: Timestamp;
   lockedBy?: string;

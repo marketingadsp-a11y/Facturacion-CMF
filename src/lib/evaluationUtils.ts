@@ -444,6 +444,15 @@ export function getSubjectObservation(
 }
 
 /**
+ * Checks whether an educational level uses subject-level period locking (Secundaria and Preparatoria)
+ * so that each subject is locked independently without blocking other teachers.
+ */
+export function isSubjectLockLevel(levelName?: string | null): boolean {
+  if (!levelName) return false;
+  return /secundaria|bachillerato|preparatoria|prepa/i.test(levelName.trim().toLowerCase());
+}
+
+/**
  * Checks whether a student is enrolled in a subject.
  * - Non-TAE subjects apply to all students.
  * - TAE subjects with taeStudentMode === 'all' apply to all students in the level.

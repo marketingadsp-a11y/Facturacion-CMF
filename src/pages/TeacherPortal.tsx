@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, getDocs, writeBatch, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
-import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel, isStudentEnrolledInSubject } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel, isStudentEnrolledInSubject, isSubjectLockLevel } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -118,6 +118,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const [savedStatus, setSavedStatus] = useState<string | null>(null);
   const [isBimestreLocked, setIsBimestreLocked] = useState(false);
   const [lockedPeriods, setLockedPeriods] = useState<Record<number, boolean>>({});
+  const [classLocks, setClassLocks] = useState<BimestreLock[]>([]);
+  const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
   const hasManuallySelectedPeriodRef = useRef(false);
 
   // Auto-saving & dirty tracking: prevents onSnapshot from wiping out inputs while teachers are actively typing
@@ -1248,36 +1250,116 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     return () => unsubActivities();
   }, [currentCycleId, selectedBimestre, activeLevel, activeGrade, activeGroup, userProfile?.id, userProfile?.role]);
 
-  // Fetch lock status for all periods of current class
+  const isSecundariaOrPrepa = useMemo(() => isSubjectLockLevel(activeLevel), [activeLevel]);
+
+  // Fetch lock status for all periods of current class (including subject-level locks for Secundaria / Preparatoria)
   useEffect(() => {
     if (!currentCycleId || !activeLevel || !activeGrade) {
+      setClassLocks([]);
       setLockedPeriods({});
       setIsBimestreLocked(false);
       return;
     }
 
-    const unsubs = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1).map((b) => {
-      const lockId = `${b}_${activeLevel}_${activeGrade}_${activeGroup || ''}_${currentCycleId}`;
-      return onSnapshot(doc(db, 'bimestreLocks', lockId), (snap) => {
-        const isLocked = snap.exists() && !!snap.data()?.locked;
-        setLockedPeriods(prev => {
-          if (prev[b] === isLocked) return prev;
-          return { ...prev, [b]: isLocked };
-        });
-      }, (error) => {
-        console.error("Error reading lock status:", error);
-      });
+    const q = query(
+      collection(db, 'bimestreLocks'),
+      where('cycleId', '==', currentCycleId),
+      where('level', '==', activeLevel),
+      where('grade', '==', activeGrade),
+      where('group', '==', activeGroup || '')
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const locks = snap.docs.map(d => ({ ...d.data(), id: d.id } as BimestreLock));
+      setClassLocks(locks);
+    }, (error) => {
+      console.error("Error reading lock status:", error);
     });
 
-    return () => {
-      unsubs.forEach(unsub => unsub());
-    };
-  }, [activeLevel, activeGrade, activeGroup, currentCycleId, evalConfig.periodCount]);
+    return () => unsub();
+  }, [activeLevel, activeGrade, activeGroup, currentCycleId]);
 
-  // Keep isBimestreLocked in sync with selected period
+  // Checks whether a specific subject is locked in a period (or if the period has a global lock)
+  const isSubjectLockedInPeriod = useCallback((b: number, subjectId?: string, subjectName?: string): boolean => {
+    if (!classLocks || classLocks.length === 0) return false;
+
+    // 1. Check if there is a global lock for this period
+    const hasGlobal = classLocks.some(l => Number(l.bimestre) === Number(b) && !l.subjectId && l.locked);
+    if (hasGlobal) return true;
+
+    // 2. If subject-level locking applies (Secundaria or Preparatoria)
+    if (isSecundariaOrPrepa && (subjectId || subjectName)) {
+      return classLocks.some(l => {
+        if (Number(l.bimestre) !== Number(b) || !l.locked) return false;
+        if (subjectId && l.subjectId === subjectId) return true;
+        if (subjectName && l.subjectName && l.subjectName.toLowerCase().trim() === subjectName.toLowerCase().trim()) return true;
+        return false;
+      });
+    }
+
+    return false;
+  }, [classLocks, isSecundariaOrPrepa]);
+
+  // Update lockedPeriods map across all periods
   useEffect(() => {
-    setIsBimestreLocked(!!lockedPeriods[selectedBimestre]);
-  }, [lockedPeriods, selectedBimestre]);
+    const periodsMap: Record<number, boolean> = {};
+
+    Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1).forEach((b) => {
+      if (!isSecundariaOrPrepa) {
+        // Global lock for Primaria/Preescolar
+        periodsMap[b] = classLocks.some(l => Number(l.bimestre) === Number(b) && !l.subjectId && l.locked);
+      } else {
+        // For Secundaria / Preparatoria:
+        // A period is fully locked for this teacher only if all of their relevant subjects are locked
+        if (activeTab === 'activities' && selectedSubjectId) {
+          periodsMap[b] = isSubjectLockedInPeriod(b, selectedSubjectId, selectedSubject?.name);
+        } else if (activeLevelSubjects.length > 0) {
+          periodsMap[b] = activeLevelSubjects.every(s => isSubjectLockedInPeriod(b, s.id, s.name));
+        } else {
+          periodsMap[b] = classLocks.some(l => Number(l.bimestre) === Number(b) && l.locked);
+        }
+      }
+    });
+
+    setLockedPeriods(periodsMap);
+  }, [classLocks, evalConfig.periodCount, isSecundariaOrPrepa, activeTab, selectedSubjectId, selectedSubject, activeLevelSubjects, isSubjectLockedInPeriod]);
+
+  // Keep isBimestreLocked in sync with selected period and active subject
+  useEffect(() => {
+    if (!isSecundariaOrPrepa) {
+      setIsBimestreLocked(!!lockedPeriods[selectedBimestre]);
+    } else {
+      if (activeTab === 'activities' && selectedSubjectId) {
+        setIsBimestreLocked(isSubjectLockedInPeriod(selectedBimestre, selectedSubjectId, selectedSubject?.name));
+      } else if (activeTab === 'observations' && selectedObsSubjectId) {
+        setIsBimestreLocked(isSubjectLockedInPeriod(selectedBimestre, selectedObsSubjectId, selectedObsSubject?.name));
+      } else if (activeLevelSubjects.length > 0) {
+        setIsBimestreLocked(activeLevelSubjects.every(s => isSubjectLockedInPeriod(selectedBimestre, s.id, s.name)));
+      } else {
+        setIsBimestreLocked(!!lockedPeriods[selectedBimestre]);
+      }
+    }
+  }, [lockedPeriods, selectedBimestre, isSecundariaOrPrepa, activeTab, selectedSubjectId, selectedSubject, selectedObsSubjectId, selectedObsSubject, activeLevelSubjects, isSubjectLockedInPeriod]);
+
+  const isAllAssignedSubjectsLocked = useMemo(() => {
+    if (!isSecundariaOrPrepa) {
+      return !!lockedPeriods[selectedBimestre];
+    }
+    if (activeLevelSubjects.length === 0) {
+      return !!lockedPeriods[selectedBimestre];
+    }
+    return activeLevelSubjects.every(s => isSubjectLockedInPeriod(selectedBimestre, s.id, s.name));
+  }, [isSecundariaOrPrepa, lockedPeriods, selectedBimestre, activeLevelSubjects, isSubjectLockedInPeriod]);
+
+  const isCurrentActivitySubjectLocked = useMemo(() => {
+    if (!isSecundariaOrPrepa) return !!lockedPeriods[selectedBimestre];
+    return isSubjectLockedInPeriod(selectedBimestre, selectedSubjectId, selectedSubject?.name);
+  }, [isSecundariaOrPrepa, lockedPeriods, selectedBimestre, selectedSubjectId, selectedSubject, isSubjectLockedInPeriod]);
+
+  const isCurrentObsSubjectLocked = useMemo(() => {
+    if (!isSecundariaOrPrepa) return !!lockedPeriods[selectedBimestre];
+    return isSubjectLockedInPeriod(selectedBimestre, selectedObsSubjectId, selectedObsSubject?.name);
+  }, [isSecundariaOrPrepa, lockedPeriods, selectedBimestre, selectedObsSubjectId, selectedObsSubject, isSubjectLockedInPeriod]);
 
   // Reset manual selection when switching tabs or class selection
   useEffect(() => {
@@ -1493,7 +1575,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   const saveSingleGrade = async (studentId: string, field: string, value: any, isSubject: boolean = false) => {
     if (!currentCycleId || !selectedBimestre) return;
-    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    const isThisLocked = isSubject
+      ? isSubjectLockedInPeriod(selectedBimestre, undefined, field)
+      : isBimestreLocked;
+    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
 
     const gradeId = `${studentId}_B${selectedBimestre}_${currentCycleId}`;
     const dirtyKey = isSubject ? `subj::${studentId}::${field}` : `field::${studentId}::${field}`;
@@ -1572,7 +1657,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   };
 
   const handleGradeChange = (studentId: string, field: string, value: any, isSubject: boolean = false) => {
-    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    const isThisLocked = isSubject
+      ? isSubjectLockedInPeriod(selectedBimestre, undefined, field)
+      : isBimestreLocked;
+    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
 
     let parsedVal: any = value;
     if (isSubject) {
@@ -1737,7 +1825,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   };
 
   const handleActivityScoreChange = (activityId: string, studentId: string, value: string) => {
-    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    if (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
 
     let parsedVal: number | string = value;
     if (gradingScale === 'letters') {
@@ -1803,6 +1891,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     if (!subjIdToSync || !currentCycleId) return;
 
     const subjObj = activeLevelSubjects.find(s => s.id === subjIdToSync) || selectedSubject;
+    const isTargetLocked = isSubjectLockedInPeriod(selectedBimestre, subjIdToSync, subjObj?.name);
+    if (isTargetLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) {
+      toast.error(`La materia "${subjObj?.name || 'seleccionada'}" está finalizada y bloqueada.`);
+      return;
+    }
     setIsSyncingActivities(true);
     try {
       const updatedGradesMap = { ...grades };
@@ -1877,7 +1970,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   const saveSingleObservation = async (studentId: string, subjectName: string, text: string) => {
     if (!currentCycleId || !selectedBimestre) return;
-    if (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    const isThisLocked = isSubjectLockedInPeriod(selectedBimestre, undefined, subjectName);
+    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
 
     const gradeId = `${studentId}_B${selectedBimestre}_${currentCycleId}`;
     const dirtyKey = `obs::${studentId}::${subjectName}`;
@@ -1912,6 +2006,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   };
 
   const handleObservationChange = (studentId: string, subjectName: string, text: string) => {
+    const isThisLocked = isSubjectLockedInPeriod(selectedBimestre, undefined, subjectName);
+    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
     const dirtyKey = `obs::${studentId}::${subjectName}`;
     dirtyFieldsRef.current.set(dirtyKey, { value: text, timestamp: Date.now() });
 
@@ -2098,6 +2194,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         const subjectsToUpdate: Record<string, any> = {};
         activeLevelSubjects.forEach(s => {
           if (!isStudentEnrolledInSubject(s, student.id)) return;
+          if (isSubjectLockedInPeriod(selectedBimestre, s.id, s.name) && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) {
+            return;
+          }
           const val = grade.subjects?.[s.name];
           if (val !== undefined && val !== null && val !== '') {
             if (gradingScale === 'letters') {
@@ -2152,10 +2251,35 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
   };
 
-  const handleFinalize = async () => {
+  const handleFinalize = async (subjectParam?: Subject | 'ALL') => {
     if (!userProfile || !currentCycleId) return;
     const periodLabel = evalConfig.periodNames?.[selectedBimestre - 1] || `Periodo ${selectedBimestre}`;
-    if (!window.confirm(`¿Estás seguro de finalizar las calificaciones de ${periodLabel}? Una vez finalizado, no podrás editarlas a menos que un administrador te habilite.`)) return;
+
+    let targetSubj: Subject | null = null;
+    let lockAll = false;
+
+    if (isSecundariaOrPrepa) {
+      if (subjectParam === 'ALL') {
+        lockAll = true;
+      } else if (subjectParam) {
+        targetSubj = subjectParam;
+      } else if (activeTab === 'activities' && selectedSubject) {
+        targetSubj = selectedSubject;
+      } else if (activeLevelSubjects.length === 1) {
+        targetSubj = activeLevelSubjects[0];
+      } else {
+        setIsFinalizeModalOpen(true);
+        return;
+      }
+    }
+
+    const confirmMsg = targetSubj
+      ? `¿Estás seguro de finalizar las calificaciones de la materia "${targetSubj.name}" para ${periodLabel}? Una vez finalizada, no podrás editarla a menos que un administrador te habilite.`
+      : lockAll
+        ? `¿Estás seguro de finalizar todas las materias de ${periodLabel}? Una vez finalizadas, no podrás editarlas a menos que un administrador te habilite.`
+        : `¿Estás seguro de finalizar las calificaciones de ${periodLabel}? Una vez finalizado, no podrás editarlas a menos que un administrador te habilite.`;
+
+    if (!window.confirm(confirmMsg)) return;
 
     setIsLocking(true);
     try {
@@ -2166,27 +2290,88 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       const targetGrade = activeGrade;
       const targetGroup = activeGroup;
 
-      const lockId = `${selectedBimestre}_${targetLevel}_${targetGrade}_${targetGroup || ''}_${currentCycleId}`;
-      await setDoc(doc(db, 'bimestreLocks', lockId), {
-        id: lockId,
-        bimestre: selectedBimestre,
-        level: targetLevel,
-        grade: targetGrade,
-        group: targetGroup || '',
-        cycleId: currentCycleId,
-        locked: true,
-        lockedAt: serverTimestamp(),
-        lockedBy: userProfile.id
-      });
+      if (isSecundariaOrPrepa && targetSubj) {
+        const lockId = `${selectedBimestre}_${targetLevel}_${targetGrade}_${targetGroup || ''}_${currentCycleId}_${targetSubj.id}`;
+        await setDoc(doc(db, 'bimestreLocks', lockId), {
+          id: lockId,
+          bimestre: selectedBimestre,
+          level: targetLevel,
+          grade: targetGrade,
+          group: targetGroup || '',
+          cycleId: currentCycleId,
+          subjectId: targetSubj.id,
+          subjectName: targetSubj.name,
+          locked: true,
+          lockedAt: serverTimestamp(),
+          lockedBy: userProfile.id
+        });
 
-      hasManuallySelectedPeriodRef.current = false;
-      if (selectedBimestre < evalConfig.periodCount) {
-        const nextB = (selectedBimestre + 1) as Bimestre;
-        setSelectedBimestre(nextB);
-        setSavedStatus(`¡${periodLabel} finalizado! Se avanzó automáticamente al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
+        toast.success(`¡Materia "${targetSubj.name}" finalizada para ${periodLabel}!`);
+        setSavedStatus(`¡Materia "${targetSubj.name}" finalizada para ${periodLabel}!`);
+
+        // Check if all teacher's subjects are now locked
+        const remainingUnlocked = activeLevelSubjects.filter(s => 
+          s.id !== targetSubj.id && !isSubjectLockedInPeriod(selectedBimestre, s.id, s.name)
+        );
+
+        if (remainingUnlocked.length === 0) {
+          hasManuallySelectedPeriodRef.current = false;
+          if (selectedBimestre < evalConfig.periodCount) {
+            const nextB = (selectedBimestre + 1) as Bimestre;
+            setSelectedBimestre(nextB);
+            setSavedStatus(`¡Todas tus materias finalizadas para ${periodLabel}! Se avanzó automáticamente al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
+          }
+        }
+      } else if (isSecundariaOrPrepa && lockAll) {
+        const unlockedSubjs = activeLevelSubjects.filter(s => !isSubjectLockedInPeriod(selectedBimestre, s.id, s.name));
+        for (const s of unlockedSubjs) {
+          const lockId = `${selectedBimestre}_${targetLevel}_${targetGrade}_${targetGroup || ''}_${currentCycleId}_${s.id}`;
+          await setDoc(doc(db, 'bimestreLocks', lockId), {
+            id: lockId,
+            bimestre: selectedBimestre,
+            level: targetLevel,
+            grade: targetGrade,
+            group: targetGroup || '',
+            cycleId: currentCycleId,
+            subjectId: s.id,
+            subjectName: s.name,
+            locked: true,
+            lockedAt: serverTimestamp(),
+            lockedBy: userProfile.id
+          });
+        }
+        toast.success(`¡Todas las materias finalizadas para ${periodLabel}!`);
+        hasManuallySelectedPeriodRef.current = false;
+        if (selectedBimestre < evalConfig.periodCount) {
+          const nextB = (selectedBimestre + 1) as Bimestre;
+          setSelectedBimestre(nextB);
+          setSavedStatus(`¡Todas las materias finalizadas para ${periodLabel}! Se avanzó al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
+        }
       } else {
-        setSavedStatus(`¡${periodLabel} finalizado y bloqueado! Se han completado todos los periodos.`);
+        const lockId = `${selectedBimestre}_${targetLevel}_${targetGrade}_${targetGroup || ''}_${currentCycleId}`;
+        await setDoc(doc(db, 'bimestreLocks', lockId), {
+          id: lockId,
+          bimestre: selectedBimestre,
+          level: targetLevel,
+          grade: targetGrade,
+          group: targetGroup || '',
+          cycleId: currentCycleId,
+          locked: true,
+          lockedAt: serverTimestamp(),
+          lockedBy: userProfile.id
+        });
+
+        hasManuallySelectedPeriodRef.current = false;
+        if (selectedBimestre < evalConfig.periodCount) {
+          const nextB = (selectedBimestre + 1) as Bimestre;
+          setSelectedBimestre(nextB);
+          setSavedStatus(`¡${periodLabel} finalizado! Se avanzó automáticamente al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
+        } else {
+          setSavedStatus(`¡${periodLabel} finalizado y bloqueado! Se han completado todos los periodos.`);
+        }
       }
+
+      setIsFinalizeModalOpen(false);
     } catch (error) {
       console.error("Error locking bimestre:", error);
       alert("Error al finalizar el periodo");
@@ -2818,24 +3003,68 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         
         {(activeTab === 'grading' || activeTab === 'activities' || activeTab === 'observations') && hasPermission('grading', 'manage') && (
           <div className="flex flex-wrap gap-2">
-            {activeTab === 'grading' && !isBimestreLocked && (
-              <button
-                onClick={handleFinalize}
-                disabled={isLocking || isSaving}
-                className="tech-button"
-              >
-                {isLocking ? (
-                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1" />
+            {activeTab === 'grading' && (
+              <>
+                {isAllAssignedSubjectsLocked ? (
+                  <div className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded border border-amber-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <Lock size={12} />
+                    {isSecundariaOrPrepa && activeLevelSubjects.length === 1 
+                      ? `${activeLevelSubjects[0].name} Finalizada` 
+                      : 'Periodo Finalizado'}
+                  </div>
                 ) : (
-                  <Lock size={12} className="mr-1" />
+                  <button
+                    onClick={() => {
+                      if (isSecundariaOrPrepa && activeLevelSubjects.length > 1) {
+                        setIsFinalizeModalOpen(true);
+                      } else if (isSecundariaOrPrepa && activeLevelSubjects.length === 1) {
+                        handleFinalize(activeLevelSubjects[0]);
+                      } else {
+                        handleFinalize();
+                      }
+                    }}
+                    disabled={isLocking || isSaving}
+                    className="tech-button"
+                  >
+                    {isLocking ? (
+                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                    ) : (
+                      <Lock size={12} className="mr-1" />
+                    )}
+                    {isSecundariaOrPrepa && activeLevelSubjects.length === 1
+                      ? `Finalizar ${activeLevelSubjects[0].name}`
+                      : `Finalizar ${evalConfig.periodNames?.[selectedBimestre - 1] || 'Periodo'}`}
+                  </button>
                 )}
-                Finalizar {evalConfig.periodNames?.[selectedBimestre - 1] || 'Periodo'}
-              </button>
+              </>
             )}
-            {isBimestreLocked && (
+            {activeTab === 'activities' && (
+              isCurrentActivitySubjectLocked ? (
+                <div className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded border border-amber-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                  <Lock size={12} />
+                  {selectedSubject?.name || 'Materia'} Finalizada
+                </div>
+              ) : isSecundariaOrPrepa && selectedSubject ? (
+                <button
+                  type="button"
+                  onClick={() => handleFinalize(selectedSubject)}
+                  disabled={isLocking || isSaving}
+                  className="tech-button"
+                  title={`Finalizar periodo para ${selectedSubject.name}`}
+                >
+                  {isLocking ? (
+                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                  ) : (
+                    <Lock size={12} className="mr-1" />
+                  )}
+                  Finalizar {selectedSubject.name}
+                </button>
+              ) : null
+            )}
+            {activeTab === 'observations' && isCurrentObsSubjectLocked && (
               <div className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded border border-amber-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                 <Lock size={12} />
-                Bloqueado
+                {selectedObsSubject?.name || 'Materia'} Finalizada
               </div>
             )}
             {activeTab === 'activities' && (
@@ -2844,7 +3073,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   <button
                     type="button"
                     onClick={() => promptSyncActivitiesModal()}
-                    disabled={isSyncingActivities}
+                    disabled={isSyncingActivities || (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
                     title={
                       isActivitiesSyncedWithGrades
                         ? "Calificaciones sincronizadas con las actividades"
@@ -2876,7 +3105,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                     setActivityFormSubjectId(selectedSubjectId);
                     setIsActivityModalOpen(true);
                   }}
-                  disabled={!selectedSubjectId || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                  disabled={!selectedSubjectId || (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
                   className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm shadow-blue-950/20 active:scale-95 cursor-pointer disabled:opacity-50"
                 >
                   <Plus size={13} strokeWidth={3} />
@@ -2897,7 +3126,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             ) : null}
             <button
               onClick={handleSaveAll}
-              disabled={isSaving || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+              disabled={isSaving || (isAllAssignedSubjectsLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
               className="px-4 py-1.5 bg-white text-slate-900 border border-slate-200 rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
             >
               {isSaving ? (
@@ -2905,7 +3134,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               ) : (
                 <Save size={12} />
               )}
-              {isBimestreLocked 
+              {isAllAssignedSubjectsLocked 
                 ? (activeTab === 'observations' ? 'Guardar Obs. (Admin)' : 'Guardar (Admin)') 
                 : (activeTab === 'observations' ? `Guardar Obs. ${evalConfig.periodType.charAt(0)}${selectedBimestre}` : `Guardar ${evalConfig.periodType.charAt(0)}${selectedBimestre}`)}
             </button>
@@ -3471,6 +3700,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         pureAcademicSubjects.map((subj, idx) => {
                           const isLast = idx === pureAcademicSubjects.length - 1;
                           const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
+                          const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                           return (
                             <th 
                               key={`th-pure-${subj.id || subj.name}`} 
@@ -3481,6 +3711,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               title={`Académica: ${subj.name}`}
                             >
                               <span className="block leading-tight">{subj.name}</span>
+                              {isColLocked && (
+                                <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
+                                  <Lock size={8} /> FINALIZADA
+                                </span>
+                              )}
                             </th>
                           );
                         })
@@ -3495,6 +3730,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         autonomyCurricularSubjects.map((subj, idx) => {
                           const isLast = idx === autonomyCurricularSubjects.length - 1;
                           const hasNextGroup = personalDevLevelSubjects.length > 0;
+                          const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                           return (
                             <th 
                               key={`th-auto-${subj.id || subj.name}`} 
@@ -3505,6 +3741,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               title={`Autonomía Curricular: ${subj.name}${subj.linkedSubjectName ? ` (Suma al promedio de: ${subj.linkedSubjectName})` : ''}`}
                             >
                               <span className="block leading-tight">{subj.name}</span>
+                              {isColLocked && (
+                                <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
+                                  <Lock size={8} /> FINALIZADA
+                                </span>
+                              )}
                               {subj.linkedSubjectName && (
                                 <span className="block text-[7px] text-amber-700 font-bold uppercase tracking-tighter mt-0.5">
                                   🔗 Suma a: {subj.linkedSubjectName}
@@ -3519,6 +3760,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                       {personalDevLevelSubjects.length > 0 && (
                         personalDevLevelSubjects.map((subj, idx) => {
                           const isLast = idx === personalDevLevelSubjects.length - 1;
+                          const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                           return (
                             <th 
                               key={`th-dev-${subj.id || subj.name}`} 
@@ -3529,6 +3771,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               )}
                             >
                               <span className="block leading-tight">{subj.name}</span>
+                              {isColLocked && (
+                                <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
+                                  <Lock size={8} /> FINALIZADA
+                                </span>
+                              )}
                             </th>
                           );
                         })
@@ -3605,41 +3852,44 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-slate-100"
                                   )}
                                 >
-                                  {gradingScale === 'letters' ? (
-                                    <select
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={rawVal}
-                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
-                                      className={cn(
-                                        "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
-                                        rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                        rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                        rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                        rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
-                                        "bg-slate-50 text-slate-400 border-transparent focus:bg-white focus:border-blue-400"
-                                      )}
-                                    >
-                                      <option value="">-</option>
-                                      <option value="A">A - Avanzado</option>
-                                      <option value="E">E - Esperado</option>
-                                      <option value="ED">ED - En Desarrollo</option>
-                                      <option value="RA">RA - Requiere Apoyo</option>
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={rawVal}
-                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
-                                      className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
-                                      placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
-                                    />
-                                  )}
+                                  {(() => {
+                                    const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
+                                    return gradingScale === 'letters' ? (
+                                      <select
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className={cn(
+                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                          rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                          rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                          rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                          rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                          "bg-slate-50 text-slate-400 border-transparent focus:bg-white focus:border-blue-400"
+                                        )}
+                                      >
+                                        <option value="">-</option>
+                                        <option value="A">A - Avanzado</option>
+                                        <option value="E">E - Esperado</option>
+                                        <option value="ED">ED - En Desarrollo</option>
+                                        <option value="RA">RA - Requiere Apoyo</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className="w-full bg-slate-50 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-slate-950 focus:bg-white focus:border-blue-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                      />
+                                    );
+                                  })()}
                                 </td>
                               );
                             })
@@ -3680,41 +3930,44 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
                                   )}
                                 >
-                                  {gradingScale === 'letters' ? (
-                                    <select
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={rawVal}
-                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
-                                      className={cn(
-                                        "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
-                                        rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                        rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                        rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                        rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
-                                        "bg-amber-50/40 text-amber-400 border-transparent focus:bg-white focus:border-amber-400"
-                                      )}
-                                    >
-                                      <option value="">-</option>
-                                      <option value="A">A - Avanzado</option>
-                                      <option value="E">E - Esperado</option>
-                                      <option value="ED">ED - En Desarrollo</option>
-                                      <option value="RA">RA - Requiere Apoyo</option>
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={rawVal}
-                                      onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => handleGradeBlur(student.id, subj.name, true)}
-                                      className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
-                                      placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
-                                    />
-                                  )}
+                                  {(() => {
+                                    const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
+                                    return gradingScale === 'letters' ? (
+                                      <select
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className={cn(
+                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                          rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                          rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                          rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                          rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                          "bg-amber-50/40 text-amber-400 border-transparent focus:bg-white focus:border-amber-400"
+                                        )}
+                                      >
+                                        <option value="">-</option>
+                                        <option value="A">A - Avanzado</option>
+                                        <option value="E">E - Esperado</option>
+                                        <option value="ED">ED - En Desarrollo</option>
+                                        <option value="RA">RA - Requiere Apoyo</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                      />
+                                    );
+                                  })()}
                                 </td>
                               );
                             })
@@ -3753,79 +4006,82 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     isLast ? (isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : "") : "border-r border-indigo-100/70"
                                   )}
                                 >
-                                  {isAttendanceTracker ? (
-                                    <input
-                                      type="text"
-                                      inputMode="numeric"
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={gradeVal}
-                                      onChange={(e) => {
-                                        handleGradeChange(student.id, subj.name, e.target.value, true);
-                                        handleGradeChange(student.id, 'attendance', e.target.value, false);
-                                      }}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => {
-                                        handleGradeBlur(student.id, subj.name, true);
-                                        handleGradeBlur(student.id, 'attendance', false);
-                                      }}
-                                      className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all tabular-nums"
-                                      placeholder="0"
-                                    />
-                                  ) : gradingScale === 'letters' ? (
-                                    <select
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={gradeVal}
-                                      onChange={(e) => {
-                                        handleGradeChange(student.id, subj.name, e.target.value, true);
-                                        if (legacyField) {
-                                          handleGradeChange(student.id, legacyField, e.target.value, false);
-                                        }
-                                      }}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => {
-                                        handleGradeBlur(student.id, subj.name, true);
-                                        if (legacyField) {
-                                          handleGradeBlur(student.id, legacyField, false);
-                                        }
-                                      }}
-                                      className={cn(
-                                        "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
-                                        gradeVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                        gradeVal === 'E' || gradeVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                        gradeVal === 'ED' || gradeVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                        gradeVal === 'RA' || gradeVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
-                                        "bg-indigo-50/30 text-indigo-400 border-transparent focus:bg-white focus:border-indigo-400"
-                                      )}
-                                    >
-                                      <option value="">-</option>
-                                      <option value="A">A - Avanzado</option>
-                                      <option value="E">E - Esperado</option>
-                                      <option value="ED">ED - En Desarrollo</option>
-                                      <option value="RA">RA - Requiere Apoyo</option>
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                      disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                      value={gradeVal}
-                                      onChange={(e) => {
-                                        handleGradeChange(student.id, subj.name, e.target.value, true);
-                                        if (legacyField) {
-                                          handleGradeChange(student.id, legacyField, e.target.value, false);
-                                        }
-                                      }}
-                                      onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                      onBlur={() => {
-                                        handleGradeBlur(student.id, subj.name, true);
-                                        if (legacyField) {
-                                          handleGradeBlur(student.id, legacyField, false);
-                                        }
-                                      }}
-                                      className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                      placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
-                                    />
-                                  )}
+                                  {(() => {
+                                    const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
+                                    return isAttendanceTracker ? (
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={gradeVal}
+                                        onChange={(e) => {
+                                          handleGradeChange(student.id, subj.name, e.target.value, true);
+                                          handleGradeChange(student.id, 'attendance', e.target.value, false);
+                                        }}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => {
+                                          handleGradeBlur(student.id, subj.name, true);
+                                          handleGradeBlur(student.id, 'attendance', false);
+                                        }}
+                                        className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all tabular-nums"
+                                        placeholder="0"
+                                      />
+                                    ) : gradingScale === 'letters' ? (
+                                      <select
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={gradeVal}
+                                        onChange={(e) => {
+                                          handleGradeChange(student.id, subj.name, e.target.value, true);
+                                          if (legacyField) {
+                                            handleGradeChange(student.id, legacyField, e.target.value, false);
+                                          }
+                                        }}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => {
+                                          handleGradeBlur(student.id, subj.name, true);
+                                          if (legacyField) {
+                                            handleGradeBlur(student.id, legacyField, false);
+                                          }
+                                        }}
+                                        className={cn(
+                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                          gradeVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                          gradeVal === 'E' || gradeVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                          gradeVal === 'ED' || gradeVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                          gradeVal === 'RA' || gradeVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                          "bg-indigo-50/30 text-indigo-400 border-transparent focus:bg-white focus:border-indigo-400"
+                                        )}
+                                      >
+                                        <option value="">-</option>
+                                        <option value="A">A - Avanzado</option>
+                                        <option value="E">E - Esperado</option>
+                                        <option value="ED">ED - En Desarrollo</option>
+                                        <option value="RA">RA - Requiere Apoyo</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={gradeVal}
+                                        onChange={(e) => {
+                                          handleGradeChange(student.id, subj.name, e.target.value, true);
+                                          if (legacyField) {
+                                            handleGradeChange(student.id, legacyField, e.target.value, false);
+                                          }
+                                        }}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => {
+                                          handleGradeBlur(student.id, subj.name, true);
+                                          if (legacyField) {
+                                            handleGradeBlur(student.id, legacyField, false);
+                                          }
+                                        }}
+                                        className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                      />
+                                    );
+                                  })()}
                                 </td>
                               );
                             })
@@ -4042,7 +4298,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               onChange={(e) => handleObservationChange(student.id, selectedObsSubject.name, e.target.value)}
                               onFocus={() => { activeInputKeyRef.current = `obs::${student.id}::${selectedObsSubject.name}`; }}
                               onBlur={() => handleObservationBlur(student.id, selectedObsSubject.name)}
-                              disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                              disabled={isCurrentObsSubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Escribir observación manual para ${student.name}...`}
                               rows={1}
                               maxLength={240}
@@ -4136,7 +4392,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               onChange={(e) => handleObservationChange(student.id, subj.name, e.target.value)}
                               onFocus={() => { activeInputKeyRef.current = `obs::${student.id}::${subj.name}`; }}
                               onBlur={() => handleObservationBlur(student.id, subj.name)}
-                              disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                              disabled={isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name) && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                               placeholder={`Observación de ${subj.name}...`}
                               rows={2}
                               maxLength={240}
@@ -4264,7 +4520,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   setActivityFormSubjectId(selectedSubjectId);
                   setIsActivityModalOpen(true);
                 }}
-                disabled={!selectedSubjectId || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                disabled={!selectedSubjectId || (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
                 className="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
               >
                 <Plus size={12} strokeWidth={3} />
@@ -4287,7 +4543,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 No hay actividades registradas
               </p>
-              {!isBimestreLocked && (
+              {!isCurrentActivitySubjectLocked && (
                 <button
                   type="button"
                   onClick={() => {
@@ -4325,7 +4581,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               <span className="px-1.5 py-0.5 rounded bg-blue-100/90 border border-blue-200/80">
                                 {formatShortDate(act.date)}
                               </span>
-                              {!isBimestreLocked && (
+                              {!isCurrentActivitySubjectLocked && (
                                 <div className="flex items-center gap-0.5">
                                   <button
                                     type="button"
@@ -4408,7 +4664,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               <td key={act.id} className="px-1.5 py-1.5 text-center border-r border-slate-100 bg-blue-50/10">
                                 {gradingScale === 'letters' ? (
                                   <select
-                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    disabled={isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                     value={rawScore}
                                     onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
                                     onBlur={() => handleActivityScoreBlur(act.id)}
@@ -4434,7 +4690,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     min="0"
                                     max={gradingScale === 'numeric_100' ? "100" : "10"}
                                     step={gradingScale === 'numeric_100' ? "1" : "0.5"}
-                                    disabled={isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    disabled={isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
                                     value={rawScore}
                                     onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
                                     onBlur={() => handleActivityScoreBlur(act.id)}
@@ -5800,6 +6056,128 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 >
                   Cerrar
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Modal: Finalizar Materia / Periodo (Secundaria / Bachillerato) */}
+        {isFinalizeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isLocking && setIsFinalizeModalOpen(false)}
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 8 }}
+              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-5 sm:p-6 z-10 space-y-4"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-200">
+                    <Lock size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">
+                      Finalizar Calificaciones
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      {evalConfig.periodNames?.[selectedBimestre - 1] || `Periodo ${selectedBimestre}`} • {activeLevel} {activeGrade}° "{activeGroup}"
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isLocking && setIsFinalizeModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition-colors cursor-pointer shrink-0"
+                  title="Cerrar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                En {activeLevel}, el bloqueo se realiza por materia para permitir que cada docente capture calificaciones de forma independiente. Selecciona la materia que deseas finalizar:
+              </p>
+
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                {activeLevelSubjects.map((s) => {
+                  const locked = isSubjectLockedInPeriod(selectedBimestre, s.id, s.name);
+                  return (
+                    <div
+                      key={s.id}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-xl border transition-all",
+                        locked
+                          ? "bg-slate-50/80 border-slate-200 text-slate-500"
+                          : "bg-white border-slate-200 hover:border-blue-400 hover:shadow-xs"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        <span
+                          className={cn(
+                            "w-2.5 h-2.5 rounded-full shrink-0",
+                            locked ? "bg-amber-500" : "bg-emerald-500"
+                          )}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {s.name}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {locked ? "Calificaciones bloqueadas" : "Disponible para captura y edición"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {locked ? (
+                        <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shrink-0">
+                          <Lock size={10} />
+                          Finalizada
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleFinalize(s)}
+                          disabled={isLocking || isSaving}
+                          className="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                        >
+                          <Lock size={12} />
+                          Finalizar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Botones inferiores */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFinalizeModalOpen(false)}
+                  disabled={isLocking}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+
+                {activeLevelSubjects.filter(s => !isSubjectLockedInPeriod(selectedBimestre, s.id, s.name)).length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleFinalize('ALL')}
+                    disabled={isLocking || isSaving}
+                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Lock size={13} />
+                    Finalizar todas mis materias
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

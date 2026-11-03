@@ -845,3 +845,4 @@ export default function ReportCardSecundaria1PDF({
     </Document>
   );
 }
+

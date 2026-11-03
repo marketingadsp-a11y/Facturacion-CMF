@@ -1973,13 +1973,25 @@ export default function Settings() {
                                 <span className="text-lg font-black">{lock.bimestre}</span>
                              </div>
                              <div>
-                                <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{lock.level} - {lock.grade} {lock.group}</p>
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest italic opacity-60">Bimestre académico</p>
+                                <p className="text-sm font-black text-slate-900 uppercase tracking-tight flex items-center gap-2 flex-wrap">
+                                  <span>{lock.level} - {lock.grade} {lock.group}</span>
+                                  {lock.subjectName && (
+                                    <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-[11px] font-black">
+                                      {lock.subjectName}
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest italic opacity-60">
+                                  {lock.subjectName ? `Materia bloqueada (Periodo ${lock.bimestre})` : `Bimestre académico completo (Periodo ${lock.bimestre})`}
+                                </p>
                              </div>
                           </div>
                           <button 
                             onClick={async () => {
-                              if (window.confirm('¿Desbloquear este grado? Los docentes podrán editar notas nuevamente.')) {
+                              const targetDesc = lock.subjectName 
+                                ? `la materia "${lock.subjectName}" (${lock.level} ${lock.grade} ${lock.group}) para el Periodo ${lock.bimestre}` 
+                                : `este grado (${lock.level} ${lock.grade} ${lock.group}) para el Periodo ${lock.bimestre}`;
+                              if (window.confirm(`¿Desbloquear ${targetDesc}? Los docentes podrán editar notas nuevamente.`)) {
                                 try {
                                   await deleteDoc(doc(db, 'bimestreLocks', lock.id));
                                 } catch (error) {
@@ -1987,7 +1999,7 @@ export default function Settings() {
                                 }
                               }
                             }}
-                            className="p-3 bg-amber-100 text-amber-700 hover:bg-amber-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            className="p-3 bg-amber-100 text-amber-700 hover:bg-amber-600 hover:text-white rounded-xl transition-all shadow-sm cursor-pointer"
                             title="Desbloquear"
                           >
                             <Unlock size={18} />
