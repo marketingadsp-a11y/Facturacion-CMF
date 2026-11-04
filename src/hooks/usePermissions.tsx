@@ -161,6 +161,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     if (auth.currentUser?.email?.toLowerCase() === 'cramonmb@gmail.com') return true;
     if (!userProfile) return false;
     if (userProfile.role === 'Superadministrador') return true;
+    if (userProfile.role === 'Control Escolar' && (section === 'grading' || section === 'controlEscolar')) return true;
     
     const sectionPerms = userProfile.permissions?.[section] as any;
     if (!sectionPerms) return false;

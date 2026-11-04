@@ -255,7 +255,7 @@ export default function Settings() {
       announcements: { view: true, manage: true },
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
-      grading: { view: false, manage: false },
+      grading: { view: true, manage: true },
       timeClock: { view: false, manage: false }
     },
     Docente: {

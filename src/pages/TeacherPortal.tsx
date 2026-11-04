@@ -171,6 +171,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
   const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
+  const canBypassLock = isSuperAdmin || ['Superadministrador', 'Administrador', 'Control Escolar'].includes(userProfile?.role || '');
   const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
   const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
   const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
@@ -1597,7 +1598,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     const isThisLocked = isSubject
       ? isSubjectLockedInPeriod(selectedBimestre, undefined, field)
       : isBimestreLocked;
-    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    if (isThisLocked && !canBypassLock) return;
 
     const gradeId = `${studentId}_B${selectedBimestre}_${currentCycleId}`;
     const dirtyKey = isSubject ? `subj::${studentId}::${field}` : `field::${studentId}::${field}`;
@@ -1679,7 +1680,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     const isThisLocked = isSubject
       ? isSubjectLockedInPeriod(selectedBimestre, undefined, field)
       : isBimestreLocked;
-    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    if (isThisLocked && !canBypassLock) return;
 
     let parsedVal: any = value;
     if (isSubject) {
@@ -1844,7 +1845,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   };
 
   const handleActivityScoreChange = (activityId: string, studentId: string, value: string) => {
-    if (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    if (isCurrentActivitySubjectLocked && !canBypassLock) return;
 
     let parsedVal: number | string = value;
     if (gradingScale === 'letters') {
@@ -1911,7 +1912,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
     const subjObj = activeLevelSubjects.find(s => s.id === subjIdToSync) || selectedSubject;
     const isTargetLocked = isSubjectLockedInPeriod(selectedBimestre, subjIdToSync, subjObj?.name);
-    if (isTargetLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) {
+    if (isTargetLocked && !canBypassLock) {
       toast.error(`La materia "${subjObj?.name || 'seleccionada'}" está finalizada y bloqueada.`);
       return;
     }
@@ -1990,7 +1991,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const saveSingleObservation = async (studentId: string, subjectName: string, text: string) => {
     if (!currentCycleId || !selectedBimestre) return;
     const isThisLocked = isSubjectLockedInPeriod(selectedBimestre, undefined, subjectName);
-    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    if (isThisLocked && !canBypassLock) return;
 
     const gradeId = `${studentId}_B${selectedBimestre}_${currentCycleId}`;
     const dirtyKey = `obs::${studentId}::${subjectName}`;
@@ -2026,7 +2027,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
   const handleObservationChange = (studentId: string, subjectName: string, text: string) => {
     const isThisLocked = isSubjectLockedInPeriod(selectedBimestre, undefined, subjectName);
-    if (isThisLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) return;
+    if (isThisLocked && !canBypassLock) return;
     const dirtyKey = `obs::${studentId}::${subjectName}`;
     dirtyFieldsRef.current.set(dirtyKey, { value: text, timestamp: Date.now() });
 
@@ -2213,7 +2214,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         const subjectsToUpdate: Record<string, any> = {};
         activeLevelSubjects.forEach(s => {
           if (!isStudentEnrolledInSubject(s, student.id)) return;
-          if (isSubjectLockedInPeriod(selectedBimestre, s.id, s.name) && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')) {
+          if (isSubjectLockedInPeriod(selectedBimestre, s.id, s.name) && !canBypassLock) {
             return;
           }
           const val = grade.subjects?.[s.name];
@@ -3038,7 +3039,13 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               )}
             </div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-              {userProfile?.name ? `Docente: ${userProfile.name}` : 'Control Escolar'}
+              {userProfile?.name 
+                ? (userProfile.role === 'Control Escolar' 
+                    ? `Control Escolar: ${userProfile.name}` 
+                    : (userProfile.role === 'Administrador' || userProfile.role === 'Superadministrador') 
+                      ? `Administrador: ${userProfile.name}` 
+                      : `Docente: ${userProfile.name}`) 
+                : 'Control Escolar'}
             </p>
           </div>
         </div>
@@ -3103,6 +3110,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                       {isSecundariaOrPrepa && activeLevelSubjects.length === 1 
                         ? `${activeLevelSubjects[0].name} Finalizada` 
                         : 'Periodo Finalizado'}
+                      {canBypassLock && (
+                        <span className="text-[8.5px] bg-amber-200/80 text-amber-950 px-1.5 py-0.5 rounded font-black tracking-normal">
+                          Edición habilitada
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -3180,7 +3192,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   <button
                     type="button"
                     onClick={() => promptSyncActivitiesModal()}
-                    disabled={isSyncingActivities || (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                    disabled={isSyncingActivities || (isCurrentActivitySubjectLocked && !canBypassLock)}
                     title={
                       isActivitiesSyncedWithGrades
                         ? "Calificaciones sincronizadas con las actividades"
@@ -3212,7 +3224,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                     setActivityFormSubjectId(selectedSubjectId);
                     setIsActivityModalOpen(true);
                   }}
-                  disabled={!selectedSubjectId || (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                  disabled={!selectedSubjectId || (isCurrentActivitySubjectLocked && !canBypassLock)}
                   className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm shadow-blue-950/20 active:scale-95 cursor-pointer disabled:opacity-50"
                 >
                   <Plus size={13} strokeWidth={3} />
@@ -3233,7 +3245,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             ) : null}
             <button
               onClick={handleSaveAll}
-              disabled={isSaving || (isAllAssignedSubjectsLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+              disabled={isSaving || (isAllAssignedSubjectsLocked && !canBypassLock)}
               className="px-4 py-1.5 bg-white text-slate-900 border border-slate-200 rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
             >
               {isSaving ? (
@@ -3242,7 +3254,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 <Save size={12} />
               )}
               {isAllAssignedSubjectsLocked 
-                ? (activeTab === 'observations' ? 'Guardar Obs. (Admin)' : 'Guardar (Admin)') 
+                ? (activeTab === 'observations' 
+                    ? (userProfile?.role === 'Control Escolar' ? 'Guardar Obs. (Control Escolar)' : 'Guardar Obs. (Admin)') 
+                    : (userProfile?.role === 'Control Escolar' ? 'Guardar (Control Escolar)' : 'Guardar (Admin)')) 
                 : (activeTab === 'observations' ? `Guardar Obs. ${evalConfig.periodType.charAt(0)}${selectedBimestre}` : `Guardar ${evalConfig.periodType.charAt(0)}${selectedBimestre}`)}
             </button>
           </div>
@@ -4030,7 +4044,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                                     return gradingScale === 'letters' ? (
                                       <select
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={rawVal}
                                         onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                                         onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
@@ -4054,7 +4068,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       <input
                                         type="text"
                                         inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={rawVal}
                                         onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                                         onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
@@ -4113,7 +4127,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={gradeVal}
                                         onChange={(e) => {
                                           handleGradeChange(student.id, subj.name, e.target.value, true);
@@ -4129,7 +4143,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       />
                                     ) : gradingScale === 'letters' ? (
                                       <select
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={gradeVal}
                                         onChange={(e) => {
                                           handleGradeChange(student.id, subj.name, e.target.value, true);
@@ -4163,7 +4177,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       <input
                                         type="text"
                                         inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={gradeVal}
                                         onChange={(e) => {
                                           handleGradeChange(student.id, subj.name, e.target.value, true);
@@ -4223,7 +4237,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                                     return gradingScale === 'letters' ? (
                                       <select
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={rawVal}
                                         onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                                         onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
@@ -4247,7 +4261,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       <input
                                         type="text"
                                         inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={rawVal}
                                         onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                                         onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
@@ -4296,7 +4310,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                                     return gradingScale === 'letters' ? (
                                       <select
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={rawVal}
                                         onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                                         onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
@@ -4320,7 +4334,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                       <input
                                         type="text"
                                         inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        disabled={isColLocked && !canBypassLock}
                                         value={rawVal}
                                         onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
                                         onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
@@ -4426,7 +4440,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 <button
                   type="button"
                   onClick={handleSaveObservations}
-                  disabled={isSaving || (isBimestreLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                  disabled={isSaving || (isBimestreLocked && !canBypassLock)}
                   className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   {isSaving ? (
@@ -4546,7 +4560,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               onChange={(e) => handleObservationChange(student.id, selectedObsSubject.name, e.target.value)}
                               onFocus={() => { activeInputKeyRef.current = `obs::${student.id}::${selectedObsSubject.name}`; }}
                               onBlur={() => handleObservationBlur(student.id, selectedObsSubject.name)}
-                              disabled={isCurrentObsSubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                              disabled={isCurrentObsSubjectLocked && !canBypassLock}
                               placeholder={`Escribir observación manual para ${student.name}...`}
                               rows={1}
                               maxLength={240}
@@ -4640,7 +4654,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               onChange={(e) => handleObservationChange(student.id, subj.name, e.target.value)}
                               onFocus={() => { activeInputKeyRef.current = `obs::${student.id}::${subj.name}`; }}
                               onBlur={() => handleObservationBlur(student.id, subj.name)}
-                              disabled={isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name) && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                              disabled={isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name) && !canBypassLock}
                               placeholder={`Observación de ${subj.name}...`}
                               rows={2}
                               maxLength={240}
@@ -4768,7 +4782,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   setActivityFormSubjectId(selectedSubjectId);
                   setIsActivityModalOpen(true);
                 }}
-                disabled={!selectedSubjectId || (isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || ''))}
+                disabled={!selectedSubjectId || (isCurrentActivitySubjectLocked && !canBypassLock)}
                 className="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
               >
                 <Plus size={12} strokeWidth={3} />
@@ -4912,7 +4926,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               <td key={act.id} className="px-1.5 py-1.5 text-center border-r border-slate-100 bg-blue-50/10">
                                 {gradingScale === 'letters' ? (
                                   <select
-                                    disabled={isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    disabled={isCurrentActivitySubjectLocked && !canBypassLock}
                                     value={rawScore}
                                     onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
                                     onBlur={() => handleActivityScoreBlur(act.id)}
@@ -4938,7 +4952,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                     min="0"
                                     max={gradingScale === 'numeric_100' ? "100" : "10"}
                                     step={gradingScale === 'numeric_100' ? "1" : "0.5"}
-                                    disabled={isCurrentActivitySubjectLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                    disabled={isCurrentActivitySubjectLocked && !canBypassLock}
                                     value={rawScore}
                                     onChange={(e) => handleActivityScoreChange(act.id, student.id, e.target.value)}
                                     onBlur={() => handleActivityScoreBlur(act.id)}
