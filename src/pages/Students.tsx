@@ -4,8 +4,9 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimest
 import { db, auth } from '../firebase';
 import { Student, Payment, AppSettings, SchoolCycle } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, Users, BookOpen, ReceiptText, ShieldCheck, IdCard, Image as ImageIcon, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, UserPlus, X, GraduationCap, Mail, Phone, FileText, MapPin, History, Filter, ChevronRight, Calendar, CreditCard, AlertCircle, TrendingDown, UserRound, Download, Check, Copy, ShieldAlert, Sparkles, User, Users, BookOpen, ReceiptText, ShieldCheck, IdCard, Image as ImageIcon, FileSpreadsheet, ClipboardPaste } from 'lucide-react';
 import ImportStudentsModal from '../components/ImportStudentsModal';
+import ImportStudentsDataModal from '../components/ImportStudentsDataModal';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { format } from 'date-fns';
@@ -43,9 +44,10 @@ export default function Students() {
   const [showEmailSuccess, setShowEmailSuccess] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
-  // Migration States
+  // Migration & Import States
   const [isMigrateModalOpen, setIsMigrateModalOpen] = useState(false);
   const [isImportExcelOpen, setIsImportExcelOpen] = useState(false);
+  const [isImportDataModalOpen, setIsImportDataModalOpen] = useState(false);
   const [migrationSourceCycle, setMigrationSourceCycle] = useState('');
   const [migrationTargetCycle, setMigrationTargetCycle] = useState('');
   const [migrationSelectedStudents, setMigrationSelectedStudents] = useState<string[]>([]);
@@ -726,6 +728,17 @@ export default function Students() {
           )}
           {hasPermission('students', 'create') && (
             <div className="flex gap-2">
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setIsImportDataModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer"
+                  title="Importar y actualizar Matrícula SEP y CURP pegando texto desde Excel (Solo Superadministrador)"
+                >
+                  <ClipboardPaste size={14} />
+                  Importar Datos
+                </button>
+              )}
+
               <button
                 onClick={() => setIsImportExcelOpen(true)}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm hover:shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer"
@@ -2174,6 +2187,16 @@ export default function Students() {
         existingStudents={students}
         onSuccess={() => {}}
       />
+
+      {/* Excel Data Import Modal (Matrícula & CURP) - Only Superadministrador */}
+      {isImportDataModalOpen && (
+        <ImportStudentsDataModal
+          isOpen={isImportDataModalOpen}
+          onClose={() => setIsImportDataModalOpen(false)}
+          students={students}
+          isSuperAdmin={isSuperAdmin}
+        />
+      )}
     </div>
   );
 }

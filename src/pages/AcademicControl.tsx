@@ -4,7 +4,7 @@ import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject, AppUser } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2, MessageSquare } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2, MessageSquare, UserCheck } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -26,13 +26,13 @@ export default function AcademicControl() {
   const { hasPermission, userProfile } = usePermissions();
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
-  const defaultTab = (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects' || requestedTab === 'taes') 
+  const defaultTab = (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects' || requestedTab === 'assignments' || requestedTab === 'taes') 
     ? requestedTab 
     : 'studentList';
-  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects' | 'taes'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'enrollments' | 'studentList' | 'subjects' | 'assignments' | 'taes'>(defaultTab);
 
   useEffect(() => {
-    if (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects' || requestedTab === 'taes') {
+    if (requestedTab === 'enrollments' || requestedTab === 'studentList' || requestedTab === 'subjects' || requestedTab === 'assignments' || requestedTab === 'taes') {
       setActiveTab(requestedTab);
     }
   }, [requestedTab]);
@@ -522,18 +522,36 @@ export default function AcademicControl() {
     levelStudents.forEach(s => {
       const key = `${s.grade}__${s.group || 'Sin Grupo'}`;
       if (!map.has(key)) {
-        const teacher = users.find(u => 
-          u.role === 'Docente' && 
-          u.assignedLevel === targetLevel && 
-          u.assignedGrade === s.grade && 
-          (!u.assignedGroup || u.assignedGroup === s.group)
-        );
+        const grpKey = `${targetLevel}__${s.grade}__${s.group || ''}`;
+        let assignedTeacherName = '';
+        if (settings?.groupTeachers?.[grpKey]) {
+          const entry = settings.groupTeachers[grpKey];
+          assignedTeacherName = typeof entry === 'string' ? entry : (entry as any).teacherName || '';
+        } else if (settings?.groupTeachers) {
+          const norm = grpKey.toLowerCase();
+          for (const [k, v] of Object.entries(settings.groupTeachers)) {
+            if (k.toLowerCase() === norm) {
+              assignedTeacherName = typeof v === 'string' ? v : (v as any).teacherName || '';
+              break;
+            }
+          }
+        }
+        if (!assignedTeacherName) {
+          const teacher = users.find(u => 
+            u.role === 'Docente' && 
+            u.assignedLevel === targetLevel && 
+            u.assignedGrade === s.grade && 
+            (!u.assignedGroup || u.assignedGroup === s.group)
+          );
+          assignedTeacherName = teacher?.name || '';
+        }
+
         map.set(key, {
           level: targetLevel,
           grade: s.grade,
           group: s.group || '',
           students: [],
-          teacherName: teacher?.name || '',
+          teacherName: assignedTeacherName,
         });
       }
       map.get(key)!.students.push(s);
@@ -591,7 +609,20 @@ export default function AcademicControl() {
 
   // Teacher assigned to current group
   const currentGroupTeacher = useMemo(() => {
-    if (!filterLevel) return '';
+    if (!filterLevel || !filterGrade) return '';
+    const grpKey = `${filterLevel}__${filterGrade}__${filterGroup || ''}`;
+    if (settings?.groupTeachers?.[grpKey]) {
+      const entry = settings.groupTeachers[grpKey];
+      return typeof entry === 'string' ? entry : (entry as any).teacherName || '';
+    }
+    if (settings?.groupTeachers) {
+      const norm = grpKey.toLowerCase();
+      for (const [k, v] of Object.entries(settings.groupTeachers)) {
+        if (k.toLowerCase() === norm) {
+          return typeof v === 'string' ? v : (v as any).teacherName || '';
+        }
+      }
+    }
     const match = users.find(u => 
       u.role === 'Docente' && 
       u.assignedLevel === filterLevel && 
@@ -599,7 +630,7 @@ export default function AcademicControl() {
       (!u.assignedGroup || u.assignedGroup === filterGroup)
     );
     return match?.name || '';
-  }, [users, filterLevel, filterGrade, filterGroup]);
+  }, [settings?.groupTeachers, users, filterLevel, filterGrade, filterGroup]);
 
   return (
     <div className="space-y-6 pb-12 font-sans tracking-tight max-w-[1600px] mx-auto">
@@ -652,6 +683,18 @@ export default function AcademicControl() {
               )}
             >
               Materias
+            </button>
+            <button
+              onClick={() => setActiveTab('assignments')}
+              className={cn(
+                "px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5",
+                activeTab === 'assignments' 
+                  ? "bg-slate-900 text-white shadow-sm" 
+                  : "text-slate-400 hover:text-slate-900"
+              )}
+            >
+              <UserCheck size={11} className={activeTab === 'assignments' ? "text-blue-400" : "text-slate-400"} />
+              Asignación
             </button>
             <button
               onClick={() => setActiveTab('taes')}
@@ -1117,6 +1160,16 @@ export default function AcademicControl() {
 
       {activeTab === 'subjects' && (
         <SubjectsManagement subjects={subjects} settings={settings} availableLevels={availableLevels} />
+      )}
+
+      {activeTab === 'assignments' && (
+        <GroupAssignmentsManagement
+          students={students}
+          users={users}
+          settings={settings}
+          availableLevels={availableLevels}
+          filterCycleId={filterCycleId}
+        />
       )}
 
       {activeTab === 'taes' && (
@@ -3420,6 +3473,391 @@ function TaesManagement({
           </div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function GroupAssignmentsManagement({
+  students,
+  users,
+  settings,
+  availableLevels = [],
+  filterCycleId
+}: {
+  students: Student[];
+  users: AppUser[];
+  settings: AppSettings | null;
+  availableLevels?: string[];
+  filterCycleId: string;
+}) {
+  const [selectedLevelFilter, setSelectedLevelFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  // Filter ONLY Preescolar and Primaria levels
+  const preescolarAndPrimariaLevels = useMemo(() => {
+    return availableLevels.filter(lvl => {
+      const norm = (lvl || '').toLowerCase().trim();
+      return (
+        norm.includes('preescolar') ||
+        norm.includes('kinder') ||
+        norm.includes('kínder') ||
+        norm.includes('maternal') ||
+        norm.includes('pre-escolar') ||
+        norm.includes('pre escolar') ||
+        norm.includes('primaria')
+      );
+    });
+  }, [availableLevels]);
+
+  // Teachers list
+  const teachers = useMemo(() => {
+    return users
+      .filter(u => u.role === 'Docente')
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [users]);
+
+  // Extract all groups with students strictly for Preescolar and Primaria
+  const groupsWithStudents = useMemo(() => {
+    const list: {
+      key: string;
+      level: string;
+      grade: string;
+      group: string;
+      studentCount: number;
+    }[] = [];
+
+    preescolarAndPrimariaLevels.forEach(lvl => {
+      const levelStudents = students.filter(s => {
+        const matchesLevel = (s.level || '').toLowerCase().trim() === lvl.toLowerCase().trim();
+        const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
+        return matchesLevel && matchesCycle;
+      });
+
+      const map = new Map<string, { level: string; grade: string; group: string; studentCount: number }>();
+
+      levelStudents.forEach(s => {
+        if (!s.grade) return;
+        const grp = (s.group || 'A').trim();
+        const gKey = `${s.grade.trim()}__${grp}`;
+        if (!map.has(gKey)) {
+          map.set(gKey, {
+            level: lvl,
+            grade: s.grade.trim(),
+            group: grp,
+            studentCount: 0
+          });
+        }
+        map.get(gKey)!.studentCount++;
+      });
+
+      // Strictly only groups with studentsCount > 0
+      Array.from(map.values())
+        .filter(g => g.studentCount > 0)
+        .sort((a, b) => {
+          const gComp = a.grade.localeCompare(b.grade, undefined, { numeric: true });
+          if (gComp !== 0) return gComp;
+          return a.group.localeCompare(b.group);
+        })
+        .forEach(g => {
+          list.push({
+            key: `${g.level.trim()}__${g.grade.trim()}__${g.group.trim()}`,
+            ...g
+          });
+        });
+    });
+
+    return list;
+  }, [students, preescolarAndPrimariaLevels, filterCycleId, settings?.currentCycleId]);
+
+  // Filtered groups based on search and level tab
+  const filteredGroups = useMemo(() => {
+    return groupsWithStudents.filter(g => {
+      if (selectedLevelFilter !== 'all' && g.level !== selectedLevelFilter) {
+        return false;
+      }
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        const groupStr = `${g.grade} ${g.group} ${g.level}`.toLowerCase();
+        const assignedEntry = settings?.groupTeachers?.[g.key];
+        const assignedName = typeof assignedEntry === 'string' ? assignedEntry : (assignedEntry as any)?.teacherName || '';
+        return groupStr.includes(term) || assignedName.toLowerCase().includes(term);
+      }
+      return true;
+    });
+  }, [groupsWithStudents, selectedLevelFilter, searchTerm, settings?.groupTeachers]);
+
+  // Helper to find currently assigned teacher id for a group
+  const getAssignedTeacherId = (groupKey: string, level: string, grade: string, group: string): string => {
+    // 1. Direct key in settings.groupTeachers
+    const entry = settings?.groupTeachers?.[groupKey];
+    if (entry) {
+      if (typeof entry === 'object' && (entry as any).teacherId) return (entry as any).teacherId;
+      if (typeof entry === 'string') {
+        const m = teachers.find(t => t.name.toLowerCase().trim() === entry.toLowerCase().trim());
+        if (m) return m.id;
+      }
+    }
+    // 2. Case-insensitive key
+    if (settings?.groupTeachers) {
+      const norm = groupKey.toLowerCase();
+      for (const [k, v] of Object.entries(settings.groupTeachers)) {
+        if (k.toLowerCase() === norm) {
+          if (typeof v === 'object' && v && (v as any).teacherId) return (v as any).teacherId;
+          if (typeof v === 'string') {
+            const m = teachers.find(t => t.name.toLowerCase().trim() === v.toLowerCase().trim());
+            if (m) return m.id;
+          }
+        }
+      }
+    }
+    // 3. Fallback to teacher profile in users
+    const userMatch = teachers.find(u => 
+      u.assignedLevel?.toLowerCase().trim() === level.toLowerCase().trim() && 
+      u.assignedGrade === grade && 
+      (!u.assignedGroup || u.assignedGroup === group)
+    );
+    return userMatch?.id || '';
+  };
+
+  const handleTeacherChange = async (groupKey: string, level: string, grade: string, group: string, teacherId: string) => {
+    setSavingKey(groupKey);
+    try {
+      const selectedTeacher = teachers.find(t => t.id === teacherId);
+      const updated = {
+        ...(settings?.groupTeachers || {})
+      };
+
+      if (selectedTeacher) {
+        updated[groupKey] = {
+          teacherId: selectedTeacher.id,
+          teacherName: selectedTeacher.name,
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        delete updated[groupKey];
+        const norm = groupKey.toLowerCase();
+        for (const k of Object.keys(updated)) {
+          if (k.toLowerCase() === norm) {
+            delete updated[k];
+          }
+        }
+      }
+
+      await updateDoc(doc(db, 'settings', 'general'), {
+        groupTeachers: updated
+      });
+
+      toast.success(
+        selectedTeacher
+          ? `Docente "${selectedTeacher.name}" asignado a ${grade} "${group}" (${level})`
+          : `Se removió la asignación de ${grade} "${group}" (${level})`
+      );
+    } catch (err) {
+      console.error("Error al asignar docente:", err);
+      toast.error("Ocurrió un error al guardar la asignación.");
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* Banner Card */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0 shadow-xs">
+            <UserCheck size={20} />
+          </div>
+          <div>
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+              Asignación de Docentes por Grupo
+              <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded uppercase">
+                Preescolar y Primaria
+              </span>
+            </h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5 max-w-2xl">
+              Selecciona el docente titular responsable de cada grupo. El docente asignado aparecerá automáticamente en las <strong>Boletas Oficiales</strong> (campo <strong>DOCENTE ASIGNADO</strong>) y en las listas escolares.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-wider">
+            {groupsWithStudents.length} {groupsWithStudents.length === 1 ? 'Grupo activo' : 'Grupos activos con alumnos'}
+          </span>
+        </div>
+      </div>
+
+      {/* Level Filters & Search */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
+        {/* Level Tabs */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setSelectedLevelFilter('all')}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+              selectedLevelFilter === 'all'
+                ? "bg-slate-900 text-white shadow-xs"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            )}
+          >
+            Todos ({groupsWithStudents.length})
+          </button>
+          {preescolarAndPrimariaLevels.map(lvl => {
+            const count = groupsWithStudents.filter(g => g.level.toLowerCase().trim() === lvl.toLowerCase().trim()).length;
+            return (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setSelectedLevelFilter(lvl)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+                  selectedLevelFilter === lvl
+                    ? "bg-blue-900 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                )}
+              >
+                {lvl} ({count})
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search */}
+        <div className="relative min-w-[240px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por grado, grupo o docente..."
+            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+          />
+        </div>
+      </div>
+
+      {/* Groups Table */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <th className="py-3 px-4">Grado y Grupo</th>
+                <th className="py-3 px-4">Nivel Educativo</th>
+                <th className="py-3 px-4">Alumnos Inscritos</th>
+                <th className="py-3 px-4 min-w-[280px]">Docente Asignado (Oficial en Boleta)</th>
+                <th className="py-3 px-4 text-center">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs font-medium">
+              {filteredGroups.length > 0 ? (
+                filteredGroups.map(grp => {
+                  const currentTeacherId = getAssignedTeacherId(grp.key, grp.level, grp.grade, grp.group);
+                  const isAssigned = Boolean(currentTeacherId);
+                  const isSaving = savingKey === grp.key;
+
+                  return (
+                    <tr 
+                      key={grp.key}
+                      className="hover:bg-slate-50/60 transition-colors"
+                    >
+                      {/* Grado y Grupo */}
+                      <td className="py-3.5 px-4 font-black text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-xs text-slate-800">
+                            {grp.grade.charAt(0)}
+                          </div>
+                          <span className="text-sm font-black uppercase tracking-tight">
+                            {grp.grade} "{grp.group}"
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Nivel */}
+                      <td className="py-3.5 px-4">
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border",
+                          grp.level.toLowerCase().includes('preescolar') || grp.level.toLowerCase().includes('kinder')
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200"
+                        )}>
+                          {grp.level}
+                        </span>
+                      </td>
+
+                      {/* Alumnos */}
+                      <td className="py-3.5 px-4 font-bold text-slate-600">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
+                          <Users size={12} className="text-slate-400" />
+                          <span>{grp.studentCount} {grp.studentCount === 1 ? 'alumno' : 'alumnos'}</span>
+                        </div>
+                      </td>
+
+                      {/* Selector Docente */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={currentTeacherId}
+                            onChange={(e) => handleTeacherChange(grp.key, grp.level, grp.grade, grp.group, e.target.value)}
+                            disabled={isSaving}
+                            className={cn(
+                              "w-full max-w-sm rounded-lg px-3 py-2 text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer disabled:opacity-50 border",
+                              isAssigned 
+                                ? "bg-white border-slate-300 text-slate-900 shadow-2xs" 
+                                : "bg-amber-50/60 border-amber-300 text-amber-900"
+                            )}
+                          >
+                            <option value="">— Seleccionar Docente Asignado —</option>
+                            {teachers.map(t => (
+                              <option key={t.id} value={t.id}>
+                                {t.name}
+                              </option>
+                            ))}
+                          </select>
+                          {isSaving && (
+                            <div className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin shrink-0" />
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Estado */}
+                      <td className="py-3.5 px-4 text-center">
+                        {isAssigned ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 size={12} className="text-emerald-600" />
+                            Asignado
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                            <AlertCircle size={12} className="text-amber-600" />
+                            Sin Asignar
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={5} className="py-12 px-4 text-center text-slate-400">
+                    <div className="max-w-sm mx-auto flex flex-col items-center">
+                      <GraduationCap size={32} className="text-slate-300 mb-2" />
+                      <p className="text-xs font-black uppercase text-slate-600 tracking-wider">
+                        Sin grupos con alumnos registrados
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Solo se muestran aquellos grupos de Preescolar y Primaria que cuentan con alumnos inscritos en este ciclo escolar.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

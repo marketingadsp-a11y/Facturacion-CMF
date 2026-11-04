@@ -571,12 +571,14 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({ children, withoutLayout = false }: { children: React.ReactNode; withoutLayout?: boolean }) => {
   const [user, loading] = useAuthState(auth);
 
   if (loading) return <AppLoadingScreen message="Verificando sesión en el sistema..." />;
   
   if (!user) return <Navigate to="/login" />;
+
+  if (withoutLayout) return <>{children}</>;
 
   return <Layout>{children}</Layout>;
 };
@@ -725,7 +727,7 @@ const AppContent = () => {
       <Route 
         path="/imprimir-boleta/:studentId" 
         element={
-          <ProtectedRoute>
+          <ProtectedRoute withoutLayout>
             {isParent ? <Navigate to="/" /> : <PrintBoleta />}
           </ProtectedRoute>
         } 

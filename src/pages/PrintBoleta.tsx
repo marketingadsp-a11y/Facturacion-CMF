@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject, AppUser } from '../types';
 import ReportCardPDF from '../components/ReportCardPDF';
-import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
+import { PDFViewer, pdf } from '@react-pdf/renderer';
 import { GraduationCap, Clock, FileDown, Maximize2, Minimize2, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -18,6 +18,7 @@ export default function PrintBoleta() {
   const [teacherName, setTeacherName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [fitMode, setFitMode] = useState<'adapted' | 'full'>('adapted');
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -45,22 +46,44 @@ export default function PrintBoleta() {
             .filter(s => s.level?.toLowerCase().trim() === studentData.level?.toLowerCase().trim());
           setSubjects(filteredSubjects);
 
-          // Fetch assigned teacher for Preescolar or Primaria
-          try {
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const teacher = usersSnap.docs
-              .map(d => ({ id: d.id, ...d.data() } as AppUser))
-              .find(u => 
-                u.role === 'Docente' && 
-                u.assignedLevel?.toLowerCase().trim() === studentData.level?.toLowerCase().trim() && 
-                (!u.assignedGrade || u.assignedGrade === studentData.grade) && 
-                (!u.assignedGroup || u.assignedGroup === studentData.group)
-              );
-            if (teacher) {
-              setTeacherName(teacher.name);
+          // Fetch assigned teacher from settings.groupTeachers first
+          const grpKey = `${(studentData.level || '').trim()}__${(studentData.grade || '').trim()}__${(studentData.group || '').trim()}`;
+          let assignedTeacher = '';
+          if (appSettings?.groupTeachers) {
+            const entry = appSettings.groupTeachers[grpKey];
+            if (entry) {
+              assignedTeacher = typeof entry === 'string' ? entry : (entry as any).teacherName || '';
+            } else {
+              const normGrpKey = grpKey.toLowerCase();
+              for (const [k, v] of Object.entries(appSettings.groupTeachers)) {
+                if (k.toLowerCase() === normGrpKey) {
+                  assignedTeacher = typeof v === 'string' ? v : (v as any).teacherName || '';
+                  break;
+                }
+              }
             }
-          } catch (tErr) {
-            console.warn("Could not fetch teacher:", tErr);
+          }
+
+          if (assignedTeacher) {
+            setTeacherName(assignedTeacher);
+          } else {
+            // Fallback: search in users
+            try {
+              const usersSnap = await getDocs(collection(db, 'users'));
+              const teacher = usersSnap.docs
+                .map(d => ({ id: d.id, ...d.data() } as AppUser))
+                .find(u => 
+                  u.role === 'Docente' && 
+                  u.assignedLevel?.toLowerCase().trim() === studentData.level?.toLowerCase().trim() && 
+                  (!u.assignedGrade || u.assignedGrade === studentData.grade) && 
+                  (!u.assignedGroup || u.assignedGroup === studentData.group)
+                );
+              if (teacher) {
+                setTeacherName(teacher.name);
+              }
+            } catch (tErr) {
+              console.warn("Could not fetch teacher:", tErr);
+            }
           }
         }
 
@@ -124,6 +147,41 @@ export default function PrintBoleta() {
 
     fetchData();
   }, [studentId]);
+
+  // Memoize the document so PDFViewer does NOT recompile or reload in a loop
+  const reportCardDoc = useMemo(() => {
+    if (!student || !cycle) return null;
+    return (
+      <ReportCardPDF 
+        student={student}
+        grades={grades}
+        subjects={subjects}
+        settings={settings}
+        cycle={cycle}
+        teacherName={teacherName}
+      />
+    );
+  }, [student, grades, subjects, settings, cycle, teacherName]);
+
+  const handleDownloadPdf = async () => {
+    if (!reportCardDoc || !student) return;
+    try {
+      setDownloading(true);
+      const blob = await pdf(reportCardDoc).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Boleta_${student.lastName}_${student.name}.pdf`.replace(/\s+/g, '_');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error al descargar la boleta:", err);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -224,27 +282,16 @@ export default function PrintBoleta() {
               </button>
             </div>
 
-            <PDFDownloadLink
-              document={
-                <ReportCardPDF 
-                  student={student}
-                  grades={grades}
-                  subjects={subjects}
-                  settings={settings}
-                  cycle={cycle}
-                  teacherName={teacherName}
-                />
-              }
-              fileName={`Boleta_${student.lastName}_${student.name}.pdf`.replace(/\s+/g, '_')}
-              className="px-2.5 sm:px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer border border-blue-950/20"
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={downloading || !reportCardDoc}
+              className="px-2.5 sm:px-3 py-1.5 bg-blue-900 hover:bg-blue-950 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer border border-blue-950/20"
+              title="Descargar boleta en formato PDF"
             >
-              {({ loading: pdfLoading }) => (
-                <>
-                  <FileDown size={14} />
-                  <span className="hidden sm:inline">{pdfLoading ? 'Generando...' : 'Descargar'}</span>
-                </>
-              )}
-            </PDFDownloadLink>
+              <FileDown size={14} />
+              <span className="hidden sm:inline">{downloading ? 'Generando...' : 'Descargar'}</span>
+            </button>
 
             <button
               type="button"
@@ -268,16 +315,15 @@ export default function PrintBoleta() {
               : "max-w-full rounded-none sm:rounded-xl border border-slate-800/80 bg-slate-900"
           )}
         >
-          <PDFViewer width="100%" height="100%" className="w-full h-full border-none flex-1">
-            <ReportCardPDF 
-              student={student}
-              grades={grades}
-              subjects={subjects}
-              settings={settings}
-              cycle={cycle}
-              teacherName={teacherName}
-            />
-          </PDFViewer>
+          {reportCardDoc ? (
+            <PDFViewer width="100%" height="100%" className="w-full h-full border-none flex-1">
+              {reportCardDoc}
+            </PDFViewer>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+              Cargando documento PDF...
+            </div>
+          )}
         </div>
       </main>
     </div>

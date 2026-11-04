@@ -239,6 +239,7 @@ const styles = StyleSheet.create({
     fontSize: 6.8,
     color: '#0F172A',
     fontWeight: 'bold',
+    textTransform: 'uppercase',
     paddingVertical: 1.5,
   },
   tableCellPeriod: {
@@ -484,6 +485,7 @@ const styles = StyleSheet.create({
     fontSize: 7,
     fontWeight: 'bold',
     color: '#0F172A',
+    textTransform: 'uppercase',
   },
   obsText: {
     fontSize: 6.5,
@@ -642,11 +644,19 @@ export default function ReportCardPDF({
     const bg = grades.find(g => Number(g.bimestre) === Number(bimestre));
     if (!bg) return '-';
 
-    if (bg.subjects && bg.subjects[subject] !== undefined && bg.subjects[subject] !== '') {
-      return bg.subjects[subject];
+    if (bg.subjects) {
+      if (bg.subjects[subject] !== undefined && bg.subjects[subject] !== '') {
+        return bg.subjects[subject];
+      }
+      const normSubj = subject.toLowerCase().trim();
+      for (const [k, val] of Object.entries(bg.subjects)) {
+        if (k.toLowerCase().trim() === normSubj && val !== undefined && val !== '') {
+          return val;
+        }
+      }
     }
 
-    const subjectObj = subjects.find(s => s.name === subject);
+    const subjectObj = subjects.find(s => s.name?.toLowerCase().trim() === subject.toLowerCase().trim());
     if (subjectObj?.isAttendanceCount && bg.attendance !== undefined && bg.attendance !== null && bg.attendance !== '') {
       return bg.attendance;
     }
@@ -664,7 +674,31 @@ export default function ReportCardPDF({
     return '-';
   };
 
+  const effectivePersonalDevList = personalDevSubjects.length > 0 
+    ? personalDevSubjects 
+    : ['Conducta', 'Uniforme', 'Asistencia'];
+
+  const isAttendanceAspect = (subjName: string): boolean => {
+    const subjObj = subjects.find(s => s.name?.toLowerCase().trim() === subjName.toLowerCase().trim());
+    if (subjObj?.isAttendanceCount) return true;
+    const norm = subjName.toLowerCase().trim();
+    return ['asistencia', 'inasistencia', 'inasistencias', 'faltas', 'retardo', 'retardos'].includes(norm);
+  };
+
   const getSubjectAvg = (subject: string) => {
+    if (isAttendanceAspect(subject)) {
+      let total = 0;
+      let count = 0;
+      for (let i = 1; i <= periodCount; i++) {
+        const val = getGrade(subject, i);
+        if (val !== '-' && val !== '' && !isNaN(Number(val))) {
+          total += Number(val);
+          count++;
+        }
+      }
+      return count > 0 ? total.toString() : '-';
+    }
+
     let total = 0;
     let count = 0;
     for (let i = 1; i <= periodCount; i++) {
@@ -678,10 +712,12 @@ export default function ReportCardPDF({
     return formatAverage(total, count, scale);
   };
 
-  const getBimestreAvg = (bimestre: number) => {
+  // Helper to compute raw numeric average for a section in a single period
+  const getSectionPeriodNumericAvg = (subjectList: string[], bimestre: number): number | null => {
     let total = 0;
     let count = 0;
-    for (const subj of academicSubjects) {
+    for (const subj of subjectList) {
+      if (isAttendanceAspect(subj)) continue;
       const val = getGrade(subj, bimestre);
       const num = gradeToNumeric(val, scale);
       if (num !== null) {
@@ -689,37 +725,95 @@ export default function ReportCardPDF({
         count++;
       }
     }
-
-    return formatAverage(total, count, scale);
+    return count > 0 ? (total / count) : null;
   };
 
-  const getAcademicOverallAvg = () => {
+  // Helper to compute raw numeric overall average for a section across all evaluated periods
+  const getSectionOverallNumericAvg = (subjectList: string[]): number | null => {
+    if (subjectList.length === 0) return null;
     const periodAverages: number[] = [];
     for (let i = 1; i <= periodCount; i++) {
-      let pTotal = 0;
-      let pCount = 0;
-      for (const subj of academicSubjects) {
-        const val = getGrade(subj, i);
-        const num = gradeToNumeric(val, scale);
-        if (num !== null) {
-          pTotal += num;
-          pCount++;
-        }
-      }
-      if (pCount > 0) {
-        periodAverages.push(pTotal / pCount);
+      const pAvg = getSectionPeriodNumericAvg(subjectList, i);
+      if (pAvg !== null) {
+        periodAverages.push(pAvg);
       }
     }
-
-    if (periodAverages.length === 0) return '-';
+    if (periodAverages.length === 0) return null;
     const sum = periodAverages.reduce((a, b) => a + b, 0);
-    return formatAverage(sum, periodAverages.length, scale);
+    return sum / periodAverages.length;
   };
 
+  // 1. Formación Académica
+  const getAcademicPeriodAvg = (bimestre: number) => {
+    const pAvg = getSectionPeriodNumericAvg(academicSubjects, bimestre);
+    return pAvg !== null ? formatAverage(pAvg, 1, scale) : '-';
+  };
+  const getBimestreAvg = getAcademicPeriodAvg;
+
+  const getAcademicOverallAvg = () => {
+    const num = getSectionOverallNumericAvg(academicSubjects);
+    return num !== null ? formatAverage(num, 1, scale) : '-';
+  };
+
+  // 2. Desarrollo Personal y Social
+  const getPersonalDevPeriodAvg = (bimestre: number) => {
+    const pAvg = getSectionPeriodNumericAvg(effectivePersonalDevList, bimestre);
+    return pAvg !== null ? formatAverage(pAvg, 1, scale) : '-';
+  };
+
+  const getPersonalDevOverallAvg = () => {
+    const num = getSectionOverallNumericAvg(effectivePersonalDevList);
+    return num !== null ? formatAverage(num, 1, scale) : '-';
+  };
+
+  // 3. Autonomía Curricular
+  const getCurricularPeriodAvg = (bimestre: number) => {
+    if (curricularSubjects.length === 0) return '-';
+    const pAvg = getSectionPeriodNumericAvg(curricularSubjects, bimestre);
+    return pAvg !== null ? formatAverage(pAvg, 1, scale) : '-';
+  };
+
+  const getCurricularOverallAvg = () => {
+    if (curricularSubjects.length === 0) return '-';
+    const num = getSectionOverallNumericAvg(curricularSubjects);
+    return num !== null ? formatAverage(num, 1, scale) : '-';
+  };
+
+  // Promedio General del Ciclo: Promedio de Formación Académica y Autonomía Curricular
+  const levelLower = student.level?.toLowerCase().trim() || '';
+  const isPrimariaOrPreescolar = 
+    levelLower.includes('primaria') || 
+    levelLower.includes('preescolar') || 
+    levelLower.includes('kinder') || 
+    levelLower.includes('kínder') || 
+    levelLower.includes('maternal') || 
+    levelLower.includes('pre-escolar') || 
+    levelLower.includes('pre escolar');
+
   const getGlobalAvg = () => {
-    // If academic overall avg is available, return it
-    const avg = getAcademicOverallAvg();
-    return avg !== '-' ? avg : '—';
+    const acadAvgNum = getSectionOverallNumericAvg(academicSubjects);
+    const currAvgNum = curricularSubjects.length > 0 
+      ? getSectionOverallNumericAvg(curricularSubjects) 
+      : null;
+
+    if (isPrimariaOrPreescolar) {
+      // Must have both Formación Académica and Autonomía Curricular with grades
+      if (acadAvgNum !== null && currAvgNum !== null) {
+        const combined = (acadAvgNum + currAvgNum) / 2;
+        return formatAverage(combined, 1, scale);
+      }
+      return '—';
+    }
+
+    // Other levels fallback (e.g. Preparatoria/Bachillerato)
+    if (acadAvgNum !== null && currAvgNum !== null) {
+      const combined = (acadAvgNum + currAvgNum) / 2;
+      return formatAverage(combined, 1, scale);
+    }
+    if (acadAvgNum !== null) {
+      return formatAverage(acadAvgNum, 1, scale);
+    }
+    return '—';
   };
 
   // Format student full name
@@ -732,6 +826,24 @@ export default function ReportCardPDF({
     student.matricula ? `MAT: ${student.matricula}` : null,
     student.curp ? `CURP: ${student.curp}` : null
   ].filter(Boolean).join(' • ') || 'N/A';
+
+  // Resolve assigned teacher for Preescolar or Primaria from settings.groupTeachers or props
+  const groupKey = `${(student.level || '').trim()}__${(student.grade || '').trim()}__${(student.group || '').trim()}`;
+  let resolvedTeacherName = teacherName || student.teacherName || '';
+  if (settings?.groupTeachers) {
+    if (settings.groupTeachers[groupKey]) {
+      const entry = settings.groupTeachers[groupKey];
+      resolvedTeacherName = typeof entry === 'string' ? entry : entry.teacherName || resolvedTeacherName;
+    } else {
+      const normTarget = groupKey.toLowerCase();
+      for (const [k, v] of Object.entries(settings.groupTeachers)) {
+        if (k.toLowerCase() === normTarget) {
+          resolvedTeacherName = typeof v === 'string' ? v : (v as any).teacherName || resolvedTeacherName;
+          break;
+        }
+      }
+    }
+  }
 
   return (
     <Document>
@@ -802,7 +914,7 @@ export default function ReportCardPDF({
               <View style={[styles.studentFieldLast, { flex: 3.2 }]}>
                 <Text style={styles.fieldLabel}>DOCENTE ASIGNADO:</Text>
                 <Text style={styles.fieldValue}>
-                  {teacherName || student.teacherName || '—'}
+                  {resolvedTeacherName ? resolvedTeacherName.toUpperCase() : '—'}
                 </Text>
               </View>
             )}
@@ -837,7 +949,7 @@ export default function ReportCardPDF({
                 key={`row-acad-${idx}`} 
                 style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
               >
-                <Text style={styles.tableCellSubject}>{subj}</Text>
+                <Text style={styles.tableCellSubject}>{String(subj || '').toUpperCase()}</Text>
                 {periodIndices.map(num => (
                   <Text key={`g-${subj}-${num}`} style={styles.tableCellPeriod}>
                     {getGrade(subj, num)}
@@ -857,7 +969,7 @@ export default function ReportCardPDF({
             <Text style={styles.tableSummaryLabel}>PROMEDIO FORMACIÓN ACADÉMICA</Text>
             {periodIndices.map(num => (
               <Text key={`avg-p-${num}`} style={styles.tableSummaryPeriod}>
-                {getBimestreAvg(num)}
+                {getAcademicPeriodAvg(num)}
               </Text>
             ))}
             <View style={styles.tableSummaryAvg}>
@@ -885,7 +997,7 @@ export default function ReportCardPDF({
                 {evalConfig.periodNames?.[num - 1] || `${num}º`}
               </Text>
             ))}
-            <Text style={styles.tableHeaderAvg}>EVAL</Text>
+            <Text style={styles.tableHeaderAvg}>PROM</Text>
           </View>
 
           {personalDevSubjects.length > 0 ? (
@@ -894,7 +1006,7 @@ export default function ReportCardPDF({
                 key={`row-dev-${idx}`} 
                 style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
               >
-                <Text style={styles.tableCellSubject}>{aspect}</Text>
+                <Text style={styles.tableCellSubject}>{String(aspect || '').toUpperCase()}</Text>
                 {periodIndices.map(num => (
                   <Text key={`g-dev-${aspect}-${num}`} style={styles.tableCellPeriod}>
                     {getGrade(aspect, num)}
@@ -913,7 +1025,7 @@ export default function ReportCardPDF({
                   key={`row-dev-def-${idx}`} 
                   style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
                 >
-                  <Text style={styles.tableCellSubject}>{aspect}</Text>
+                  <Text style={styles.tableCellSubject}>{String(aspect || '').toUpperCase()}</Text>
                   {periodIndices.map(num => (
                     <Text key={`g-dev-def-${aspect}-${num}`} style={styles.tableCellPeriod}>
                       {getGrade(aspect, num)}
@@ -926,6 +1038,21 @@ export default function ReportCardPDF({
               ))}
             </>
           )}
+
+          {/* Personal Dev Promedios Summary Row */}
+          <View style={styles.tableSummaryRow}>
+            <Text style={styles.tableSummaryLabel}>PROMEDIO DESARROLLO PERSONAL Y SOCIAL</Text>
+            {periodIndices.map(num => (
+              <Text key={`avg-dev-${num}`} style={styles.tableSummaryPeriod}>
+                {getPersonalDevPeriodAvg(num)}
+              </Text>
+            ))}
+            <View style={styles.tableSummaryAvg}>
+              <Text style={{ color: '#FFFFFF', fontSize: 7.5, fontWeight: 'bold' }}>
+                {getPersonalDevOverallAvg()}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* ----------------------------------------------------
@@ -954,7 +1081,7 @@ export default function ReportCardPDF({
                 key={`row-curr-${idx}`} 
                 style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
               >
-                <Text style={styles.tableCellSubject}>{subj}</Text>
+                <Text style={styles.tableCellSubject}>{String(subj || '').toUpperCase()}</Text>
                 {periodIndices.map(num => (
                   <Text key={`g-curr-${subj}-${num}`} style={styles.tableCellPeriod}>
                     {getGrade(subj, num)}
@@ -968,6 +1095,21 @@ export default function ReportCardPDF({
           ) : (
             <Text style={styles.emptyRowText}>Sin asignaturas de autonomía curricular asignadas</Text>
           )}
+
+          {/* Autonomía Curricular Promedios Summary Row */}
+          <View style={styles.tableSummaryRow}>
+            <Text style={styles.tableSummaryLabel}>PROMEDIO AUTONOMÍA CURRICULAR</Text>
+            {periodIndices.map(num => (
+              <Text key={`avg-curr-${num}`} style={styles.tableSummaryPeriod}>
+                {getCurricularPeriodAvg(num)}
+              </Text>
+            ))}
+            <View style={styles.tableSummaryAvg}>
+              <Text style={{ color: '#FFFFFF', fontSize: 7.5, fontWeight: 'bold' }}>
+                {getCurricularOverallAvg()}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* ----------------------------------------------------
@@ -998,7 +1140,7 @@ export default function ReportCardPDF({
                     key={`row-rec-${idx}`} 
                     style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
                   >
-                    <Text style={styles.tableCellSubject}>{subj}</Text>
+                    <Text style={styles.tableCellSubject}>{String(subj || '').toUpperCase()}</Text>
                     {periodIndices.map(num => (
                       <Text key={`g-rec-${subj}-${num}`} style={styles.tableCellPeriod}>
                         {getGrade(subj, num)}
@@ -1142,7 +1284,7 @@ export default function ReportCardPDF({
                   style={[styles.obsTableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
                 >
                   <View style={styles.obsTableCellSubject}>
-                    <Text style={styles.obsSubjectName}>{subject}</Text>
+                    <Text style={styles.obsSubjectName}>{String(subject || '').toUpperCase()}</Text>
                   </View>
                   {periodIndices.map(num => {
                     const obs = getSubjectObservation(grades, subject, num);

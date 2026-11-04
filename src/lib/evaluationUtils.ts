@@ -276,9 +276,20 @@ export function getEffectiveSubjectGrade(
     s.linkedSubjectName.trim().toLowerCase() === normName
   );
 
+  // Helper for case-insensitive subject lookup in bg.subjects
+  const getSubjectRaw = (name: string) => {
+    if (!bg.subjects) return undefined;
+    if (bg.subjects[name] !== undefined) return bg.subjects[name];
+    const n = name.trim().toLowerCase();
+    for (const [k, v] of Object.entries(bg.subjects)) {
+      if (k.trim().toLowerCase() === n) return v;
+    }
+    return undefined;
+  };
+
   // If this subject is not linked to any autonomy subjects, return its direct grade
   if (linkedAutonomySubjects.length === 0) {
-    const raw = bg.subjects[subjectName];
+    const raw = getSubjectRaw(subjectName);
     if (raw !== undefined && raw !== null && raw !== '' && raw !== '-') {
       const num = gradeToNumeric(raw, scale);
       return { rawValue: raw, numericValue: num };
@@ -288,14 +299,14 @@ export function getEffectiveSubjectGrade(
 
   // Collect grades from base subject and all linked subjects
   const allNums: number[] = [];
-  const baseRaw = bg.subjects[subjectName];
+  const baseRaw = getSubjectRaw(subjectName);
   const baseNum = gradeToNumeric(baseRaw, scale);
   if (baseNum !== null) {
     allNums.push(baseNum);
   }
 
   for (const lSub of linkedAutonomySubjects) {
-    const lRaw = bg.subjects[lSub.name];
+    const lRaw = getSubjectRaw(lSub.name);
     const lNum = gradeToNumeric(lRaw, scale);
     if (lNum !== null) {
       allNums.push(lNum);
@@ -439,6 +450,22 @@ export function getSubjectObservation(
   }
   if (bg.observations && bg.observations[subjectName] !== undefined) {
     return bg.observations[subjectName];
+  }
+  // Case-insensitive fallback
+  const normTarget = subjectName.toLowerCase().trim();
+  if (bg.subjectObservations) {
+    for (const [k, v] of Object.entries(bg.subjectObservations)) {
+      if (k.toLowerCase().trim() === normTarget && v !== undefined) {
+        return v;
+      }
+    }
+  }
+  if (bg.observations) {
+    for (const [k, v] of Object.entries(bg.observations)) {
+      if (k.toLowerCase().trim() === normTarget && v !== undefined) {
+        return v;
+      }
+    }
   }
   return '';
 }

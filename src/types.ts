@@ -281,11 +281,18 @@ export interface ChargeCatalog {
   updatedAt?: Timestamp;
 }
 
+export interface GroupTeacherAssignment {
+  teacherId: string;
+  teacherName: string;
+  updatedAt?: string;
+}
+
 export interface AppSettings {
   schoolName: string;
   legalName: string;
   logoUrl?: string;
   levelLogos?: Record<string, string>; // Logotipo por nivel educativo para boletas oficiales
+  groupTeachers?: Record<string, GroupTeacherAssignment | string>; // Asignación de docente titular por grupo (e.g. "Primaria__1ro__A")
   facturapiApiKey?: string;
   facturapiSandbox: boolean;
   conektaPublicKey?: string;

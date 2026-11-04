@@ -481,7 +481,7 @@ export default function ReportCardSecundaria2PDF({
                   ]}
                 >
                   <Text style={[styles.headerText, { fontSize: 6.2, lineHeight: 1.15 }]}>
-                    {subj.displayName}
+                    {String(subj.displayName || '').toUpperCase()}
                   </Text>
                 </View>
               );
@@ -604,7 +604,7 @@ export default function ReportCardSecundaria2PDF({
                       ]}
                     >
                       <Text style={[styles.headerText, { fontSize: 5.6, lineHeight: 1.15 }]}>
-                        {subj.displayName}
+                        {String(subj.displayName || '').toUpperCase()}
                       </Text>
                     </View>
                   );
