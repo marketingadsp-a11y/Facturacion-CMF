@@ -711,7 +711,14 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   // Pure academic subjects only
   const pureAcademicSubjects = useMemo(() => {
     return activeLevelSubjects.filter(s => 
-      !s.category || s.category === 'Académica' || s.category === 'Recursamiento'
+      !s.category || s.category === 'Académica'
+    );
+  }, [activeLevelSubjects]);
+
+  // Desarrollo Personal subjects (formerly Aspectos Formativos)
+  const personalDevLevelSubjects = useMemo(() => {
+    return activeLevelSubjects.filter(s => 
+      s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal'
     );
   }, [activeLevelSubjects]);
 
@@ -722,10 +729,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     );
   }, [activeLevelSubjects]);
 
-  // Desarrollo Personal subjects (formerly Aspectos Formativos)
-  const personalDevLevelSubjects = useMemo(() => {
+  // Recursamiento subjects only
+  const recursamientoSubjects = useMemo(() => {
     return activeLevelSubjects.filter(s => 
-      s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal'
+      s.category === 'Recursamiento'
     );
   }, [activeLevelSubjects]);
 
@@ -3582,14 +3589,19 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 <span>Académica: <strong className="font-black text-blue-900">{pureAcademicSubjects.length}</strong></span>
               </span>
             )}
+            {personalDevLevelSubjects.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-xs">
+                <span>Desarrollo Personal: <strong className="font-black text-indigo-900">{personalDevLevelSubjects.length}</strong></span>
+              </span>
+            )}
             {autonomyCurricularSubjects.length > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200 shadow-xs">
                 <span>Autonomía Curricular: <strong className="font-black text-amber-900">{autonomyCurricularSubjects.length}</strong></span>
               </span>
             )}
-            {personalDevLevelSubjects.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-xs">
-                <span>Desarrollo Personal: <strong className="font-black text-indigo-900">{personalDevLevelSubjects.length}</strong></span>
+            {recursamientoSubjects.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-50 text-rose-800 border border-rose-200 shadow-xs">
+                <span>Recursamiento: <strong className="font-black text-rose-900">{recursamientoSubjects.length}</strong></span>
               </span>
             )}
             {isSpecificTeacher && (
@@ -3640,7 +3652,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                           colSpan={pureAcademicSubjects.length} 
                           className={cn(
                             "py-2.5 px-3 text-center bg-blue-50/90 text-blue-900 border-b border-blue-200 font-black",
-                            (autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0) ? "border-r-[3px] border-r-slate-300" : ""
+                            (personalDevLevelSubjects.length > 0 || autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0) ? "border-r-[3px] border-r-slate-300" : ""
                           )}
                         >
                           <div className="flex items-center justify-center gap-1.5">
@@ -3650,7 +3662,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             </span>
                           </div>
                         </th>
-                      ) : (autonomyCurricularSubjects.length === 0 && personalDevLevelSubjects.length === 0) ? (
+                      ) : (personalDevLevelSubjects.length === 0 && autonomyCurricularSubjects.length === 0 && recursamientoSubjects.length === 0) ? (
                         <th 
                           colSpan={1} 
                           className="py-2.5 px-3 text-center bg-slate-50 text-slate-400 border-b border-slate-200 font-bold italic text-[9px]"
@@ -3659,13 +3671,31 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         </th>
                       ) : null}
 
+                      {/* Grupo: Desarrollo Personal */}
+                      {personalDevLevelSubjects.length > 0 && (
+                        <th 
+                          colSpan={personalDevLevelSubjects.length} 
+                          className={cn(
+                            "py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black",
+                            (autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0) ? "border-r-[3px] border-r-slate-300" : ""
+                          )}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="tracking-wider">Desarrollo Personal</span>
+                            <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
+                              {personalDevLevelSubjects.length}
+                            </span>
+                          </div>
+                        </th>
+                      )}
+
                       {/* Grupo: Autonomía Curricular */}
                       {autonomyCurricularSubjects.length > 0 && (
                         <th 
                           colSpan={autonomyCurricularSubjects.length} 
                           className={cn(
                             "py-2.5 px-3 text-center bg-amber-50/90 text-amber-900 border-b border-amber-200 font-black",
-                            personalDevLevelSubjects.length > 0 ? "border-r-[3px] border-r-slate-300" : ""
+                            recursamientoSubjects.length > 0 ? "border-r-[3px] border-r-slate-300" : ""
                           )}
                         >
                           <div className="flex items-center justify-center gap-1.5">
@@ -3677,16 +3707,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         </th>
                       )}
 
-                      {/* Grupo: Desarrollo Personal */}
-                      {personalDevLevelSubjects.length > 0 && (
+                      {/* Grupo: Recursamiento */}
+                      {recursamientoSubjects.length > 0 && (
                         <th 
-                          colSpan={personalDevLevelSubjects.length} 
-                          className="py-2.5 px-3 text-center bg-indigo-50/90 text-indigo-900 border-b border-indigo-200 font-black"
+                          colSpan={recursamientoSubjects.length} 
+                          className="py-2.5 px-3 text-center bg-rose-50/90 text-rose-900 border-b border-rose-200 font-black"
                         >
                           <div className="flex items-center justify-center gap-1.5">
-                            <span className="tracking-wider">Desarrollo Personal</span>
-                            <span className="text-[9px] bg-indigo-200/80 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
-                              {personalDevLevelSubjects.length}
+                            <span className="tracking-wider">Recursamiento</span>
+                            <span className="text-[9px] bg-rose-200/80 text-rose-800 px-1.5 py-0.5 rounded-full font-bold ml-1">
+                              {recursamientoSubjects.length}
                             </span>
                           </div>
                         </th>
@@ -3699,7 +3729,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                       {pureAcademicSubjects.length > 0 ? (
                         pureAcademicSubjects.map((subj, idx) => {
                           const isLast = idx === pureAcademicSubjects.length - 1;
-                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
+                          const hasNextGroup = personalDevLevelSubjects.length > 0 || autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0;
                           const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                           return (
                             <th 
@@ -3719,24 +3749,50 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             </th>
                           );
                         })
-                      ) : (autonomyCurricularSubjects.length === 0 && personalDevLevelSubjects.length === 0) ? (
+                      ) : (personalDevLevelSubjects.length === 0 && autonomyCurricularSubjects.length === 0 && recursamientoSubjects.length === 0) ? (
                         <th className="px-3 py-2 text-center text-slate-400 italic text-[8px]">
                           -
                         </th>
                       ) : null}
 
+                      {/* Desarrollo Personal Subjects */}
+                      {personalDevLevelSubjects.length > 0 && (
+                        personalDevLevelSubjects.map((subj, idx) => {
+                          const isLast = idx === personalDevLevelSubjects.length - 1;
+                          const hasNextGroup = autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0;
+                          const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
+                          return (
+                            <th 
+                              key={`th-dev-${subj.id || subj.name}`} 
+                              title={`Desarrollo Personal: ${subj.name}`}
+                              className={cn(
+                                "px-2 py-2.5 text-center min-w-[90px] max-w-[130px] whitespace-normal break-words leading-tight bg-indigo-50/70 text-indigo-900 font-black",
+                                (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : (isLast ? "" : "border-r border-indigo-200/70")
+                              )}
+                            >
+                              <span className="block leading-tight">{subj.name}</span>
+                              {isColLocked && (
+                                <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
+                                  <Lock size={8} /> FINALIZADA
+                                </span>
+                              )}
+                            </th>
+                          );
+                        })
+                      )}
+
                       {/* Autonomía Curricular Subjects */}
                       {autonomyCurricularSubjects.length > 0 && (
                         autonomyCurricularSubjects.map((subj, idx) => {
                           const isLast = idx === autonomyCurricularSubjects.length - 1;
-                          const hasNextGroup = personalDevLevelSubjects.length > 0;
+                          const hasNextGroup = recursamientoSubjects.length > 0;
                           const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                           return (
                             <th 
                               key={`th-auto-${subj.id || subj.name}`} 
                               className={cn(
                                 "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-amber-50/60 text-amber-950 font-black",
-                                (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-200/70"
+                                (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : (isLast ? "" : "border-r border-amber-200/70")
                               )} 
                               title={`Autonomía Curricular: ${subj.name}${subj.linkedSubjectName ? ` (Suma al promedio de: ${subj.linkedSubjectName})` : ''}`}
                             >
@@ -3756,18 +3812,18 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         })
                       )}
 
-                      {/* Desarrollo Personal Subjects */}
-                      {personalDevLevelSubjects.length > 0 && (
-                        personalDevLevelSubjects.map((subj, idx) => {
-                          const isLast = idx === personalDevLevelSubjects.length - 1;
+                      {/* Recursamiento Subjects */}
+                      {recursamientoSubjects.length > 0 && (
+                        recursamientoSubjects.map((subj, idx) => {
+                          const isLast = idx === recursamientoSubjects.length - 1;
                           const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
                           return (
                             <th 
-                              key={`th-dev-${subj.id || subj.name}`} 
-                              title={`Desarrollo Personal: ${subj.name}`}
+                              key={`th-rec-${subj.id || subj.name}`} 
+                              title={`Recursamiento: ${subj.name}`}
                               className={cn(
-                                "px-2 py-2.5 text-center min-w-[90px] max-w-[130px] whitespace-normal break-words leading-tight bg-indigo-50/70 text-indigo-900 font-black",
-                                isLast ? "" : "border-r border-indigo-200/70"
+                                "px-2 py-2.5 text-center min-w-[95px] max-w-[130px] whitespace-normal break-words leading-tight bg-rose-50/60 text-rose-950 font-black",
+                                isLast ? "" : "border-r border-rose-200/70"
                               )}
                             >
                               <span className="block leading-tight">{subj.name}</span>
@@ -3821,7 +3877,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                           {pureAcademicSubjects.length > 0 ? (
                             pureAcademicSubjects.map((subj, idx) => {
                               const isLast = idx === pureAcademicSubjects.length - 1;
-                              const hasNextGroup = autonomyCurricularSubjects.length > 0 || personalDevLevelSubjects.length > 0;
+                              const hasNextGroup = personalDevLevelSubjects.length > 0 || autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0;
                               const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
 
                               if (!isEnrolled) {
@@ -3893,90 +3949,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                 </td>
                               );
                             })
-                          ) : (autonomyCurricularSubjects.length === 0 && personalDevLevelSubjects.length === 0) ? (
+                          ) : (personalDevLevelSubjects.length === 0 && autonomyCurricularSubjects.length === 0 && recursamientoSubjects.length === 0) ? (
                             <td className="px-1 py-1.5 text-center text-slate-300 text-[10px] italic">
                               -
                             </td>
                           ) : null}
 
-                          {/* Autonomía Curricular Inputs */}
-                          {autonomyCurricularSubjects.length > 0 && (
-                            autonomyCurricularSubjects.map((subj, idx) => {
-                              const isLast = idx === autonomyCurricularSubjects.length - 1;
-                              const hasNextGroup = personalDevLevelSubjects.length > 0;
-                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
-
-                              if (!isEnrolled) {
-                                return (
-                                  <td 
-                                    key={`td-auto-${subj.id || subj.name}`} 
-                                    className={cn(
-                                      "px-1 py-1.5 bg-slate-50/50 text-center select-none",
-                                      (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
-                                    )}
-                                    title="No inscrito en esta TAE"
-                                  >
-                                    <span className="text-slate-300 font-bold text-xs">—</span>
-                                  </td>
-                                );
-                              }
-
-                              const rawVal = studentGrade.subjects?.[subj.name] ?? '';
-                              return (
-                                <td 
-                                  key={`td-auto-${subj.id || subj.name}`} 
-                                  className={cn(
-                                    "px-1 py-1.5 bg-amber-50/20",
-                                    (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : "border-r border-amber-100/70"
-                                  )}
-                                >
-                                  {(() => {
-                                    const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
-                                    return gradingScale === 'letters' ? (
-                                      <select
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                        value={rawVal}
-                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
-                                        className={cn(
-                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
-                                          rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
-                                          rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
-                                          rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
-                                          rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
-                                          "bg-amber-50/40 text-amber-400 border-transparent focus:bg-white focus:border-amber-400"
-                                        )}
-                                      >
-                                        <option value="">-</option>
-                                        <option value="A">A - Avanzado</option>
-                                        <option value="E">E - Esperado</option>
-                                        <option value="ED">ED - En Desarrollo</option>
-                                        <option value="RA">RA - Requiere Apoyo</option>
-                                      </select>
-                                    ) : (
-                                      <input
-                                        type="text"
-                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
-                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
-                                        value={rawVal}
-                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
-                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
-                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
-                                        className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
-                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
-                                      />
-                                    );
-                                  })()}
-                                </td>
-                              );
-                            })
-                          )}
-
                           {/* Desarrollo Personal Inputs */}
                           {personalDevLevelSubjects.length > 0 && (
                             personalDevLevelSubjects.map((subj, idx) => {
                               const isLast = idx === personalDevLevelSubjects.length - 1;
+                              const hasNextGroup = autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0;
                               const isAttendanceTracker = isAttendanceTrackingSubject(subj);
                               const autoAbsenceCount = isAttendanceTracker ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
 
@@ -4003,7 +3986,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                   key={`td-dev-${subj.id || subj.name}`} 
                                   className={cn(
                                     "px-1 py-1.5 bg-indigo-50/15",
-                                    isLast ? (isActivitiesEnabledForCurrentLevel ? "border-r-[3px] border-r-slate-300" : "") : "border-r border-indigo-100/70"
+                                    (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : (isLast ? "" : "border-r border-indigo-100/70")
                                   )}
                                 >
                                   {(() => {
@@ -4078,6 +4061,153 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                           }
                                         }}
                                         className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
+                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                      />
+                                    );
+                                  })()}
+                                </td>
+                              );
+                            })
+                          )}
+
+                          {/* Autonomía Curricular Inputs */}
+                          {autonomyCurricularSubjects.length > 0 && (
+                            autonomyCurricularSubjects.map((subj, idx) => {
+                              const isLast = idx === autonomyCurricularSubjects.length - 1;
+                              const hasNextGroup = recursamientoSubjects.length > 0;
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+
+                              if (!isEnrolled) {
+                                return (
+                                  <td 
+                                    key={`td-auto-${subj.id || subj.name}`} 
+                                    className={cn(
+                                      "px-1 py-1.5 bg-slate-50/50 text-center select-none",
+                                      (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : (isLast ? "" : "border-r border-amber-100/70")
+                                    )}
+                                    title="No inscrito en esta TAE"
+                                  >
+                                    <span className="text-slate-300 font-bold text-xs">—</span>
+                                  </td>
+                                );
+                              }
+
+                              const rawVal = studentGrade.subjects?.[subj.name] ?? '';
+                              return (
+                                <td 
+                                  key={`td-auto-${subj.id || subj.name}`} 
+                                  className={cn(
+                                    "px-1 py-1.5 bg-amber-50/20",
+                                    (isLast && hasNextGroup) ? "border-r-[3px] border-r-slate-300" : (isLast ? "" : "border-r border-amber-100/70")
+                                  )}
+                                >
+                                  {(() => {
+                                    const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
+                                    return gradingScale === 'letters' ? (
+                                      <select
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className={cn(
+                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                          rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                          rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                          rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                          rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                          "bg-amber-50/40 text-amber-400 border-transparent focus:bg-white focus:border-amber-400"
+                                        )}
+                                      >
+                                        <option value="">-</option>
+                                        <option value="A">A - Avanzado</option>
+                                        <option value="E">E - Esperado</option>
+                                        <option value="ED">ED - En Desarrollo</option>
+                                        <option value="RA">RA - Requiere Apoyo</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className="w-full bg-amber-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-amber-950 focus:bg-white focus:border-amber-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
+                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                      />
+                                    );
+                                  })()}
+                                </td>
+                              );
+                            })
+                          )}
+
+                          {/* Recursamiento Inputs */}
+                          {recursamientoSubjects.length > 0 && (
+                            recursamientoSubjects.map((subj, idx) => {
+                              const isLast = idx === recursamientoSubjects.length - 1;
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+
+                              if (!isEnrolled) {
+                                return (
+                                  <td 
+                                    key={`td-rec-${subj.id || subj.name}`} 
+                                    className={cn(
+                                      "px-1 py-1.5 bg-slate-50/50 text-center select-none",
+                                      isLast ? "" : "border-r border-rose-100/70"
+                                    )}
+                                    title="No inscrito en esta TAE"
+                                  >
+                                    <span className="text-slate-300 font-bold text-xs">—</span>
+                                  </td>
+                                );
+                              }
+
+                              const rawVal = studentGrade.subjects?.[subj.name] ?? '';
+                              return (
+                                <td 
+                                  key={`td-rec-${subj.id || subj.name}`} 
+                                  className={cn(
+                                    "px-1 py-1.5 bg-rose-50/20",
+                                    isLast ? "" : "border-r border-rose-100/70"
+                                  )}
+                                >
+                                  {(() => {
+                                    const isColLocked = isSubjectLockedInPeriod(selectedBimestre, subj.id, subj.name);
+                                    return gradingScale === 'letters' ? (
+                                      <select
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className={cn(
+                                          "w-full rounded px-1 py-1.5 text-center text-[10px] font-black outline-none transition-all cursor-pointer border",
+                                          rawVal === 'A' ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black" :
+                                          rawVal === 'E' || rawVal === 'B' ? "bg-blue-50 text-blue-800 border-blue-300 font-black" :
+                                          rawVal === 'ED' || rawVal === 'C' ? "bg-amber-50 text-amber-800 border-amber-300 font-black" :
+                                          rawVal === 'RA' || rawVal === 'D' ? "bg-rose-50 text-rose-800 border-rose-300 font-black" :
+                                          "bg-rose-50/40 text-rose-400 border-transparent focus:bg-white focus:border-rose-400"
+                                        )}
+                                      >
+                                        <option value="">-</option>
+                                        <option value="A">A - Avanzado</option>
+                                        <option value="E">E - Esperado</option>
+                                        <option value="ED">ED - En Desarrollo</option>
+                                        <option value="RA">RA - Requiere Apoyo</option>
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        inputMode={gradingScale === 'numeric_100' ? "numeric" : "decimal"}
+                                        disabled={isColLocked && !['Superadministrador', 'Administrador'].includes(userProfile?.role || '')}
+                                        value={rawVal}
+                                        onChange={(e) => handleGradeChange(student.id, subj.name, e.target.value, true)}
+                                        onFocus={() => { activeInputKeyRef.current = `subj::${student.id}::${subj.name}`; }}
+                                        onBlur={() => handleGradeBlur(student.id, subj.name, true)}
+                                        className="w-full bg-rose-50/40 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-rose-950 focus:bg-white focus:border-rose-400 outline-none disabled:opacity-30 transition-all tabular-nums italic"
                                         placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
                                       />
                                     );

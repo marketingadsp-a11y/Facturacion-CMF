@@ -2454,8 +2454,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
 
   const CATEGORIES = [
     { key: 'Académica', label: 'Académica', color: 'blue', icon: '📘' },
-    { key: 'Autonomía Curricular', label: 'Autonomía Curricular', color: 'amber', icon: '🎨' },
     { key: 'Desarrollo Personal', label: 'Desarrollo Personal', color: 'indigo', icon: '🧠' },
+    { key: 'Autonomía Curricular', label: 'Autonomía Curricular', color: 'amber', icon: '🎨' },
     { key: 'Recursamiento', label: 'Recursamiento', color: 'rose', icon: '🔄' },
   ];
 
@@ -2663,8 +2663,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
             >
               <option value="Académica">Académica (Base)</option>
-              <option value="Autonomía Curricular">Autonomía Curricular</option>
               <option value="Desarrollo Personal">Desarrollo Personal / Conducta</option>
+              <option value="Autonomía Curricular">Autonomía Curricular</option>
               <option value="Recursamiento">Recursamiento</option>
             </select>
           </div>
@@ -2825,8 +2825,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                     className="bg-white border border-blue-200 rounded px-1.5 py-1 text-[9px] font-black uppercase"
                                   >
                                     <option value="Académica">Académica</option>
-                                    <option value="Autonomía Curricular">Aut. Curr.</option>
                                     <option value="Desarrollo Personal">Des. Personal</option>
+                                    <option value="Autonomía Curricular">Aut. Curr.</option>
                                     <option value="Recursamiento">Recursamiento</option>
                                   </select>
                                   {normalizeCategory(editingSubject.category) === 'Autonomía Curricular' && (
@@ -2895,8 +2895,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       title="Mover categoría de la materia"
                                     >
                                       <option value="Académica">Académica</option>
-                                      <option value="Autonomía Curricular">Aut. Curr.</option>
                                       <option value="Desarrollo Personal">Des. Personal</option>
+                                      <option value="Autonomía Curricular">Aut. Curr.</option>
                                       <option value="Recursamiento">Recursamiento</option>
                                     </select>
                                     <button 

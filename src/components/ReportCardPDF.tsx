@@ -869,52 +869,10 @@ export default function ReportCardPDF({
         </View>
 
         {/* ----------------------------------------------------
-            SECCIÓN 2: AUTONOMÍA CURRICULAR
+            SECCIÓN 2: DESARROLLO PERSONAL
             ---------------------------------------------------- */}
         <View style={styles.sectionBanner}>
-          <Text style={styles.sectionBannerText}>II. AUTONOMÍA CURRICULAR</Text>
-          <Text style={[styles.sectionBannerText, { fontSize: 6, color: '#CBD5E1' }]}>
-            TALLERES, IDIOMAS Y ÁREAS COMPLEMENTARIAS
-          </Text>
-        </View>
-        <View style={styles.table}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={styles.tableHeaderSubject}>Área de Autonomía Curricular</Text>
-            {periodIndices.map(num => (
-              <Text key={`th-curr-${num}`} style={styles.tableHeaderPeriod}>
-                {evalConfig.periodNames?.[num - 1] || `${num}º`}
-              </Text>
-            ))}
-            <Text style={styles.tableHeaderAvg}>PROM</Text>
-          </View>
-
-          {curricularSubjects.length > 0 ? (
-            curricularSubjects.map((subj, idx) => (
-              <View 
-                key={`row-curr-${idx}`} 
-                style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
-              >
-                <Text style={styles.tableCellSubject}>{subj}</Text>
-                {periodIndices.map(num => (
-                  <Text key={`g-curr-${subj}-${num}`} style={styles.tableCellPeriod}>
-                    {getGrade(subj, num)}
-                  </Text>
-                ))}
-                <Text style={styles.tableCellAvg}>
-                  {getSubjectAvg(subj)}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.emptyRowText}>Sin asignaturas de autonomía curricular asignadas</Text>
-          )}
-        </View>
-
-        {/* ----------------------------------------------------
-            SECCIÓN 3: DESARROLLO PERSONAL
-            ---------------------------------------------------- */}
-        <View style={styles.sectionBanner}>
-          <Text style={styles.sectionBannerText}>III. DESARROLLO PERSONAL Y SOCIAL</Text>
+          <Text style={styles.sectionBannerText}>II. DESARROLLO PERSONAL Y SOCIAL</Text>
           <Text style={[styles.sectionBannerText, { fontSize: 6, color: '#CBD5E1' }]}>
             EDUCACIÓN SOCIOEMOCIONAL, ARTES Y ASPECTOS FORMATIVOS
           </Text>
@@ -967,6 +925,48 @@ export default function ReportCardPDF({
                 </View>
               ))}
             </>
+          )}
+        </View>
+
+        {/* ----------------------------------------------------
+            SECCIÓN 3: AUTONOMÍA CURRICULAR
+            ---------------------------------------------------- */}
+        <View style={styles.sectionBanner}>
+          <Text style={styles.sectionBannerText}>III. AUTONOMÍA CURRICULAR</Text>
+          <Text style={[styles.sectionBannerText, { fontSize: 6, color: '#CBD5E1' }]}>
+            TALLERES, IDIOMAS Y ÁREAS COMPLEMENTARIAS
+          </Text>
+        </View>
+        <View style={styles.table}>
+          <View style={styles.tableHeaderRow}>
+            <Text style={styles.tableHeaderSubject}>Área de Autonomía Curricular</Text>
+            {periodIndices.map(num => (
+              <Text key={`th-curr-${num}`} style={styles.tableHeaderPeriod}>
+                {evalConfig.periodNames?.[num - 1] || `${num}º`}
+              </Text>
+            ))}
+            <Text style={styles.tableHeaderAvg}>PROM</Text>
+          </View>
+
+          {curricularSubjects.length > 0 ? (
+            curricularSubjects.map((subj, idx) => (
+              <View 
+                key={`row-curr-${idx}`} 
+                style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
+              >
+                <Text style={styles.tableCellSubject}>{subj}</Text>
+                {periodIndices.map(num => (
+                  <Text key={`g-curr-${subj}-${num}`} style={styles.tableCellPeriod}>
+                    {getGrade(subj, num)}
+                  </Text>
+                ))}
+                <Text style={styles.tableCellAvg}>
+                  {getSubjectAvg(subj)}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyRowText}>Sin asignaturas de autonomía curricular asignadas</Text>
           )}
         </View>
 

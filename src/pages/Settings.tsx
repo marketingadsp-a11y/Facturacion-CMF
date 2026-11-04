@@ -1955,6 +1955,7 @@ export default function Settings() {
                 gradeLocks={gradeLocks}
                 subjects={subjects}
                 userProfile={userProfile}
+                users={appUsers}
               />
             </div>
           )}

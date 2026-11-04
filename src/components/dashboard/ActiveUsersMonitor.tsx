@@ -5,21 +5,14 @@ import { AppUser } from '../../types';
 import { cn } from '../../lib/utils';
 import { format, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
-  Activity, 
   Clock, 
   Search, 
   Filter, 
   GraduationCap, 
-  ShieldCheck, 
-  UserCheck, 
   Wifi, 
-  WifiOff, 
-  Calendar,
-  Sparkles,
-  ChevronRight
+  WifiOff
 } from 'lucide-react';
 
 interface ActiveUsersMonitorProps {
@@ -31,9 +24,9 @@ export default function ActiveUsersMonitor({ currentUserId }: ActiveUsersMonitor
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<number>(Date.now());
 
-  // Filters
+  // Filters: DEFAULT TO 'online' AS REQUESTED
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'online' | 'offline'>('online');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'Docente' | 'Administrador' | 'Control Escolar'>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'online' | 'offline'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
   // 1. Subscribe to users collection in real time
@@ -51,7 +44,7 @@ export default function ActiveUsersMonitor({ currentUserId }: ActiveUsersMonitor
     return () => unsub();
   }, []);
 
-  // 2. Periodic timer to update relative elapsed times ("hace X min", duration) every 15 seconds
+  // 2. Periodic timer to update relative elapsed times every 15 seconds
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
@@ -177,26 +170,12 @@ export default function ActiveUsersMonitor({ currentUserId }: ActiveUsersMonitor
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
-      {/* 1. Header con indicador de actividad en vivo */}
-      <div className="p-6 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200 shrink-0">
-            <Activity size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
-                Usuarios en Sesión y Monitoreo de Docentes
-              </h3>
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black uppercase tracking-wider">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>En Vivo</span>
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 font-semibold mt-0.5">
-              Visualiza en tiempo real qué docentes y usuarios han iniciado sesión, hora de ingreso y permanencia en la plataforma
-            </p>
-          </div>
+      {/* 1. Header */}
+      <div className="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
+            ACTIVIDAD DOCENTE
+          </h3>
         </div>
 
         {/* Resumen numérico rápido */}
@@ -211,368 +190,276 @@ export default function ActiveUsersMonitor({ currentUserId }: ActiveUsersMonitor
         </div>
       </div>
 
-      {/* 2. Métricas destacadas */}
-      <div className="p-6 border-b border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50/20">
-        {/* Card 1: En Línea Ahora */}
-        <button
-          type="button"
-          onClick={() => { setStatusFilter(statusFilter === 'online' ? 'ALL' : 'online'); }}
-          className={cn(
-            "p-4 rounded-xl border text-left transition-all cursor-pointer",
-            statusFilter === 'online'
-              ? "bg-emerald-50/90 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs"
-              : "bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs"
-          )}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">En Línea Ahora</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Wifi size={14} />
-            </div>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 tabular-nums">{metrics.online}</span>
-            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded">
-              Activos
-            </span>
-          </div>
-        </button>
-
-        {/* Card 2: Docentes Conectados (Foco solicitado por el usuario) */}
-        <button
-          type="button"
-          onClick={() => { 
-            setRoleFilter(roleFilter === 'Docente' ? 'ALL' : 'Docente'); 
-            setStatusFilter('online');
-          }}
-          className={cn(
-            "p-4 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden",
-            roleFilter === 'Docente' && statusFilter === 'online'
-              ? "bg-indigo-50/90 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs"
-              : "bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs"
-          )}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Docentes en Línea</span>
-            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <GraduationCap size={14} />
-            </div>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-indigo-900 tabular-nums">{metrics.onlineTeachers}</span>
-            <span className="text-[10px] font-bold text-slate-400">
-              de {metrics.teachersCount} registrados
-            </span>
-          </div>
-        </button>
-
-        {/* Card 3: Ingresos Hoy */}
-        <div className="p-4 rounded-xl border bg-white border-slate-200 text-left">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ingresos Hoy</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Clock size={14} />
-            </div>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 tabular-nums">{metrics.todayLogins}</span>
-            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded">
-              Sesiones iniciadas
-            </span>
-          </div>
-        </div>
-
-        {/* Card 4: Total Personal */}
-        <button
-          type="button"
-          onClick={() => { setRoleFilter('ALL'); setStatusFilter('ALL'); setSearchTerm(''); }}
-          className={cn(
-            "p-4 rounded-xl border text-left transition-all cursor-pointer",
-            roleFilter === 'ALL' && statusFilter === 'ALL' && !searchTerm
-              ? "bg-slate-50 border-slate-300 shadow-xs"
-              : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs"
-          )}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Plantilla Completa</span>
-            <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
-              <Users size={14} />
-            </div>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 tabular-nums">{metrics.total}</span>
-            <span className="text-[10px] font-bold text-slate-500">
-              Cuentas activas
-            </span>
-          </div>
-        </button>
-      </div>
-
-      {/* 3. Filtros y Búsqueda */}
+      {/* 2. Filtros principales: Estado (Por defecto: EN LÍNEA) y Roles */}
       <div className="p-4 bg-slate-50/40 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Pills de rol */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+        {/* Toggle de Estado: EN LÍNEA por defecto */}
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-1 shrink-0 flex items-center gap-1">
-            <Filter size={11} /> Filtrar:
+            <Filter size={11} /> Estado:
           </span>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('ALL')}
-            className={cn(
-              "px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer",
-              roleFilter === 'ALL'
-                ? "bg-slate-900 text-white shadow-xs"
-                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-            )}
-          >
-            Todos ({metrics.total})
-          </button>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('Docente')}
-            className={cn(
-              "px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
-              roleFilter === 'Docente'
-                ? "bg-indigo-600 text-white shadow-xs"
-                : "bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700"
-            )}
-          >
-            <GraduationCap size={13} />
-            <span>Docentes ({metrics.teachersCount})</span>
-            {metrics.onlineTeachers > 0 && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('Control Escolar')}
-            className={cn(
-              "px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer",
-              roleFilter === 'Control Escolar'
-                ? "bg-blue-600 text-white shadow-xs"
-                : "bg-white text-slate-700 border border-slate-200 hover:bg-blue-50"
-            )}
-          >
-            Control Escolar
-          </button>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('Administrador')}
-            className={cn(
-              "px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer",
-              roleFilter === 'Administrador'
-                ? "bg-slate-800 text-white shadow-xs"
-                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-            )}
-          >
-            Administración
-          </button>
-        </div>
-
-        {/* Filtro de estado & Buscador */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 shrink-0 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('ALL')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                statusFilter === 'ALL' ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"
-              )}
-            >
-              Todos
-            </button>
+          <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 shadow-xs">
             <button
               type="button"
               onClick={() => setStatusFilter('online')}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1",
-                statusFilter === 'online' ? "bg-emerald-600 text-white" : "text-emerald-700 hover:bg-emerald-50"
+                "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
+                statusFilter === 'online'
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-emerald-700 hover:bg-emerald-50"
               )}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>En Línea</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>En Línea ({metrics.online})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('ALL')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+                statusFilter === 'ALL'
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              Todos ({metrics.total})
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('offline')}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                statusFilter === 'offline' ? "bg-slate-600 text-white" : "text-slate-500 hover:text-slate-700"
+                "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
+                statusFilter === 'offline'
+                  ? "bg-slate-700 text-white shadow-xs"
+                  : "text-slate-500 hover:text-slate-700"
               )}
             >
-              Desconectados
+              <WifiOff size={12} />
+              <span>Desconectados ({metrics.total - metrics.online})</span>
             </button>
           </div>
 
-          <div className="relative w-full sm:w-60">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por nombre o correo..."
-              className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-xs"
-            />
+          <div className="h-4 w-px bg-slate-200 hidden sm:block mx-1" />
+
+          {/* Filtro de Rol */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setRoleFilter(roleFilter === 'Docente' ? 'ALL' : 'Docente')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+                roleFilter === 'Docente'
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700"
+              )}
+            >
+              <GraduationCap size={13} />
+              <span>Solo Docentes ({metrics.teachersCount})</span>
+              {metrics.onlineTeachers > 0 && (
+                <span className="px-1.5 py-0.2 bg-emerald-400 text-emerald-950 font-black rounded-full text-[9px]">
+                  {metrics.onlineTeachers} online
+                </span>
+              )}
+            </button>
+
+            {roleFilter !== 'ALL' && roleFilter !== 'Docente' && (
+              <button
+                type="button"
+                onClick={() => setRoleFilter('ALL')}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200"
+              >
+                Limpiar rol
+              </button>
+            )}
           </div>
+        </div>
+
+        {/* Buscador */}
+        <div className="relative w-full sm:w-64 shrink-0">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por nombre o correo..."
+            className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-xs"
+          />
         </div>
       </div>
 
-      {/* 4. Lista interactiva de Usuarios y Docentes */}
-      <div className="p-6">
+      {/* 3. Tabla compacta de Usuarios y Docentes (1 usuario por fila) */}
+      <div className="overflow-x-auto">
         {loading ? (
           <div className="py-12 text-center text-slate-400 space-y-2">
             <div className="w-8 h-8 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin mx-auto" />
-            <p className="text-xs font-bold uppercase tracking-wider">Cargando estado de usuarios...</p>
+            <p className="text-xs font-bold uppercase tracking-wider">Cargando usuarios...</p>
           </div>
         ) : filteredUsers.length === 0 ? (
-          <div className="py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-            <WifiOff size={32} className="mx-auto text-slate-300 mb-2" />
+          <div className="py-12 text-center bg-slate-50/50">
+            <WifiOff size={28} className="mx-auto text-slate-300 mb-2" />
             <p className="text-xs font-black text-slate-700 uppercase tracking-wider">
-              No se encontraron usuarios con los filtros seleccionados
+              {statusFilter === 'online' 
+                ? 'No hay usuarios en línea en este momento' 
+                : 'No se encontraron usuarios con los filtros seleccionados'}
             </p>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Prueba cambiando el rol o limpiando la barra de búsqueda.
-            </p>
+            {statusFilter === 'online' && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('ALL')}
+                className="mt-2 text-xs font-bold text-indigo-600 hover:underline uppercase tracking-wider cursor-pointer"
+              >
+                Ver todos los usuarios ({metrics.total})
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {filteredUsers.map((user) => {
-              const online = isUserOnline(user);
-              const isCurrentUser = user.id === currentUserId;
-              const hasLoggedIn = Boolean(user.lastLoginAt?.toDate);
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                <th className="py-3 px-4">Usuario</th>
+                <th className="py-3 px-3">Rol</th>
+                <th className="py-3 px-3">Asignación / Materias</th>
+                <th className="py-3 px-3 text-center">Estado</th>
+                <th className="py-3 px-4">Hora de Ingreso</th>
+                <th className="py-3 px-4">Tiempo en Sesión / Última Conexión</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredUsers.map((user) => {
+                const online = isUserOnline(user);
+                const isCurrentUser = user.id === currentUserId;
+                const hasLoggedIn = Boolean(user.lastLoginAt?.toDate);
 
-              return (
-                <div
-                  key={user.id}
-                  className={cn(
-                    "p-4 rounded-2xl border transition-all relative overflow-hidden flex flex-col justify-between group",
-                    online
-                      ? "bg-white border-emerald-300 shadow-sm shadow-emerald-100/50 hover:shadow-md hover:border-emerald-400"
-                      : "bg-slate-50/60 border-slate-200 hover:bg-white hover:border-slate-300 hover:shadow-sm"
-                  )}
-                >
-                  {/* Barra superior de estado */}
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {/* Avatar con punto de presencia */}
-                      <div className="relative shrink-0">
-                        {user.photoUrl ? (
-                          <img
-                            src={user.photoUrl}
-                            alt={user.name}
-                            className="w-10 h-10 rounded-xl object-cover border border-slate-200"
-                          />
-                        ) : (
-                          <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm uppercase shadow-xs",
-                            online ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"
-                          )}>
-                            {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
-                          </div>
-                        )}
-
-                        {/* Indicador de estado */}
-                        <span
-                          className={cn(
-                            "absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white",
-                            online
-                              ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse"
-                              : "bg-slate-300"
-                          )}
-                          title={online ? "En línea ahora" : "Desconectado"}
-                        />
-                      </div>
-
-                      <div className="min-w-0 pr-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4 className="text-xs font-black text-slate-900 truncate">
-                            {user.name || 'Sin nombre'}
-                          </h4>
-                          {isCurrentUser && (
-                            <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1 rounded">
-                              Tú
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-semibold truncate" title={user.email}>
-                          {user.email}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Badge de Rol */}
-                    <span className={cn(
-                      "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border shrink-0",
-                      getRoleBadgeColor(user.role)
-                    )}>
-                      {user.role}
-                    </span>
-                  </div>
-
-                  {/* Asignación académica si es docente */}
-                  {user.role === 'Docente' && (
-                    <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-indigo-50/50 border border-indigo-100 text-[10px] font-bold text-indigo-900 flex items-center gap-1.5 truncate">
-                      <GraduationCap size={12} className="text-indigo-600 shrink-0" />
-                      <span className="truncate">
-                        {user.assignedLevel ? `${user.assignedLevel}` : 'Varios Niveles'}
-                        {user.assignedGrade ? ` • ${user.assignedGrade}` : ''}
-                        {user.assignedGroup ? ` "${user.assignedGroup}"` : ''}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Estado de Conexión & Tiempos */}
-                  <div className="pt-2 border-t border-slate-100/80 space-y-1.5">
-                    {online ? (
-                      <div>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
-                            <Wifi size={13} className="text-emerald-500 animate-pulse" />
-                            <span>En Línea Ahora</span>
-                          </div>
-                          <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded-full">
-                            Activo
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 font-semibold bg-emerald-50/40 p-2 rounded-lg border border-emerald-100">
-                          <div>
-                            <span className="text-slate-400 block text-[9px] uppercase font-bold">Hora de Ingreso:</span>
-                            <span className="text-slate-800 font-black">{formatLoginTime(user)}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block text-[9px] uppercase font-bold">Tiempo en Línea:</span>
-                            <span className="text-emerald-700 font-black">{formatSessionDuration(user)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-400 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                            <WifiOff size={11} />
-                            Desconectado
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-500">
-                            {formatLastActive(user)}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-500 flex items-center justify-between bg-slate-100/70 p-1.5 rounded-lg font-semibold">
-                          <span className="text-slate-400 text-[9px] uppercase">Último Ingreso:</span>
-                          <span className="text-slate-700 font-bold">
-                            {hasLoggedIn ? formatLoginTime(user) : 'Nunca ha ingresado'}
-                          </span>
-                        </div>
-                      </div>
+                return (
+                  <tr
+                    key={user.id}
+                    className={cn(
+                      "hover:bg-slate-50/80 transition-colors group",
+                      online ? "bg-emerald-50/15" : "bg-white"
                     )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  >
+                    {/* Columna 1: Usuario */}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative shrink-0">
+                          {user.photoUrl ? (
+                            <img
+                              src={user.photoUrl}
+                              alt={user.name}
+                              className="w-8 h-8 rounded-lg object-cover border border-slate-200"
+                            />
+                          ) : (
+                            <div className={cn(
+                              "w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-xs",
+                              online ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"
+                            )}>
+                              {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
+                            </div>
+                          )}
+
+                          <span
+                            className={cn(
+                              "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white",
+                              online
+                                ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)] animate-pulse"
+                                : "bg-slate-300"
+                            )}
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-900 truncate">
+                              {user.name || 'Sin nombre'}
+                            </span>
+                            {isCurrentUser && (
+                              <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1 rounded">
+                                Tú
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 truncate block">
+                            {user.email}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Columna 2: Rol */}
+                    <td className="py-3 px-3">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border inline-block whitespace-nowrap",
+                        getRoleBadgeColor(user.role)
+                      )}>
+                        {user.role}
+                      </span>
+                    </td>
+
+                    {/* Columna 3: Asignación Académica */}
+                    <td className="py-3 px-3">
+                      {user.role === 'Docente' ? (
+                        <div className="text-[11px] font-semibold text-slate-700 max-w-xs truncate" title={user.assignedLevel || 'Docente'}>
+                          <span className="text-indigo-700 font-bold">
+                            {user.assignedLevel || 'Docente Asignado'}
+                          </span>
+                          {user.assignedGrade && <span> • {user.assignedGrade}</span>}
+                          {user.assignedGroup && <span> "{user.assignedGroup}"</span>}
+                          {user.teacherSubjectAccess === 'specific' && user.assignedSubjects?.length ? (
+                            <span className="text-[10px] text-slate-400 block truncate">
+                              ({user.assignedSubjects.length} materias específicas)
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">
+                          Personal Administrativo
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Columna 4: Estado */}
+                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                      {online ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 border border-emerald-200 text-emerald-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>En Línea</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 border border-slate-200 text-slate-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                          <span>Desconectado</span>
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Columna 5: Hora de Ingreso */}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                        <Clock size={12} className="text-slate-400 shrink-0" />
+                        <span>{formatLoginTime(user)}</span>
+                      </div>
+                    </td>
+
+                    {/* Columna 6: Tiempo en Sesión / Última Actividad */}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      {online ? (
+                        <div>
+                          <span className="font-black text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md text-[10px]">
+                            En línea: {formatSessionDuration(user)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-slate-500 font-semibold text-[11px]">
+                          <span>Última vez: {formatLastActive(user)}</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
   );
 }
-
