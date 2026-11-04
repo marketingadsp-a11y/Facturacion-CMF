@@ -61,6 +61,7 @@ import { formatCurrency, cn } from '../lib/utils';
 import CoursesCatalog from '../components/settings/CoursesCatalog';
 import ChargesCatalog from '../components/settings/ChargesCatalog';
 import CriticalZoneManager from '../components/settings/CriticalZoneManager';
+import GradeLocksManager from '../components/settings/GradeLocksManager';
 import { loadExampleData } from '../services/exampleDataService';
 import { toast } from 'react-toastify';
 
@@ -1948,67 +1949,13 @@ export default function Settings() {
 
           {activeTab === 'locks' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-600 flex items-center justify-center text-white shadow-lg shadow-amber-200">
-                      <Lock size={20} />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Bloqueos de Grado</h2>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Control de captura de notas</p>
-                    </div>
-                  </div>
-                  <div className="p-8 space-y-4">
-                    {gradeLocks.length === 0 && (
-                      <div className="py-20 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                        <Lock size={40} className="mx-auto text-slate-200 mb-4" />
-                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No hay bimestres bloqueados</p>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {gradeLocks.map(lock => (
-                        <div key={lock.id} className="p-6 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between group hover:bg-white hover:shadow-xl transition-all">
-                          <div className="flex items-center gap-4">
-                             <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-amber-600 shadow-sm border border-slate-100">
-                                <span className="text-lg font-black">{lock.bimestre}</span>
-                             </div>
-                             <div>
-                                <p className="text-sm font-black text-slate-900 uppercase tracking-tight flex items-center gap-2 flex-wrap">
-                                  <span>{lock.level} - {lock.grade} {lock.group}</span>
-                                  {lock.subjectName && (
-                                    <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-[11px] font-black">
-                                      {lock.subjectName}
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest italic opacity-60">
-                                  {lock.subjectName ? `Materia bloqueada (Periodo ${lock.bimestre})` : `Bimestre académico completo (Periodo ${lock.bimestre})`}
-                                </p>
-                             </div>
-                          </div>
-                          <button 
-                            onClick={async () => {
-                              const targetDesc = lock.subjectName 
-                                ? `la materia "${lock.subjectName}" (${lock.level} ${lock.grade} ${lock.group}) para el Periodo ${lock.bimestre}` 
-                                : `este grado (${lock.level} ${lock.grade} ${lock.group}) para el Periodo ${lock.bimestre}`;
-                              if (window.confirm(`¿Desbloquear ${targetDesc}? Los docentes podrán editar notas nuevamente.`)) {
-                                try {
-                                  await deleteDoc(doc(db, 'bimestreLocks', lock.id));
-                                } catch (error) {
-                                  console.error("Error deleting lock:", error);
-                                }
-                              }
-                            }}
-                            className="p-3 bg-amber-100 text-amber-700 hover:bg-amber-600 hover:text-white rounded-xl transition-all shadow-sm cursor-pointer"
-                            title="Desbloquear"
-                          >
-                            <Unlock size={18} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-               </div>
+              <GradeLocksManager
+                settings={settings}
+                cycles={cycles}
+                gradeLocks={gradeLocks}
+                subjects={subjects}
+                userProfile={userProfile}
+              />
             </div>
           )}
 
