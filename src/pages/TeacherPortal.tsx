@@ -46,6 +46,7 @@ import {
   IdCard,
   QrCode,
   FileBadge,
+  FileDown,
   MessageSquare,
   Sparkles,
   X
@@ -57,6 +58,7 @@ import { pdf } from '@react-pdf/renderer';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'react-toastify';
 import TeacherCredentialPDF from '../components/TeacherCredentialPDF';
+import TeacherGradesListPDF from '../components/TeacherGradesListPDF';
 
 const DEFAULT_TIME_PERIODS = [
   { label: '1er Periodo', time: '07:30 - 08:20', isBreak: false },
@@ -98,6 +100,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const [isEditingCredential, setIsEditingCredential] = useState(false);
   const [isSavingCredential, setIsSavingCredential] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingGradesPdf, setIsDownloadingGradesPdf] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -936,7 +939,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   }, [evalConfig.periodCount, selectedBimestre]);
 
   const [currentCycleId, setCurrentCycleId] = useState('');
+  const [cycles, setCycles] = useState<SchoolCycle[]>([]);
   const [selectedLevelSchema, setSelectedLevelSchema] = useState('');
+
+  // Fetch school cycles
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'cycles'), (snap) => {
+      setCycles(snap.docs.map(d => ({ id: d.id, ...d.data() } as SchoolCycle)));
+    });
+    return unsub;
+  }, []);
 
   // Dynamic activePeriods for layout
   const activePeriods = useMemo(() => {
@@ -2776,6 +2788,78 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
   };
 
+  const handleDownloadGradesListPdf = async () => {
+    if (filteredStudents.length === 0) {
+      toast.error('No hay alumnos registrados en este grupo para generar la lista.');
+      return;
+    }
+
+    if (activeLevelSubjects.length === 0) {
+      toast.error('No tienes materias asignadas o registradas en este grupo.');
+      return;
+    }
+
+    // Filter subjects for PDF:
+    // For a group teacher (titular) in Preescolar or Primaria, show only Formación Académica and Desarrollo Personal.
+    // Teachers with specific assigned subjects download only the subjects assigned to them (across all levels).
+    const isPreescolarOrPrimaria = isObservationsLevel(activeLevel);
+    let subjectsForPdf = activeLevelSubjects;
+    if (isPreescolarOrPrimaria && !isSpecificTeacher) {
+      subjectsForPdf = activeLevelSubjects.filter(
+        s => s.category !== 'Autonomía Curricular' && s.category !== 'Recursamiento'
+      );
+    }
+
+    if (subjectsForPdf.length === 0) {
+      toast.error('No hay materias disponibles para incluir en la lista de calificaciones.');
+      return;
+    }
+
+    setIsDownloadingGradesPdf(true);
+    try {
+      const periodTitle = evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType} ${selectedBimestre}`;
+      const activeCycle = cycles.find(c => c.id === currentCycleId);
+      const cycleName = activeCycle?.name || currentCycleId || '';
+
+      const blob = await pdf(
+        <TeacherGradesListPDF
+          settings={settings}
+          level={activeLevel}
+          grade={activeGrade}
+          group={activeGroup}
+          cycleName={cycleName}
+          periodName={periodTitle}
+          periodNumber={selectedBimestre}
+          periodType={evalConfig.periodType}
+          teacherName={userProfile?.name || 'Docente'}
+          isSpecificTeacher={isSpecificTeacher}
+          gradingScale={gradingScale}
+          students={filteredStudents}
+          subjects={subjectsForPdf}
+          grades={grades}
+          getAbsenceCount={(studentId) => getStudentAbsenceCount(studentId, selectedBimestre)}
+        />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeLevel = (activeLevel || '').replace(/\s+/g, '_');
+      const safePeriod = periodTitle.replace(/\s+/g, '_');
+      link.download = `Calificaciones_${safeLevel}_${activeGrade}${activeGroup}_${safePeriod}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Lista oficial de calificaciones descargada en PDF exitosamente.');
+    } catch (err: any) {
+      console.error('Error generando lista de calificaciones PDF:', err);
+      toast.error('Hubo un error al generar la lista de calificaciones en PDF.');
+    } finally {
+      setIsDownloadingGradesPdf(false);
+    }
+  };
+
   const handleCopyVirtualLink = () => {
     if (!virtualCredentialUrl) return;
     navigator.clipboard.writeText(virtualCredentialUrl);
@@ -3013,11 +3097,27 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             {activeTab === 'grading' && (
               <>
                 {isAllAssignedSubjectsLocked ? (
-                  <div className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded border border-amber-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                    <Lock size={12} />
-                    {isSecundariaOrPrepa && activeLevelSubjects.length === 1 
-                      ? `${activeLevelSubjects[0].name} Finalizada` 
-                      : 'Periodo Finalizado'}
+                  <div className="flex items-center gap-2">
+                    <div className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded border border-amber-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                      <Lock size={12} />
+                      {isSecundariaOrPrepa && activeLevelSubjects.length === 1 
+                        ? `${activeLevelSubjects[0].name} Finalizada` 
+                        : 'Periodo Finalizado'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadGradesListPdf}
+                      disabled={isDownloadingGradesPdf}
+                      className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                      title="Descargar lista oficial de calificaciones del grupo en PDF"
+                    >
+                      {isDownloadingGradesPdf ? (
+                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <FileDown size={12} />
+                      )}
+                      <span>Descargar Lista PDF</span>
+                    </button>
                   </div>
                 ) : (
                   <button
@@ -3551,7 +3651,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                ======================================================== */
             <>
               {/* Controls - Compact */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-200 shadow-sm">
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
                     {evalConfig.periodType}:
@@ -3579,6 +3679,24 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                     </button>
                   ))}
                 </div>
+
+                {/* Opción para descargar lista del grupo con calificaciones asignadas (Solo aparece cuando el periodo esté finalizado) */}
+                {isAllAssignedSubjectsLocked && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadGradesListPdf}
+                    disabled={isDownloadingGradesPdf}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-50"
+                    title={`Descargar lista oficial de calificaciones de ${evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType} ${selectedBimestre}`}`}
+                  >
+                    {isDownloadingGradesPdf ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <FileDown size={14} />
+                    )}
+                    <span>Descargar Lista de Calificaciones ({evalConfig.periodType.charAt(0)}{selectedBimestre})</span>
+                  </button>
+                )}
               </div>
 
           {/* Category badges legend bar */}
