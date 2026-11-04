@@ -388,6 +388,7 @@ export interface Subject {
   name: string;
   level: string; // Preescolar, Primaria, etc.
   category?: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos' | 'Recursamiento';
+  applicableGrades?: string[]; // Grados específicos a los que aplica (ej. ["1ro", "2do"]). Si está vacío o undefined, aplica a todos los grados del nivel.
   linkedSubjectId?: string; // Optional: ID of an Academic subject this Autonomía Curricular subject contributes to
   linkedSubjectName?: string; // Optional: Name of the Academic subject (e.g. "De lo Humano y lo Comunitario")
   isAttendanceCount?: boolean; // When true, student absences (Faltas) automatically sum into this subject

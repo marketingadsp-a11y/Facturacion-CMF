@@ -590,10 +590,8 @@ export default function ReportCardPDF({
     ? (rawLogo.startsWith('data:') ? rawLogo : `/api/proxy/image?url=${encodeURIComponent(rawLogo)}`)
     : null;
 
-  // Filter subjects for this specific student:
-  // Non-TAE subjects apply to all students.
-  // TAE subjects apply only if the student is enrolled in this TAE.
-  const studentSubjects = subjects.filter(s => isStudentEnrolledInSubject(s, student.id));
+  // Filter subjects for this specific student (respects grade and TAE enrollment):
+  const studentSubjects = subjects.filter(s => isStudentEnrolledInSubject(s, student.id, student.grade));
 
   // Separate subjects into categories as requested
   const academicSubjects = studentSubjects

@@ -480,13 +480,75 @@ export function isSubjectLockLevel(levelName?: string | null): boolean {
 }
 
 /**
+ * Normalizes grade strings to allow robust matching:
+ * e.g. "1ro", "1°", "1", "1ero" -> "1"
+ * "2do", "2°", "2" -> "2"
+ * "3ro", "3°", "3", "3ero" -> "3"
+ */
+export function normalizeGradeStr(grade?: string): string {
+  if (!grade) return '';
+  const g = String(grade).toLowerCase().trim();
+  return g
+    .replace(/[°º]/g, '')
+    .replace(/(ro|do|er|ero|to|vo|mo)$/g, '')
+    .trim();
+}
+
+/**
+ * Returns available grades for a specific educational level.
+ * Preescolar & Secundaria default to 1ro, 2do, 3ro.
+ * Primaria & Bachillerato default to 1ro..6to.
+ */
+export function getLevelGrades(level?: string, configuredGrades?: string[]): string[] {
+  const base = configuredGrades && configuredGrades.length > 0
+    ? configuredGrades
+    : ['1ro', '2do', '3ro', '4to', '5to', '6to'];
+  const lvl = (level || '').toLowerCase().trim();
+  if (lvl.includes('preescolar') || lvl.includes('secundaria')) {
+    return base.filter(g => {
+      const n = parseInt(g.replace(/\D/g, ''), 10);
+      return isNaN(n) || n <= 3;
+    });
+  }
+  return base;
+}
+
+/**
+ * Checks if a subject applies to a specific grade.
+ * If applicableGrades is empty or undefined, it applies to all grades in the level.
+ */
+export function isSubjectApplicableToGrade(subject: Subject, studentGrade?: string): boolean {
+  if (!studentGrade) return true;
+  if (!subject.applicableGrades || subject.applicableGrades.length === 0) {
+    return true;
+  }
+  const rawTarget = studentGrade.toLowerCase().trim();
+  const normTarget = normalizeGradeStr(studentGrade);
+
+  return subject.applicableGrades.some(g => {
+    const rawG = g.toLowerCase().trim();
+    if (rawG === rawTarget) return true;
+    const normG = normalizeGradeStr(g);
+    return normG === normTarget;
+  });
+}
+
+/**
  * Checks whether a student is enrolled in a subject.
- * - Non-TAE subjects apply to all students.
- * - TAE subjects with taeStudentMode === 'all' apply to all students in the level.
+ * - Grade check: if applicableGrades is specified, student must be in one of those grades.
+ * - Non-TAE subjects apply to all students (matching grade).
+ * - TAE subjects with taeStudentMode === 'all' apply to all students in the level (matching grade).
  * - TAE subjects with taeStudentMode === 'specific' apply only to students listed in taeStudentIds.
  */
-export function isStudentEnrolledInSubject(subject: Subject, studentId: string): boolean {
+export function isStudentEnrolledInSubject(subject: Subject, studentId: string, studentGrade?: string): boolean {
   if (!subject) return false;
+  // Grade applicability check
+  if (studentGrade && subject.applicableGrades && subject.applicableGrades.length > 0) {
+    if (!isSubjectApplicableToGrade(subject, studentGrade)) {
+      return false;
+    }
+  }
+  // TAE check
   if (!subject.isTae) return true;
   if (!subject.taeStudentMode || subject.taeStudentMode === 'all') return true;
   return Boolean(subject.taeStudentIds && subject.taeStudentIds.includes(studentId));

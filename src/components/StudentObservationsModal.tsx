@@ -61,9 +61,9 @@ export default function StudentObservationsModal({
     return subjects.filter(s => 
       s.level?.toLowerCase().trim() === studentLvl &&
       isPureAcademicSubject(s) &&
-      isStudentEnrolledInSubject(s, student.id)
+      isStudentEnrolledInSubject(s, student.id, student.grade)
     );
-  }, [subjects, student?.level, student?.id]);
+  }, [subjects, student?.level, student?.id, student?.grade]);
 
   // Load grades/observations for this student and current cycle
   useEffect(() => {

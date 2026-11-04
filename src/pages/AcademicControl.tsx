@@ -18,7 +18,7 @@ import BatchBoletasModal from '../components/BatchBoletasModal';
 import { exportAttendanceExcel, exportAttendanceExcelAllGroups } from '../lib/attendanceExcel';
 import { calculateStudentDebts, MONTH_NAMES } from '../lib/paymentUtils';
 import { calculateCURP, STATES, getNextGradeAndLevel } from '../lib/studentUtils';
-import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade, isObservationsLevel } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, gradeToNumeric, formatAverage, getEffectiveSubjectGrade, isObservationsLevel, getLevelGrades, isSubjectApplicableToGrade } from '../lib/evaluationUtils';
 import { sendWelcomeEmail } from '../services/mailService';
 import { toast } from 'react-toastify';
 
@@ -2498,7 +2498,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
     linkedSubjectName: string;
     isAttendanceCount: boolean;
     isTae: boolean;
-  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false });
+    applicableGrades: string[];
+  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [] });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
@@ -2561,9 +2562,10 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         isTae: !!newSubject.isTae,
         taeStudentMode: newSubject.isTae ? 'all' : null,
         taeStudentIds: [],
+        applicableGrades: newSubject.applicableGrades || [],
         createdAt: serverTimestamp()
       });
-      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false });
+      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [] });
       toast.success(newSubject.isTae ? `Materia TAE "${cleanName}" creada. Configura sus alumnos en la pestaña TAES.` : `Materia "${cleanName}" creada correctamente.`);
     } catch (error) {
       console.error("Error creating subject:", error);
@@ -2596,6 +2598,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         isAttendanceCount: (editingSubject.category === 'Desarrollo Personal' || editingSubject.category === 'Aspectos Formativos') ? !!editingSubject.isAttendanceCount : false,
         isTae: !!editingSubject.isTae,
         taeStudentMode: editingSubject.isTae ? (editingSubject.taeStudentMode || 'all') : null,
+        applicableGrades: editingSubject.applicableGrades || [],
         updatedAt: serverTimestamp()
       });
       toast.success("Materia actualizada correctamente.");
@@ -2657,6 +2660,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
           isTae: !!subj.isTae,
           taeStudentMode: subj.isTae ? (subj.taeStudentMode || 'all') : null,
           taeStudentIds: subj.isTae ? (subj.taeStudentIds || []) : [],
+          applicableGrades: subj.applicableGrades || [],
           createdAt: serverTimestamp()
         });
       }
@@ -2783,7 +2787,81 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
             Agregar Materia
           </button>
         </div>
-</div>
+
+        {/* Grade selection row for new subject */}
+        {newSubject.level && (() => {
+          const availGrades = getLevelGrades(newSubject.level, settings?.academicGrades);
+          const isAll = !newSubject.applicableGrades || newSubject.applicableGrades.length === 0;
+
+          const toggleGrade = (grade: string) => {
+            let next: string[];
+            if (isAll) {
+              next = availGrades.filter(g => g !== grade);
+            } else if (newSubject.applicableGrades.includes(grade)) {
+              next = newSubject.applicableGrades.filter(g => g !== grade);
+            } else {
+              next = [...newSubject.applicableGrades, grade];
+            }
+            if (next.length === 0 || next.length === availGrades.length) {
+              setNewSubject({ ...newSubject, applicableGrades: [] });
+            } else {
+              setNewSubject({ ...newSubject, applicableGrades: next });
+            }
+          };
+
+          return (
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <GraduationCap size={14} className="text-blue-600" />
+                  <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
+                    Grados aplicables ({newSubject.level}):
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {isAll ? '(Aplica a todos los grados)' : `(Solo en: ${newSubject.applicableGrades.join(', ')})`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewSubject({ ...newSubject, applicableGrades: [] })}
+                  className={cn(
+                    "text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all",
+                    isAll
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                >
+                  ✓ Todos los grados
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {availGrades.map(grade => {
+                  const isChecked = isAll || newSubject.applicableGrades.includes(grade);
+                  return (
+                    <label
+                      key={grade}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all",
+                        isChecked
+                          ? "bg-blue-50 border-blue-300 text-blue-900 shadow-xs"
+                          : "bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleGrade(grade)}
+                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span>{grade}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+      </div>
 
       {/* List by Level */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -2861,69 +2939,148 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                           {catSubjects.map(subj => (
                             <div key={subj.id} className="px-3 py-2 flex items-center justify-between group hover:bg-slate-50 rounded-lg transition-all">
                               {editingSubject?.id === subj.id ? (
-                                <div className="flex-1 flex flex-wrap gap-2 items-center">
-                                  <input 
-                                    autoFocus
-                                    value={editingSubject.name}
-                                    onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
-                                    className="flex-1 min-w-[120px] bg-white border border-blue-200 rounded px-2 py-1 text-sm font-bold outline-none"
-                                  />
-                                  <select
-                                    value={normalizeCategory(editingSubject.category)}
-                                    onChange={(e) => setEditingSubject({ 
-                                      ...editingSubject, 
-                                      category: e.target.value as any,
-                                      linkedSubjectName: e.target.value === 'Autonomía Curricular' ? editingSubject.linkedSubjectName : undefined
-                                    })}
-                                    className="bg-white border border-blue-200 rounded px-1.5 py-1 text-[9px] font-black uppercase"
-                                  >
-                                    <option value="Académica">Académica</option>
-                                    <option value="Desarrollo Personal">Des. Personal</option>
-                                    <option value="Autonomía Curricular">Aut. Curr.</option>
-                                    <option value="Recursamiento">Recursamiento</option>
-                                  </select>
-                                  {normalizeCategory(editingSubject.category) === 'Autonomía Curricular' && (
+                                <div className="w-full bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-2.5">
+                                  <div className="flex flex-wrap gap-2 items-center">
+                                    <input 
+                                      autoFocus
+                                      value={editingSubject.name}
+                                      onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
+                                      className="flex-1 min-w-[140px] bg-white border border-blue-300 rounded px-2.5 py-1.5 text-xs font-bold outline-none uppercase"
+                                      placeholder="Nombre de la materia"
+                                    />
                                     <select
-                                      value={editingSubject.linkedSubjectName || ''}
-                                      onChange={(e) => setEditingSubject({ ...editingSubject, linkedSubjectName: e.target.value })}
-                                      className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-amber-900 max-w-[160px]"
-                                      title="Vincular a materia académica para promediar"
+                                      value={normalizeCategory(editingSubject.category)}
+                                      onChange={(e) => setEditingSubject({ 
+                                        ...editingSubject, 
+                                        category: e.target.value as any,
+                                        linkedSubjectName: e.target.value === 'Autonomía Curricular' ? editingSubject.linkedSubjectName : undefined
+                                      })}
+                                      className="bg-white border border-blue-200 rounded px-2 py-1.5 text-[9px] font-black uppercase"
                                     >
-                                      <option value="">(Sin vincular)</option>
-                                      {(subjectsByLevel[editingSubject.level] || [])
-                                        .filter(s => normalizeCategory(s.category) === 'Académica' && s.id !== editingSubject.id)
-                                        .map(s => (
-                                          <option key={s.id} value={s.name}>Suma a: {s.name}</option>
-                                        ))}
+                                      <option value="Académica">Académica</option>
+                                      <option value="Desarrollo Personal">Des. Personal</option>
+                                      <option value="Autonomía Curricular">Aut. Curr.</option>
+                                      <option value="Recursamiento">Recursamiento</option>
                                     </select>
-                                  )}
-                                  {normalizeCategory(editingSubject.category) === 'Desarrollo Personal' && (
-                                    <label className="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-indigo-900 cursor-pointer" title="Marcar para sumar faltas automáticamente">
+                                    {normalizeCategory(editingSubject.category) === 'Autonomía Curricular' && (
+                                      <select
+                                        value={editingSubject.linkedSubjectName || ''}
+                                        onChange={(e) => setEditingSubject({ ...editingSubject, linkedSubjectName: e.target.value })}
+                                        className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-amber-900 max-w-[160px]"
+                                        title="Vincular a materia académica para promediar"
+                                      >
+                                        <option value="">(Sin vincular)</option>
+                                        {(subjectsByLevel[editingSubject.level] || [])
+                                          .filter(s => normalizeCategory(s.category) === 'Académica' && s.id !== editingSubject.id)
+                                          .map(s => (
+                                            <option key={s.id} value={s.name}>Suma a: {s.name}</option>
+                                          ))}
+                                      </select>
+                                    )}
+                                    {normalizeCategory(editingSubject.category) === 'Desarrollo Personal' && (
+                                      <label className="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-indigo-900 cursor-pointer" title="Marcar para sumar faltas automáticamente">
+                                        <input
+                                          type="checkbox"
+                                          checked={!!editingSubject.isAttendanceCount}
+                                          onChange={(e) => setEditingSubject({ ...editingSubject, isAttendanceCount: e.target.checked })}
+                                          className="w-3 h-3 text-indigo-600 rounded"
+                                        />
+                                        <span>Suma Faltas</span>
+                                      </label>
+                                    )}
+                                    <label className="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-blue-900 cursor-pointer" title="Marcar como materia TAE">
                                       <input
                                         type="checkbox"
-                                        checked={!!editingSubject.isAttendanceCount}
-                                        onChange={(e) => setEditingSubject({ ...editingSubject, isAttendanceCount: e.target.checked })}
-                                        className="w-3 h-3 text-indigo-600 rounded"
+                                        checked={!!editingSubject.isTae}
+                                        onChange={(e) => setEditingSubject({ ...editingSubject, isTae: e.target.checked })}
+                                        className="w-3 h-3 text-blue-900 rounded"
                                       />
-                                      <span>Suma Faltas</span>
+                                      <span>Es TAE</span>
                                     </label>
-                                  )}
-                                  <label className="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-blue-900 cursor-pointer" title="Marcar como materia TAE">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!editingSubject.isTae}
-                                      onChange={(e) => setEditingSubject({ ...editingSubject, isTae: e.target.checked })}
-                                      className="w-3 h-3 text-blue-900 rounded"
-                                    />
-                                    <span>Es TAE</span>
-                                  </label>
-                                  <button onClick={handleUpdateSubject} className="text-emerald-500 hover:text-emerald-700"><Check size={16}/></button>
-                                  <button onClick={() => setEditingSubject(null)} className="text-rose-500 hover:text-rose-700"><X size={16}/></button>
+                                    <div className="flex items-center gap-1.5 ml-auto">
+                                      <button onClick={handleUpdateSubject} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors" title="Guardar"><Check size={14}/></button>
+                                      <button onClick={() => setEditingSubject(null)} className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition-colors" title="Cancelar"><X size={14}/></button>
+                                    </div>
+                                  </div>
+
+                                  {/* Grados aplicables en edición */}
+                                  {(() => {
+                                    const availGrades = getLevelGrades(editingSubject.level, settings?.academicGrades);
+                                    const isAll = !editingSubject.applicableGrades || editingSubject.applicableGrades.length === 0;
+
+                                    const toggleGrade = (grade: string) => {
+                                      let next: string[];
+                                      if (isAll) {
+                                        next = availGrades.filter(g => g !== grade);
+                                      } else if (editingSubject.applicableGrades?.includes(grade)) {
+                                        next = editingSubject.applicableGrades.filter(g => g !== grade);
+                                      } else {
+                                        next = [...(editingSubject.applicableGrades || []), grade];
+                                      }
+                                      if (next.length === 0 || next.length === availGrades.length) {
+                                        setEditingSubject({ ...editingSubject, applicableGrades: [] });
+                                      } else {
+                                        setEditingSubject({ ...editingSubject, applicableGrades: next });
+                                      }
+                                    };
+
+                                    return (
+                                      <div className="pt-2 border-t border-blue-200/60">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                                            <GraduationCap size={12} className="text-blue-600" /> Grados donde se cursa:
+                                            <span className="text-slate-400 font-semibold normal-case">
+                                              {isAll ? '(Todos los grados)' : `(Solo: ${editingSubject.applicableGrades?.join(', ')})`}
+                                            </span>
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingSubject({ ...editingSubject, applicableGrades: [] })}
+                                            className={cn(
+                                              "text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded transition-all",
+                                              isAll ? "bg-blue-600 text-white" : "bg-white border border-slate-300 text-slate-600 hover:bg-slate-100"
+                                            )}
+                                          >
+                                            ✓ Todos los grados
+                                          </button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {availGrades.map(grade => {
+                                            const isChecked = isAll || (editingSubject.applicableGrades || []).includes(grade);
+                                            return (
+                                              <label
+                                                key={grade}
+                                                className={cn(
+                                                  "flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold cursor-pointer transition-all",
+                                                  isChecked
+                                                    ? "bg-white border-blue-400 text-blue-900 shadow-xs"
+                                                    : "bg-blue-100/30 border-blue-200 text-slate-400"
+                                                )}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked}
+                                                  onChange={() => toggleGrade(grade)}
+                                                  className="w-3 h-3 rounded text-blue-600 cursor-pointer"
+                                                />
+                                                <span>{grade}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               ) : (
                                 <>
                                   <div className="flex flex-col min-w-0 pr-2">
                                     <span className="text-sm font-bold text-slate-700 uppercase tracking-tight italic truncate">{subj.name}</span>
+                                    {subj.applicableGrades && subj.applicableGrades.length > 0 && (
+                                      <span className="text-[9px] font-black text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
+                                        <GraduationCap size={10} className="text-amber-600" /> Grados: {subj.applicableGrades.join(', ')}
+                                      </span>
+                                    )}
                                     {subj.isTae && (
                                       <span className="text-[9px] font-black text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
                                         <Sparkles size={10} className="text-blue-700" /> TAE {subj.taeStudentMode === 'specific' ? `(${subj.taeStudentIds?.length || 0} alumnos)` : '(Todos los alumnos)'}
@@ -2953,7 +3110,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       <option value="Recursamiento">Recursamiento</option>
                                     </select>
                                     <button 
-                                      onClick={() => setEditingSubject(subj)}
+                                      onClick={() => setEditingSubject({ ...subj, applicableGrades: subj.applicableGrades || [] })}
                                       className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                                       title="Editar materia"
                                     >

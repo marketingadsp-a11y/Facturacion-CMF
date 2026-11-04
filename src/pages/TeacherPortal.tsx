@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, d
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
 import { AppUser, Student, StudentGrade, TeacherActivity, Bimestre, Attendance, AttendanceStatus, BimestreLock, Subject, AppSettings, SchoolCycle, ScheduleSlot, TeacherSubstitution } from '../types';
-import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel, isStudentEnrolledInSubject, isSubjectLockLevel } from '../lib/evaluationUtils';
+import { getLevelEvaluationConfig, getPeriodForDate, isAttendanceTrackingSubject, formatAverage, gradeToNumeric, isObservationsLevel, isStudentEnrolledInSubject, isSubjectLockLevel, isSubjectApplicableToGrade } from '../lib/evaluationUtils';
 import { 
   Users, 
   User,
@@ -646,6 +646,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       s.level.toLowerCase().trim() === activeLevel.toLowerCase().trim()
     );
 
+    // Filter by subject applicable grades if active grade is selected
+    if (activeGrade) {
+      list = list.filter(s => isSubjectApplicableToGrade(s, activeGrade));
+    }
+
     // If teacher has specific subject access, filter only assigned subjects (and by grade/group if restricted)
     if (isSpecificTeacher) {
       const allowed = userProfile?.assignedSubjects || [];
@@ -885,7 +890,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     // Si el docente tiene materias asignadas en este nivel y todas son TAES con alumnos específicos,
     // mostrar únicamente a los alumnos seleccionados/inscritos en dichas TAES.
     if (isSpecificTeacher && activeLevelSubjects.length > 0 && activeLevelSubjects.every(s => s.isTae && s.taeStudentMode === 'specific')) {
-      list = list.filter(student => activeLevelSubjects.some(s => isStudentEnrolledInSubject(s, student.id)));
+      list = list.filter(student => activeLevelSubjects.some(s => isStudentEnrolledInSubject(s, student.id, student.grade)));
     }
 
     return list.sort((a, b) => {
@@ -905,7 +910,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
     let hasAtLeastOneScore = false;
     for (const student of students) {
-      if (selectedSubject && !isStudentEnrolledInSubject(selectedSubject, student.id)) continue;
+      if (selectedSubject && !isStudentEnrolledInSubject(selectedSubject, student.id, student.grade)) continue;
       const avg = getStudentActivityAverage(student.id, selectedSubjectId);
       if (avg.raw === '-') continue;
       hasAtLeastOneScore = true;
@@ -1536,9 +1541,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const getStudentGeneralAverage = (studentId: string) => {
     let totalSum = 0;
     let totalCount = 0;
+    const stGrade = students.find(s => s.id === studentId)?.grade || activeGrade;
 
     academicLevelSubjects.forEach(subj => {
-      if (!isStudentEnrolledInSubject(subj, studentId)) return;
+      if (!isStudentEnrolledInSubject(subj, studentId, stGrade)) return;
       const { avgNumeric } = getSubjectCumulativeAverage(studentId, subj.name);
       if (avgNumeric !== null) {
         totalSum += avgNumeric;
@@ -1558,7 +1564,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     let count = 0;
     const targetSubj = academicLevelSubjects.find(s => s.name === subjectName);
     filteredStudents.forEach(st => {
-      if (targetSubj && !isStudentEnrolledInSubject(targetSubj, st.id)) return;
+      if (targetSubj && !isStudentEnrolledInSubject(targetSubj, st.id, st.grade)) return;
       if (period !== undefined) {
         const gradeDoc = period === selectedBimestre 
           ? (grades[st.id] || cycleGradesByStudentAndPeriod[st.id]?.[period])
@@ -1924,7 +1930,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       const batches = [batch];
 
       students.forEach(student => {
-        if (subjObj && !isStudentEnrolledInSubject(subjObj, student.id)) return;
+        if (subjObj && !isStudentEnrolledInSubject(subjObj, student.id, student.grade)) return;
         const { raw, num } = getStudentActivityAverage(student.id, subjIdToSync);
         if (raw !== '-') {
           const valToSet = gradingScale === 'letters' ? raw : (num ?? (parseFloat(raw) || 0));
@@ -2121,7 +2127,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         const subjObsToUpdate: Record<string, any> = {};
         const obsToUpdate: Record<string, any> = {};
         pureAcademicSubjects.forEach(s => {
-          if (!isStudentEnrolledInSubject(s, student.id)) return;
+          if (!isStudentEnrolledInSubject(s, student.id, student.grade)) return;
           const obsText = (grade?.subjectObservations?.[s.name] ?? grade?.observations?.[s.name] ?? '').trim();
           const val = obsText ? obsText : deleteField();
           subjObsToUpdate[s.name] = val;
@@ -2213,7 +2219,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
         const subjectsToUpdate: Record<string, any> = {};
         activeLevelSubjects.forEach(s => {
-          if (!isStudentEnrolledInSubject(s, student.id)) return;
+          if (!isStudentEnrolledInSubject(s, student.id, student.grade)) return;
           if (isSubjectLockedInPeriod(selectedBimestre, s.id, s.name) && !canBypassLock) {
             return;
           }
@@ -2575,22 +2581,22 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   });
 
   const activityFilteredStudents = useMemo(() => {
-    if (selectedSubject?.isTae && selectedSubject.taeStudentMode === 'specific') {
-      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedSubject, s.id));
+    if (selectedSubject) {
+      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedSubject, s.id, s.grade));
     }
     return filteredStudents;
   }, [filteredStudents, selectedSubject]);
 
   const attendanceFilteredStudents = useMemo(() => {
-    if (isSubjectAttendanceEnabledForCurrentLevel && selectedAttendanceSubject?.isTae && selectedAttendanceSubject.taeStudentMode === 'specific') {
-      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedAttendanceSubject, s.id));
+    if (isSubjectAttendanceEnabledForCurrentLevel && selectedAttendanceSubject) {
+      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedAttendanceSubject, s.id, s.grade));
     }
     return filteredStudents;
   }, [filteredStudents, isSubjectAttendanceEnabledForCurrentLevel, selectedAttendanceSubject]);
 
   const obsFilteredStudents = useMemo(() => {
-    if (selectedObsSubject?.isTae && selectedObsSubject.taeStudentMode === 'specific') {
-      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedObsSubject, s.id));
+    if (selectedObsSubject) {
+      return filteredStudents.filter(s => isStudentEnrolledInSubject(selectedObsSubject, s.id, s.grade));
     }
     return filteredStudents;
   }, [filteredStudents, selectedObsSubject]);
@@ -3540,7 +3546,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
                               {/* Subject Periods & Average */}
                               {academicLevelSubjects.map((subj, sIdx) => {
-                                const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+                                const isEnrolled = isStudentEnrolledInSubject(subj, student.id, student.grade);
                                 const isLastSubj = sIdx === academicLevelSubjects.length - 1;
 
                                 if (!isEnrolled) {
@@ -4010,7 +4016,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             pureAcademicSubjects.map((subj, idx) => {
                               const isLast = idx === pureAcademicSubjects.length - 1;
                               const hasNextGroup = personalDevLevelSubjects.length > 0 || autonomyCurricularSubjects.length > 0 || recursamientoSubjects.length > 0;
-                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id, student.grade);
 
                               if (!isEnrolled) {
                                 return (
@@ -4207,7 +4213,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             autonomyCurricularSubjects.map((subj, idx) => {
                               const isLast = idx === autonomyCurricularSubjects.length - 1;
                               const hasNextGroup = recursamientoSubjects.length > 0;
-                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id, student.grade);
 
                               if (!isEnrolled) {
                                 return (
@@ -4280,7 +4286,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                           {recursamientoSubjects.length > 0 && (
                             recursamientoSubjects.map((subj, idx) => {
                               const isLast = idx === recursamientoSubjects.length - 1;
-                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+                              const isEnrolled = isStudentEnrolledInSubject(subj, student.id, student.grade);
 
                               if (!isEnrolled) {
                                 return (
@@ -4471,7 +4477,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
                 {pureAcademicSubjects.map(subj => {
                   const isSelected = selectedObsSubject?.id === subj.id;
-                  const enrolledStudents = students.filter(st => isStudentEnrolledInSubject(subj, st.id));
+                  const enrolledStudents = students.filter(st => isStudentEnrolledInSubject(subj, st.id, st.grade));
                   const filledCount = enrolledStudents.filter(st => {
                     const obs = grades[st.id]?.subjectObservations?.[subj.name] || grades[st.id]?.observations?.[subj.name];
                     return obs && obs.trim().length > 0;
@@ -4592,7 +4598,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               {filteredStudents.map(student => {
                 const studentGrade = grades[student.id];
                 const studentObs = studentGrade?.subjectObservations || studentGrade?.observations || {};
-                const studentPureAcademicSubjects = pureAcademicSubjects.filter(s => isStudentEnrolledInSubject(s, student.id));
+                const studentPureAcademicSubjects = pureAcademicSubjects.filter(s => isStudentEnrolledInSubject(s, student.id, student.grade));
                 
                 const completedCount = studentPureAcademicSubjects.filter(s => {
                   const o = studentObs[s.name];

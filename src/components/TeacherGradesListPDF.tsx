@@ -355,7 +355,7 @@ export default function TeacherGradesListPDF({
 
   // Helper to get grade value for a student in a specific subject
   const getGradeValue = (student: Student, subj: Subject): string => {
-    if (!isStudentEnrolledInSubject(subj, student.id)) {
+    if (!isStudentEnrolledInSubject(subj, student.id, student.grade)) {
       return '—';
     }
 
@@ -562,7 +562,7 @@ export default function TeacherGradesListPDF({
                   orderedSubjects.map((subj, sIdx) => {
                     const isLast = sIdx === orderedSubjects.length - 1;
                     const val = getGradeValue(student, subj);
-                    const isEnrolled = isStudentEnrolledInSubject(subj, student.id);
+                    const isEnrolled = isStudentEnrolledInSubject(subj, student.id, student.grade);
                     return (
                       <Text
                         key={`td-grade-${student.id}-${subj.id}`}
