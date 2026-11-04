@@ -9,7 +9,7 @@ import {
 } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from './firebase';
-import { doc, getDoc, onSnapshot, getDocFromServer, setDoc, serverTimestamp, query, collection, where } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, getDocFromServer, setDoc, updateDoc, serverTimestamp, query, collection, where } from 'firebase/firestore';
 import { AppSettings } from './types';
 import { usePermissions, PermissionsProvider } from './hooks/usePermissions';
 import { 
@@ -234,7 +234,20 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     return true;
   }) : navItems;
 
-  const handleLogout = () => auth.signOut();
+  const handleLogout = async () => {
+    try {
+      if (userProfile?.id) {
+        await updateDoc(doc(db, 'users', userProfile.id), {
+          isOnline: false,
+          lastActiveAt: serverTimestamp()
+        });
+      }
+    } catch (e) {
+      console.error("Error setting offline status on logout:", e);
+    }
+    sessionStorage.clear();
+    auth.signOut();
+  };
 
   if (loading) return <AppLoadingScreen message="Cargando tu perfil y permisos..." />;
 

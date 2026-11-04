@@ -220,6 +220,9 @@ export interface AppUser {
   teacherSubjectGroups?: Record<string, string[]>;
   teacherGradeGroups?: Record<string, string[]>;
   teacherGroupAccess?: 'single' | 'multiple';
+  lastLoginAt?: Timestamp;
+  lastActiveAt?: Timestamp;
+  isOnline?: boolean;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }

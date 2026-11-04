@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { doc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { AppUser, AppPermissions } from '../types';
 
@@ -82,6 +82,80 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
+
+  // Presence & Heartbeat Tracking
+  useEffect(() => {
+    if (!userProfile?.id) return;
+    const userId = userProfile.id;
+    const sessionKey = `presence_session_${userId}`;
+
+    const updatePresence = async (isNewSession = false) => {
+      try {
+        const updateData: Record<string, any> = {
+          isOnline: true,
+          lastActiveAt: serverTimestamp()
+        };
+        if (isNewSession) {
+          updateData.lastLoginAt = serverTimestamp();
+        }
+        await updateDoc(doc(db, 'users', userId), updateData);
+      } catch (err) {
+        // Silent fail on presence to not disrupt user experience
+      }
+    };
+
+    // 1. Initial presence update on mount / session start
+    const isNew = !sessionStorage.getItem(sessionKey);
+    updatePresence(isNew);
+    sessionStorage.setItem(sessionKey, 'active');
+
+    // 2. Periodic heartbeat every 45s if window/tab is visible
+    const heartbeatInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        updatePresence(false);
+      }
+    }, 45000);
+
+    // 3. Throttle user activity heartbeat (at most once every 45s)
+    let lastActivityUpdate = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityUpdate > 45000) {
+        lastActivityUpdate = now;
+        updatePresence(false);
+      }
+    };
+
+    window.addEventListener('click', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+
+    // 4. Tab visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updatePresence(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 5. Best-effort mark offline on beforeunload
+    const handleUnload = () => {
+      try {
+        updateDoc(doc(db, 'users', userId), {
+          isOnline: false,
+          lastActiveAt: serverTimestamp()
+        });
+      } catch (e) {}
+    };
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
+  }, [userProfile?.id]);
 
   const hasPermission = (section: keyof AppPermissions, action: string): boolean => {
     if (auth.currentUser?.email?.toLowerCase() === 'cramonmb@gmail.com') return true;

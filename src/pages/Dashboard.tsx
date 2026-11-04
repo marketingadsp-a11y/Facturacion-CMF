@@ -23,6 +23,7 @@ import {
 } from 'recharts';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { motion, AnimatePresence } from 'motion/react';
+import ActiveUsersMonitor from '../components/dashboard/ActiveUsersMonitor';
 
 export default function Dashboard() {
   const { hasPermission, userProfile } = usePermissions();
@@ -752,6 +753,11 @@ export default function Dashboard() {
           ))}
         </div>
 
+        {/* Monitoreo en Vivo de Sesiones y Docentes */}
+        {(isSuperAdmin || userProfile?.role === 'Administrador' || userProfile?.role === 'Control Escolar') && (
+          <ActiveUsersMonitor currentUserId={userProfile?.id} />
+        )}
+
         {/* Noticeboard / Avisos Preview Section - Professional Blue Styling */}
         {hasPermission('announcements', 'view') && (
           <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-7 shadow-xs">
@@ -1010,6 +1016,11 @@ export default function Dashboard() {
             </div>
           </motion.div>
         </div>
+      )}
+
+      {/* Monitoreo en Vivo de Sesiones y Docentes */}
+      {(isSuperAdmin || userProfile?.role === 'Administrador') && (
+        <ActiveUsersMonitor currentUserId={userProfile?.id} />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
