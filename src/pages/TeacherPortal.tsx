@@ -274,7 +274,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     let baseGroups = restrictedGroups.length > 0 ? all.filter(grp => restrictedGroups.includes(grp)) : all;
 
     // Filter baseGroups if teacher has per-grade group assignments (teacherGradeGroups)
-    if (userProfile?.role === 'Docente' && userProfile.teacherGradeGroups && activeGrade) {
+    // CRITICAL: Only applies for general teachers. For specific-subject teachers (isSpecificTeacher),
+    // group access is governed dynamically by their assigned subjects below.
+    if (!isSpecificTeacher && userProfile?.role === 'Docente' && userProfile.teacherGradeGroups && activeGrade) {
       const levelGradeKey = activeLevel ? `${activeLevel}__${activeGrade}` : '';
       const specificForGrade = (levelGradeKey && userProfile.teacherGradeGroups[levelGradeKey]) 
         || userProfile.teacherGradeGroups[activeGrade];
@@ -342,15 +344,15 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           hasAll = true;
         } else {
           list.forEach(g => {
-            if (baseGroups.includes(g)) gradeGroupsSet.add(g);
+            if (all.includes(g)) gradeGroupsSet.add(g);
           });
         }
       });
 
       if (hasAll) {
-        return baseGroups;
+        return baseGroups.length > 0 ? baseGroups : all;
       }
-      return baseGroups.filter(grp => gradeGroupsSet.has(grp));
+      return all.filter(grp => gradeGroupsSet.has(grp));
     }
 
     return baseGroups;
@@ -437,7 +439,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       validGradesForLevel.forEach(grd => {
         let baseGroups = restrictedGroups.length > 0 ? allGroups.filter(grp => restrictedGroups.includes(grp)) : allGroups;
 
-        if (userProfile?.role === 'Docente' && userProfile.teacherGradeGroups) {
+        if (!isSpecificTeacher && userProfile?.role === 'Docente' && userProfile.teacherGradeGroups) {
           const levelGradeKey = `${lvl}__${grd}`;
           const specificForGrade = userProfile.teacherGradeGroups[levelGradeKey] || userProfile.teacherGradeGroups[grd];
           if (specificForGrade && Array.isArray(specificForGrade)) {
@@ -493,12 +495,14 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 hasAll = true;
               } else {
                 list.forEach(g => {
-                  if (baseGroups.includes(g)) gradeGroupsSet.add(g);
+                  if (allGroups.includes(g)) gradeGroupsSet.add(g);
                 });
               }
             });
-            if (!hasAll) {
-              baseGroups = baseGroups.filter(grp => gradeGroupsSet.has(grp));
+            if (hasAll) {
+              baseGroups = baseGroups.length > 0 ? baseGroups : allGroups;
+            } else {
+              baseGroups = allGroups.filter(grp => gradeGroupsSet.has(grp));
             }
           }
         }

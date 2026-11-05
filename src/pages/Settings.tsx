@@ -5742,6 +5742,22 @@ export default function Settings() {
                           Object.keys(userFormData.teacherGradeGroups || {}).length > 0
                         );
 
+                        const finalTeacherGradeGroups = { ...(userFormData.teacherGradeGroups || {}) };
+                        if (userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific') {
+                          finalRestrictedGrades.forEach(g => {
+                            if (!finalTeacherGradeGroups[g] || finalTeacherGradeGroups[g].length === 0) {
+                              const fallbackGroups = finalRestrictedGroups.length > 0 ? finalRestrictedGroups : (settings.academicGroups || ['A', 'B']);
+                              finalTeacherGradeGroups[g] = fallbackGroups;
+                              finalRestrictedLevels.forEach(lvl => {
+                                const lKey = `${lvl}__${g}`;
+                                if (!finalTeacherGradeGroups[lKey] || finalTeacherGradeGroups[lKey].length === 0) {
+                                  finalTeacherGradeGroups[lKey] = fallbackGroups;
+                                }
+                              });
+                            }
+                          });
+                        }
+
                         await setDoc(userRef, {
                           ...firestoreData,
                           ...(finalPassword ? { currentPassword: finalPassword } : {}),
@@ -5756,7 +5772,7 @@ export default function Settings() {
                             ? (userFormData.teacherSubjectGroups || {})
                             : {},
                           teacherGradeGroups: userFormData.role === 'Docente'
-                            ? (userFormData.teacherGradeGroups || {})
+                            ? finalTeacherGradeGroups
                             : {},
                           teacherGroupAccess: isMultiGroup ? 'multiple' : (userFormData.teacherGroupAccess || 'single'),
                           restrictedLevels: finalRestrictedLevels.length > 0 ? finalRestrictedLevels : (userFormData.restrictedLevels || []),
