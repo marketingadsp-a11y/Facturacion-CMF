@@ -372,10 +372,11 @@ export default function ReportCardSecundaria3PDF({
     return formatAverage(total, count, scale, roundAverages);
   };
 
-  // Promedio Final de Grado (overall average of all Campos Formativos)
+  // Promedio Final de Grado (overall average of all Campos Formativos y Autonomía Curricular)
   const getPromedioFinalDeGrado = () => {
     const evaluatedSubjectAverages: number[] = [];
-    allCamposSubjects.forEach(s => {
+    const allEvaluationSubjects = [...allCamposSubjects, ...autonomiaSubjects];
+    allEvaluationSubjects.forEach(s => {
       const avgStr = getSubjectAvg(s.matchNames);
       const num = gradeToNumeric(avgStr, scale);
       if (num !== null) {
