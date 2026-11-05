@@ -613,22 +613,6 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const isCredencialTabEnabled = settings ? settings.teacherPortalFeatures?.credencial !== false : false;
   const isObservationsTabEnabled = isObservationsLevel(activeLevel) && hasPermission('grading', 'view');
 
-  const totalObservationsCount = useMemo(() => {
-    let count = 0;
-    filteredStudents.forEach(st => {
-      const sg = grades[st.id];
-      if (!sg) return;
-      const obs = { ...(sg.observations || {}), ...(sg.subjectObservations || {}) };
-      Object.values(obs).forEach(v => {
-        if (typeof v === 'string' && v.trim().length > 0) count++;
-      });
-      if (typeof sg.generalObservation === 'string' && sg.generalObservation.trim().length > 0) {
-        count++;
-      }
-    });
-    return count;
-  }, [filteredStudents, grades]);
-
   // Auto-switch tab if current activeTab is disabled in settings
   useEffect(() => {
     if (!settings) return;
@@ -2685,6 +2669,22 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
     return filteredStudents;
   }, [filteredStudents, selectedObsSubject]);
+
+  const totalObservationsCount = useMemo(() => {
+    let count = 0;
+    filteredStudents.forEach(st => {
+      const sg = grades[st.id];
+      if (!sg) return;
+      const obs = { ...(sg.observations || {}), ...(sg.subjectObservations || {}) };
+      Object.values(obs).forEach(v => {
+        if (typeof v === 'string' && v.trim().length > 0) count++;
+      });
+      if (typeof sg.generalObservation === 'string' && sg.generalObservation.trim().length > 0) {
+        count++;
+      }
+    });
+    return count;
+  }, [filteredStudents, grades]);
 
   // Listen to teachers for admin selection
   useEffect(() => {
