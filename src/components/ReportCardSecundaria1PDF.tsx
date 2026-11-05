@@ -180,12 +180,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     width: 460,
-    marginTop: 10,
+    marginTop: 32,
   },
   directorBlock: {
     width: 220,
     alignItems: 'center',
-    paddingTop: 16,
+    paddingTop: 24,
   },
   directorSignatureLine: {
     width: '100%',
@@ -205,8 +205,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sealBox: {
-    width: 44,
-    height: 40,
+    width: 48,
+    height: 44,
     borderWidth: BORDER_WIDTH,
     borderColor: '#94A3B8',
     borderStyle: 'dashed',
