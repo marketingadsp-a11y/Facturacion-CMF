@@ -119,8 +119,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginTop: 14,
-    marginBottom: 16,
+    marginTop: 10,
+    marginBottom: 10,
   },
   middleLeft: {
     width: 440,
@@ -167,13 +167,58 @@ const styles = StyleSheet.create({
     borderColor: BORDER_COLOR,
   },
   signatureBox: {
-    height: 48,
+    height: 38,
     borderRightWidth: BORDER_WIDTH,
     borderRightColor: BORDER_COLOR,
   },
   signatureBoxLast: {
-    height: 48,
+    height: 38,
     borderRightWidth: 0,
+  },
+  directorSealContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    width: 460,
+    marginTop: 10,
+  },
+  directorBlock: {
+    width: 220,
+    alignItems: 'center',
+    paddingTop: 16,
+  },
+  directorSignatureLine: {
+    width: '100%',
+    borderBottomWidth: BORDER_WIDTH,
+    borderBottomColor: BORDER_COLOR,
+    marginBottom: 4,
+  },
+  directorLabel: {
+    fontSize: 7,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  sealBlock: {
+    width: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sealBox: {
+    width: 44,
+    height: 40,
+    borderWidth: BORDER_WIDTH,
+    borderColor: '#94A3B8',
+    borderStyle: 'dashed',
+    borderRadius: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sealText: {
+    fontSize: 6.5,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+    textAlign: 'center',
   },
 });
 
@@ -272,7 +317,7 @@ export default function ReportCardSecundaria1PDF({
     },
     {
       name: 'DE LO HUMANO A LO COMUNITARIO',
-      colSpan: 3,
+      colSpan: 2,
       subjects: [
         {
           displayName: 'EDUCACIÓN\nFÍSICA',
@@ -281,19 +326,15 @@ export default function ReportCardSecundaria1PDF({
         {
           displayName: 'TECNOLOGÍA',
           matchNames: ['TECNOLOGIA I', 'TECNOLOGÍA I', 'TECNOLOGIA 1', 'TECNOLOGÍA 1', 'TECNOLOGIA', 'TECNOLOGÍA']
-        },
-        {
-          displayName: 'TUTORÍA /\nEDUCACIÓN\nSOCIOEMOCIONAL',
-          matchNames: ['TUTORIAS', 'TUTORÍAS', 'TUTORIA', 'TUTORÍA', 'TUTORÍA / EDUCACIÓN SOCIOEMOCIONAL', 'EDUCACIÓN SOCIOEMOCIONAL', 'EDUCACION SOCIOEMOCIONAL']
         }
       ]
     }
   ];
 
-  // Flattened list of 11 Campos Formativos subjects
+  // Flattened list of 10 Campos Formativos subjects
   const allCamposSubjects: SubjectDefinition[] = camposGroups.flatMap(g => g.subjects);
 
-  // 2. Definition of AUTONOMÍA CURRICULAR (Table 2: 6 columns)
+  // 2. Definition of AUTONOMÍA CURRICULAR (Table 2: 7 columns)
   const autonomiaSubjects: SubjectDefinition[] = [
     {
       displayName: 'TALLERES\nARTÍSTICOS',
@@ -318,6 +359,10 @@ export default function ReportCardSecundaria1PDF({
     {
       displayName: 'INTEGRACIÓN\nCURRICULAR',
       matchNames: ['INTEGRACION CURRICULAR', 'INTEGRACIÓN CURRICULAR']
+    },
+    {
+      displayName: 'TUTORÍA /\nEDUCACIÓN\nSOCIOEMOCIONAL',
+      matchNames: ['TUTORIAS', 'TUTORÍAS', 'TUTORIA', 'TUTORÍA', 'TUTORÍA / EDUCACIÓN SOCIOEMOCIONAL', 'EDUCACIÓN SOCIOEMOCIONAL', 'EDUCACION SOCIOEMOCIONAL']
     }
   ];
 
@@ -402,13 +447,13 @@ export default function ReportCardSecundaria1PDF({
   const studentGroupDisplay = student.group ? (student.group.toUpperCase().startsWith('1') ? student.group : `1° ${student.group}`) : '1°';
   const studentMatriculaDisplay = student.matricula || student.curp || '—';
 
-  // Table 1 column dimensions for 11 subjects (Total 736 pt width)
-  const COL0_WIDTH = 98;
-  const SUBJ_COL_WIDTH = 58; // 58 * 11 = 638 + 98 = 736 pt
+  // Table 1 column dimensions for 10 subjects (Total 736 pt width)
+  const COL0_WIDTH = 106;
+  const SUBJ_COL_WIDTH = 63; // 63 * 10 = 630 + 106 = 736 pt
 
-  // Table 2 column dimensions (Total 436 pt width)
-  const T2_COL0_WIDTH = 88;
-  const T2_SUBJ_WIDTH = 58; // 58 * 6 = 348 + 88 = 436 pt
+  // Table 2 column dimensions for 7 subjects (Total 440 pt width)
+  const T2_COL0_WIDTH = 76;
+  const T2_SUBJ_WIDTH = 52; // 52 * 7 = 364 + 76 = 440 pt
 
   // Table 3 column dimensions (Total 275 pt width)
   const T3_COL0_WIDTH = 110;
@@ -609,7 +654,7 @@ export default function ReportCardSecundaria1PDF({
                         { width: T2_SUBJ_WIDTH, height: 38 }
                       ]}
                     >
-                      <Text style={[styles.headerText, { fontSize: 5.6, lineHeight: 1.15 }]}>
+                      <Text style={[styles.headerText, { fontSize: 5.2, lineHeight: 1.15 }]}>
                         {String(subj.displayName || '').toUpperCase()}
                       </Text>
                     </View>
@@ -839,6 +884,19 @@ export default function ReportCardSecundaria1PDF({
               <View style={[styles.signatureBox, { width: '33.33%' }]} />
               <View style={[styles.signatureBox, { width: '33.33%' }]} />
               <View style={[styles.signatureBoxLast, { width: '33.34%' }]} />
+            </View>
+          </View>
+
+          {/* FIRMA DIRECTOR DE NIVEL Y SELLO */}
+          <View style={styles.directorSealContainer}>
+            <View style={styles.directorBlock}>
+              <View style={styles.directorSignatureLine} />
+              <Text style={styles.directorLabel}>FIRMA DEL DIRECTOR(A) DE NIVEL</Text>
+            </View>
+            <View style={styles.sealBlock}>
+              <View style={styles.sealBox}>
+                <Text style={styles.sealText}>SELLO</Text>
+              </View>
             </View>
           </View>
         </View>
