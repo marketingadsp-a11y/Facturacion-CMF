@@ -207,6 +207,7 @@ export default function ReportCardSecundaria1PDF({
 }: ReportCardSecundaria1PDFProps) {
   const evalConfig = getLevelEvaluationConfig(settings, student.level);
   const scale = evalConfig.gradingScale || 'numeric_10';
+  const roundAverages = Boolean(evalConfig.roundAverages);
 
   // Helper to normalize strings for robust fuzzy subject matching
   const norm = (str: string) => {
@@ -324,7 +325,7 @@ export default function ReportCardSecundaria1PDF({
   const getSubjectGrade = (matchNames: string[], bimestre: number): string | number => {
     // 1. First, check effective grade logic (which considers linked autonomy subjects)
     for (const name of matchNames) {
-      const eff = getEffectiveSubjectGrade(name, bimestre, grades, subjects, scale);
+      const eff = getEffectiveSubjectGrade(name, bimestre, grades, subjects, scale, roundAverages);
       if (eff.rawValue !== '-') {
         return eff.rawValue;
       }
@@ -372,7 +373,7 @@ export default function ReportCardSecundaria1PDF({
         count++;
       }
     }
-    return formatAverage(total, count, scale);
+    return formatAverage(total, count, scale, roundAverages);
   };
 
   // Promedio Final de Grado (overall average of all Campos Formativos)
@@ -388,7 +389,7 @@ export default function ReportCardSecundaria1PDF({
 
     if (evaluatedSubjectAverages.length === 0) return '-';
     const sum = evaluatedSubjectAverages.reduce((a, b) => a + b, 0);
-    return formatAverage(sum, evaluatedSubjectAverages.length, scale);
+    return formatAverage(sum, evaluatedSubjectAverages.length, scale, roundAverages);
   };
 
   // Student details

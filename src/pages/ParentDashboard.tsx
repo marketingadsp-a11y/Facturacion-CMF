@@ -959,6 +959,7 @@ export default function ParentDashboard() {
                     
                     const evalConfig = getLevelEvaluationConfig(settings, student.level);
                     const scale = evalConfig.gradingScale || 'numeric_10';
+                    const roundAverages = Boolean(evalConfig.roundAverages);
                     const periodCount = evalConfig.periodCount;
                     const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
 
@@ -966,7 +967,7 @@ export default function ParentDashboard() {
                     const allAcademicPoints: number[] = [];
                     periodIndices.forEach(b => {
                       academicSubjectNames.forEach(subName => {
-                        const eff = getEffectiveSubjectGrade(subName, b, studentGradeDocs, studentLevelSubjects, scale);
+                        const eff = getEffectiveSubjectGrade(subName, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages);
                         if (eff.numericValue !== null) {
                           allAcademicPoints.push(eff.numericValue);
                         }
@@ -974,7 +975,7 @@ export default function ParentDashboard() {
                     });
 
                     const overallAverage = allAcademicPoints.length > 0 
-                      ? formatAverage(allAcademicPoints.reduce((a, b) => a + b, 0), allAcademicPoints.length, scale) 
+                      ? formatAverage(allAcademicPoints.reduce((a, b) => a + b, 0), allAcademicPoints.length, scale, roundAverages) 
                       : '-';
 
                     const badgeText = scale === 'letters'
@@ -1058,7 +1059,7 @@ export default function ParentDashboard() {
                                   const subjectPoints: number[] = [];
                                   periodIndices.forEach(b => {
                                     if (isAcademic) {
-                                      const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale);
+                                      const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages);
                                       if (eff.numericValue !== null) subjectPoints.push(eff.numericValue);
                                     } else {
                                       const g = studentGradeDocs.find(doc => doc.bimestre === b)?.subjects?.[sub.name];
@@ -1067,7 +1068,7 @@ export default function ParentDashboard() {
                                     }
                                   });
                                   const subAverage = subjectPoints.length > 0
-                                    ? formatAverage(subjectPoints.reduce((a, b) => a + b, 0), subjectPoints.length, scale)
+                                    ? formatAverage(subjectPoints.reduce((a, b) => a + b, 0), subjectPoints.length, scale, roundAverages)
                                     : '-';
 
                                   return (

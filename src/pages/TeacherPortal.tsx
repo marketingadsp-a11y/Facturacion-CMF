@@ -565,6 +565,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   }, [settings, activeLevel]);
 
   const gradingScale = evalConfig.gradingScale || 'numeric_10';
+  const roundAverages = Boolean(evalConfig.roundAverages);
 
   const isActivitiesEnabledForCurrentLevel = useMemo(() => {
     if (!activeLevel) return false;
@@ -844,7 +845,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
 
     if (count === 0) return { raw: '-', num: null };
-    const avgStr = formatAverage(sum, count, gradingScale);
+    const avgStr = formatAverage(sum, count, gradingScale, roundAverages);
     const avgNum = gradingScale === 'letters' ? null : (gradingScale === 'numeric_100' ? Math.round(Number(avgStr)) : parseFloat(avgStr));
     return { raw: avgStr, num: avgNum };
   };
@@ -894,9 +895,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
 
     return list.sort((a, b) => {
-      const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
-      const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
     });
   }, [allStudents, restrictedLevels, restrictedGrades, restrictedGroups, activeLevel, activeGrade, activeGroup, isSpecificTeacher, availableLevels, availableGrades, availableGroups, activeLevelSubjects]);
   // Evaluates whether current subject activities are completely synchronized with Calificaciones
@@ -1531,7 +1532,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       }
     }
 
-    const avgFormatted = formatAverage(sum, count, gradingScale);
+    const avgFormatted = formatAverage(sum, count, gradingScale, roundAverages);
     const avgNumeric = count > 0 ? (sum / count) : null;
 
     return { sum, count, avgFormatted, avgNumeric, periodsData };
@@ -1552,7 +1553,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       }
     });
 
-    const generalAvgFormatted = formatAverage(totalSum, totalCount, gradingScale);
+    const generalAvgFormatted = formatAverage(totalSum, totalCount, gradingScale, roundAverages);
     const generalAvgNumeric = totalCount > 0 ? (totalSum / totalCount) : null;
 
     return { totalSum, totalCount, generalAvgFormatted, generalAvgNumeric };
@@ -1582,7 +1583,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         }
       }
     });
-    return formatAverage(sum, count, gradingScale);
+    return formatAverage(sum, count, gradingScale, roundAverages);
   };
 
   // Group overall general average across all teacher subjects
@@ -1596,8 +1597,71 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         count++;
       }
     });
-    return formatAverage(sum, count, gradingScale);
+    return formatAverage(sum, count, gradingScale, roundAverages);
   };
+
+  // Calculates grading completion percentage for a given period (excluding attendance / faltas)
+  const getPeriodCompletionStats = useCallback((p: number) => {
+    // Only gradeable subjects (strictly excluding attendance / faltas)
+    const gradeableSubjects = activeLevelSubjects.filter(s => {
+      if (s.isAttendanceCount) return false;
+      if (isAttendanceTrackingSubject(s)) return false;
+      const norm = (s.name || '').toLowerCase().trim();
+      if (norm === 'faltas' || norm === 'falta' || norm === 'inasistencia' || norm === 'inasistencias' || norm === 'asistencia') {
+        return false;
+      }
+      return true;
+    });
+
+    if (students.length === 0 || gradeableSubjects.length === 0) {
+      return { percentage: 0, filledSlots: 0, totalExpectedSlots: 0 };
+    }
+
+    let totalExpectedSlots = 0;
+    let filledSlots = 0;
+
+    for (const student of students) {
+      const gradeDoc = p === selectedBimestre
+        ? (grades[student.id] || cycleGradesByStudentAndPeriod[student.id]?.[p])
+        : cycleGradesByStudentAndPeriod[student.id]?.[p];
+
+      for (const subj of gradeableSubjects) {
+        if (!isStudentEnrolledInSubject(subj, student.id, student.grade)) {
+          continue;
+        }
+
+        totalExpectedSlots++;
+
+        const norm = (subj.name || '').toLowerCase().trim();
+        const legacyField = (
+          norm === 'conducta' ? 'conduct' :
+          norm === 'uniforme' ? 'uniform' :
+          norm === 'tareas' || norm === 'tareas no realizadas' ? 'tasksNotDone' :
+          norm === 'retardo' || norm === 'retardos' ? 'tardies' :
+          norm === 'aseo' ? 'cleanliness' : null
+        ) as keyof StudentGrade | null;
+
+        const val = gradeDoc?.subjects?.[subj.name] ??
+          gradeDoc?.subjects?.[subj.id] ??
+          (legacyField ? gradeDoc?.[legacyField] : undefined);
+
+        if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '-') {
+          filledSlots++;
+        }
+      }
+    }
+
+    const percentage = totalExpectedSlots > 0 ? Math.round((filledSlots / totalExpectedSlots) * 100) : 0;
+    return { percentage, filledSlots, totalExpectedSlots };
+  }, [students, activeLevelSubjects, grades, cycleGradesByStudentAndPeriod, selectedBimestre]);
+
+  const periodStatsMap = useMemo(() => {
+    const map: Record<number, { percentage: number; filledSlots: number; totalExpectedSlots: number }> = {};
+    for (let b = 1; b <= evalConfig.periodCount; b++) {
+      map[b] = getPeriodCompletionStats(b);
+    }
+    return map;
+  }, [evalConfig.periodCount, getPeriodCompletionStats]);
 
   const saveSingleGrade = async (studentId: string, field: string, value: any, isSubject: boolean = false) => {
     if (!currentCycleId || !selectedBimestre) return;
@@ -2575,9 +2639,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       s.matricula
     ], searchTerm);
   }).sort((a, b) => {
-    const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
-    const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
-    return nameA.localeCompare(nameB);
+    const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+    const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+    return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
   });
 
   const activityFilteredStudents = useMemo(() => {
@@ -3535,10 +3599,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                   )}
                                   <div className="min-w-0">
                                     <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">
-                                      {student.name}
-                                    </p>
-                                    <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">
                                       {[student.lastName, student.motherLastName].filter(Boolean).join(' ')}
+                                    </p>
+                                    <p className="text-[9px] font-black text-slate-900 truncate uppercase mt-0.5">
+                                      {student.name}
                                     </p>
                                   </div>
                                 </div>
@@ -3676,28 +3740,55 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
                     {evalConfig.periodType}:
                   </span>
-                  {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
-                    <button
-                      key={b}
-                      type="button"
-                      title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
-                      onClick={() => {
-                        hasManuallySelectedPeriodRef.current = true;
-                        setSelectedBimestre(b);
-                      }}
-                      className={cn(
-                        "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1",
-                        selectedBimestre === b 
-                          ? "bg-slate-900 text-white shadow-sm" 
-                          : lockedPeriods[b]
-                            ? "text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-600"
-                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      )}
-                    >
-                      <span>{evalConfig.periodType.charAt(0)}{b}</span>
-                      {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
-                    </button>
-                  ))}
+                  {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => {
+                    const stats = periodStatsMap[b] || { percentage: 0, filledSlots: 0, totalExpectedSlots: 0 };
+                    const isLocked = !!lockedPeriods[b];
+                    const periodLabel = evalConfig.periodNames?.[b - 1] || `${evalConfig.periodType} ${b}`;
+                    return (
+                      <div key={b} className="relative group/period flex items-center">
+                        <button
+                          type="button"
+                          title={`${periodLabel}: ${stats.percentage}% capturado (${stats.filledSlots}/${stats.totalExpectedSlots})${isLocked ? ' • Bloqueado' : ''}`}
+                          onClick={() => {
+                            hasManuallySelectedPeriodRef.current = true;
+                            setSelectedBimestre(b);
+                          }}
+                          className={cn(
+                            "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer",
+                            isLocked
+                              ? (selectedBimestre === b 
+                                  ? "bg-emerald-800 text-white shadow-sm ring-2 ring-emerald-400 ring-offset-1" 
+                                  : "bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs")
+                              : (selectedBimestre === b 
+                                  ? "bg-slate-900 text-white shadow-sm" 
+                                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
+                          )}
+                        >
+                          <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                          {isLocked && <Lock size={9} className="text-emerald-100 shrink-0" />}
+                        </button>
+
+                        {/* Floating tooltip on hover */}
+                        <div className="pointer-events-none absolute -bottom-9 left-1/2 -translate-x-1/2 z-40 opacity-0 group-hover/period:opacity-100 transition-opacity duration-150 delay-75">
+                          <div className="bg-slate-950 text-white text-[9px] font-bold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap flex items-center gap-1.5 border border-slate-700/80">
+                            <span className="text-slate-300">{evalConfig.periodType.charAt(0)}{b}:</span>
+                            <span className={cn(
+                              "font-black",
+                              stats.percentage === 100 ? "text-emerald-400" : stats.percentage > 0 ? "text-amber-300" : "text-slate-400"
+                            )}>
+                              {stats.percentage}%
+                            </span>
+                            <span className="text-[8px] text-slate-400 font-normal">({stats.filledSlots}/{stats.totalExpectedSlots})</span>
+                            {isLocked && (
+                              <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase text-emerald-400 bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-800">
+                                <Lock size={7} /> Bloqueado
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Opción para descargar lista del grupo con calificaciones asignadas (Solo aparece cuando el periodo esté finalizado) */}
@@ -4005,8 +4096,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                 </div>
                               )}
                               <div className="min-w-0">
-                                <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{student.name}</p>
-                                <p className="text-[8px] font-bold text-slate-400 truncate uppercase mt-0.5">{[student.lastName, student.motherLastName].filter(Boolean).join(' ')}</p>
+                                <p className="text-[10px] font-black text-slate-900 truncate tracking-tight uppercase leading-none">{[student.lastName, student.motherLastName].filter(Boolean).join(' ')}</p>
+                                <p className="text-[9px] font-black text-slate-900 truncate uppercase mt-0.5">{student.name}</p>
                               </div>
                             </div>
                           </td>
@@ -4375,28 +4466,55 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
                   {evalConfig.periodType}:
                 </span>
-                {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
-                    onClick={() => {
-                      hasManuallySelectedPeriodRef.current = true;
-                      setSelectedBimestre(b);
-                    }}
-                    className={cn(
-                      "px-2.5 h-7 rounded-lg font-black text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer",
-                      selectedBimestre === b 
-                        ? "bg-slate-900 text-white shadow-xs" 
-                        : lockedPeriods[b]
-                          ? "text-slate-400 bg-slate-50 hover:bg-slate-200/60"
-                          : "text-slate-600 hover:bg-white hover:text-slate-900"
-                    )}
-                  >
-                    <span>{evalConfig.periodType.charAt(0)}{b}</span>
-                    {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
-                  </button>
-                ))}
+                {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => {
+                  const stats = periodStatsMap[b] || { percentage: 0, filledSlots: 0, totalExpectedSlots: 0 };
+                  const isLocked = !!lockedPeriods[b];
+                  const periodLabel = evalConfig.periodNames?.[b - 1] || `${evalConfig.periodType} ${b}`;
+                  return (
+                    <div key={b} className="relative group/period flex items-center">
+                      <button
+                        type="button"
+                        title={`${periodLabel}: ${stats.percentage}% capturado (${stats.filledSlots}/${stats.totalExpectedSlots})${isLocked ? ' • Bloqueado' : ''}`}
+                        onClick={() => {
+                          hasManuallySelectedPeriodRef.current = true;
+                          setSelectedBimestre(b);
+                        }}
+                        className={cn(
+                          "px-2.5 h-7 rounded-lg font-black text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer",
+                          isLocked
+                            ? (selectedBimestre === b 
+                                ? "bg-emerald-800 text-white shadow-sm ring-2 ring-emerald-400 ring-offset-1" 
+                                : "bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs")
+                            : (selectedBimestre === b 
+                                ? "bg-slate-900 text-white shadow-xs" 
+                                : "text-slate-600 hover:bg-white hover:text-slate-900")
+                        )}
+                      >
+                        <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                        {isLocked && <Lock size={9} className="text-emerald-100 shrink-0" />}
+                      </button>
+
+                      {/* Floating tooltip on hover */}
+                      <div className="pointer-events-none absolute -bottom-9 left-1/2 -translate-x-1/2 z-40 opacity-0 group-hover/period:opacity-100 transition-opacity duration-150 delay-75">
+                        <div className="bg-slate-950 text-white text-[9px] font-bold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap flex items-center gap-1.5 border border-slate-700/80">
+                          <span className="text-slate-300">{evalConfig.periodType.charAt(0)}{b}:</span>
+                          <span className={cn(
+                            "font-black",
+                            stats.percentage === 100 ? "text-emerald-400" : stats.percentage > 0 ? "text-amber-300" : "text-slate-400"
+                          )}>
+                            {stats.percentage}%
+                          </span>
+                          <span className="text-[8px] text-slate-400 font-normal">({stats.filledSlots}/{stats.totalExpectedSlots})</span>
+                          {isLocked && (
+                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase text-emerald-400 bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-800">
+                              <Lock size={7} /> Bloqueado
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* View Mode Switcher */}
@@ -4692,28 +4810,55 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mx-2">
                   {evalConfig.periodType}:
                 </span>
-                {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    title={evalConfig.periodNames?.[b - 1] || `Periodo ${b}`}
-                    onClick={() => {
-                      hasManuallySelectedPeriodRef.current = true;
-                      setSelectedBimestre(b);
-                    }}
-                    className={cn(
-                      "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1",
-                      selectedBimestre === b 
-                        ? "bg-blue-900 text-white shadow-sm" 
-                        : lockedPeriods[b]
-                          ? "text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-600"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                    )}
-                  >
-                    <span>{evalConfig.periodType.charAt(0)}{b}</span>
-                    {lockedPeriods[b] && <Lock size={9} className="opacity-70 text-amber-500" />}
-                  </button>
-                ))}
+                {Array.from({ length: evalConfig.periodCount }, (_, i) => (i + 1) as Bimestre).map((b) => {
+                  const stats = periodStatsMap[b] || { percentage: 0, filledSlots: 0, totalExpectedSlots: 0 };
+                  const isLocked = !!lockedPeriods[b];
+                  const periodLabel = evalConfig.periodNames?.[b - 1] || `${evalConfig.periodType} ${b}`;
+                  return (
+                    <div key={b} className="relative group/period flex items-center">
+                      <button
+                        type="button"
+                        title={`${periodLabel}: ${stats.percentage}% capturado (${stats.filledSlots}/${stats.totalExpectedSlots})${isLocked ? ' • Bloqueado' : ''}`}
+                        onClick={() => {
+                          hasManuallySelectedPeriodRef.current = true;
+                          setSelectedBimestre(b);
+                        }}
+                        className={cn(
+                          "px-2.5 h-7 rounded font-black text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer",
+                          isLocked
+                            ? (selectedBimestre === b 
+                                ? "bg-emerald-800 text-white shadow-sm ring-2 ring-emerald-400 ring-offset-1" 
+                                : "bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs")
+                            : (selectedBimestre === b 
+                                ? "bg-blue-900 text-white shadow-sm" 
+                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")
+                        )}
+                      >
+                        <span>{evalConfig.periodType.charAt(0)}{b}</span>
+                        {isLocked && <Lock size={9} className="text-emerald-100 shrink-0" />}
+                      </button>
+
+                      {/* Floating tooltip on hover */}
+                      <div className="pointer-events-none absolute -bottom-9 left-1/2 -translate-x-1/2 z-40 opacity-0 group-hover/period:opacity-100 transition-opacity duration-150 delay-75">
+                        <div className="bg-slate-950 text-white text-[9px] font-bold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap flex items-center gap-1.5 border border-slate-700/80">
+                          <span className="text-slate-300">{evalConfig.periodType.charAt(0)}{b}:</span>
+                          <span className={cn(
+                            "font-black",
+                            stats.percentage === 100 ? "text-emerald-400" : stats.percentage > 0 ? "text-amber-300" : "text-slate-400"
+                          )}>
+                            {stats.percentage}%
+                          </span>
+                          <span className="text-[8px] text-slate-400 font-normal">({stats.filledSlots}/{stats.totalExpectedSlots})</span>
+                          {isLocked && (
+                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase text-emerald-400 bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-800">
+                              <Lock size={7} /> Bloqueado
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Materia Filter Selector */}
@@ -4916,7 +5061,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               )}
                               <div className="min-w-0">
                                 <p className="text-[10px] font-black text-slate-900 truncate uppercase leading-tight">
-                                  {student.name} {[student.lastName, student.motherLastName].filter(Boolean).join(' ')}
+                                  {[student.lastName, student.motherLastName].filter(Boolean).join(' ')} {student.name}
                                 </p>
                                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
                                   {student.curp ? student.curp.substring(0, 10) : student.id.substring(0, 8)}
@@ -5151,7 +5296,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                             )}
                             <div className="min-w-0">
                               <p className="text-[10px] font-black text-slate-900 tracking-tight uppercase leading-none">
-                                {student.name} {[student.lastName, student.motherLastName].filter(Boolean).join(' ')}
+                                {[student.lastName, student.motherLastName].filter(Boolean).join(' ')} {student.name}
                               </p>
                               <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5 tracking-tighter">Matrícula: {student.id.substring(0, 8)}</p>
                               {att === 'Justificado' && (

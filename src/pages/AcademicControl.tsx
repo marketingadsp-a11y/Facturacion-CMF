@@ -498,9 +498,9 @@ export default function AcademicControl() {
 
     return matchesSearch && matchesLevel && matchesGrade && matchesGroup && matchesCycle;
   }).sort((a, b) => {
-    const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
-    const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
-    return nameA.localeCompare(nameB);
+    const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+    const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+    return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
   });
 
   // Groups data for multi-group level export
@@ -581,9 +581,9 @@ export default function AcademicControl() {
       const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
       return matchesLevel && matchesGrade && matchesGroup && matchesCycle;
     }).sort((a, b) => {
-      const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
-      const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
     });
   }, [students, exportLevel, filterLevel, exportGrade, filterGrade, exportGroup, filterGroup, filterCycleId, settings?.currentCycleId, restrictedLevels, restrictedGrades, restrictedGroups]);
 
@@ -601,9 +601,9 @@ export default function AcademicControl() {
       const matchesCycle = !filterCycleId || s.cycleId === filterCycleId || (s.cycles && s.cycles.includes(filterCycleId)) || (!s.cycleId && filterCycleId === settings?.currentCycleId);
       return matchesLevel && matchesGrade && matchesGroup && matchesCycle;
     }).sort((a, b) => {
-      const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
-      const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
     });
   }, [students, filterLevel, filterGrade, filterGroup, filterCycleId, settings?.currentCycleId, restrictedLevels, restrictedGrades, restrictedGroups]);
 
@@ -1014,6 +1014,7 @@ export default function AcademicControl() {
 
                       const evalConfig = getLevelEvaluationConfig(settings, displayLevel);
                       const scale = evalConfig.gradingScale || 'numeric_10';
+                      const roundAverages = Boolean(evalConfig.roundAverages);
 
                       const getBimestreAvg = (num: number) => {
                         const bg = studentGrades.find(g => Number(g.bimestre) === num);
@@ -1021,7 +1022,7 @@ export default function AcademicControl() {
                         
                         const nums: number[] = [];
                         for (const name of academicSubjectNames) {
-                          const result = getEffectiveSubjectGrade(name, num, studentGrades, subjects, scale);
+                          const result = getEffectiveSubjectGrade(name, num, studentGrades, subjects, scale, roundAverages);
                           if (result.numericValue !== null) nums.push(result.numericValue);
                         }
 
@@ -1032,7 +1033,7 @@ export default function AcademicControl() {
                       const periodIndices = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1);
                       const capturedAvgs = periodIndices.map(num => getBimestreAvg(num)).filter((v): v is number => v !== null);
                       const finalAvgDisplay = capturedAvgs.length > 0 
-                        ? formatAverage(capturedAvgs.reduce((a, b) => a + b, 0), capturedAvgs.length, scale)
+                        ? formatAverage(capturedAvgs.reduce((a, b) => a + b, 0), capturedAvgs.length, scale, roundAverages)
                         : null;
 
                       return (
@@ -3277,9 +3278,9 @@ function TaesManagement({
       }
       return true;
     }).sort((a, b) => {
-      const nameA = `${a.name || ''} ${a.lastName || ''}`.toLowerCase();
-      const nameB = `${b.name || ''} ${b.lastName || ''}`.toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+      const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
     });
   }, [eligibleStudents, modalGradeFilter, modalGroupFilter, modalSearchTerm]);
 

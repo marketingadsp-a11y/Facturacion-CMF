@@ -567,6 +567,7 @@ export default function ReportCardPDF({
   const evalConfig = getLevelEvaluationConfig(settings, student.level);
   const scale = evalConfig.gradingScale || 'numeric_10';
   const periodCount = evalConfig.periodCount;
+  const roundAverages = Boolean(evalConfig.roundAverages);
   const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
   const isPreescolarOrPrimaria = isObservationsLevel(student.level);
 
@@ -633,7 +634,7 @@ export default function ReportCardPDF({
     // If it's an academic or recursamiento subject, compute effective grade taking into account linked autonomy subjects
     const isAcademic = academicSubjects.includes(subject) || recursamientoSubjects.includes(subject);
     if (isAcademic) {
-      const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale);
+      const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale, roundAverages);
       if (effective.rawValue !== '-') {
         return effective.rawValue;
       }
@@ -707,7 +708,7 @@ export default function ReportCardPDF({
         count++;
       }
     }
-    return formatAverage(total, count, scale);
+    return formatAverage(total, count, scale, roundAverages);
   };
 
   // Helper to compute raw numeric average for a section in a single period
@@ -744,37 +745,37 @@ export default function ReportCardPDF({
   // 1. Formación Académica
   const getAcademicPeriodAvg = (bimestre: number) => {
     const pAvg = getSectionPeriodNumericAvg(academicSubjects, bimestre);
-    return pAvg !== null ? formatAverage(pAvg, 1, scale) : '-';
+    return pAvg !== null ? formatAverage(pAvg, 1, scale, roundAverages) : '-';
   };
   const getBimestreAvg = getAcademicPeriodAvg;
 
   const getAcademicOverallAvg = () => {
     const num = getSectionOverallNumericAvg(academicSubjects);
-    return num !== null ? formatAverage(num, 1, scale) : '-';
+    return num !== null ? formatAverage(num, 1, scale, roundAverages) : '-';
   };
 
   // 2. Desarrollo Personal y Social
   const getPersonalDevPeriodAvg = (bimestre: number) => {
     const pAvg = getSectionPeriodNumericAvg(effectivePersonalDevList, bimestre);
-    return pAvg !== null ? formatAverage(pAvg, 1, scale) : '-';
+    return pAvg !== null ? formatAverage(pAvg, 1, scale, roundAverages) : '-';
   };
 
   const getPersonalDevOverallAvg = () => {
     const num = getSectionOverallNumericAvg(effectivePersonalDevList);
-    return num !== null ? formatAverage(num, 1, scale) : '-';
+    return num !== null ? formatAverage(num, 1, scale, roundAverages) : '-';
   };
 
   // 3. Autonomía Curricular
   const getCurricularPeriodAvg = (bimestre: number) => {
     if (curricularSubjects.length === 0) return '-';
     const pAvg = getSectionPeriodNumericAvg(curricularSubjects, bimestre);
-    return pAvg !== null ? formatAverage(pAvg, 1, scale) : '-';
+    return pAvg !== null ? formatAverage(pAvg, 1, scale, roundAverages) : '-';
   };
 
   const getCurricularOverallAvg = () => {
     if (curricularSubjects.length === 0) return '-';
     const num = getSectionOverallNumericAvg(curricularSubjects);
-    return num !== null ? formatAverage(num, 1, scale) : '-';
+    return num !== null ? formatAverage(num, 1, scale, roundAverages) : '-';
   };
 
   // Promedio General del Ciclo: Promedio de Formación Académica y Autonomía Curricular
@@ -798,7 +799,7 @@ export default function ReportCardPDF({
       // Must have both Formación Académica and Autonomía Curricular with grades
       if (acadAvgNum !== null && currAvgNum !== null) {
         const combined = (acadAvgNum + currAvgNum) / 2;
-        return formatAverage(combined, 1, scale);
+        return formatAverage(combined, 1, scale, roundAverages);
       }
       return '—';
     }
@@ -806,10 +807,10 @@ export default function ReportCardPDF({
     // Other levels fallback (e.g. Preparatoria/Bachillerato)
     if (acadAvgNum !== null && currAvgNum !== null) {
       const combined = (acadAvgNum + currAvgNum) / 2;
-      return formatAverage(combined, 1, scale);
+      return formatAverage(combined, 1, scale, roundAverages);
     }
     if (acadAvgNum !== null) {
-      return formatAverage(acadAvgNum, 1, scale);
+      return formatAverage(acadAvgNum, 1, scale, roundAverages);
     }
     return '—';
   };

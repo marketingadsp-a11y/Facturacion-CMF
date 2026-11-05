@@ -104,9 +104,9 @@ export function gradeToNumeric(grade: number | string | undefined | null, scale:
  * Formats an average according to the level's scale:
  * - 'letters': returns 'A' | 'E' | 'ED' | 'RA'
  * - 'numeric_100': returns rounded whole integer string (e.g. '88', '95', '100')
- * - 'numeric_10': returns 1 decimal string (e.g. '8.8', '9.5')
+ * - 'numeric_10': returns 1 decimal string (e.g. '8.8', '9.5') or rounded if roundAverages is true (e.g. 9.5 -> '10', 9.4 -> '9.0')
  */
-export function formatAverage(sum: number, count: number, scale: GradingScale): string {
+export function formatAverage(sum: number, count: number, scale: GradingScale, roundAverages?: boolean): string {
   if (count === 0) return '-';
   const raw = sum / count;
   if (scale === 'letters') {
@@ -114,6 +114,10 @@ export function formatAverage(sum: number, count: number, scale: GradingScale): 
   }
   if (scale === 'numeric_100') {
     return Math.round(raw).toString();
+  }
+  if (roundAverages) {
+    const rounded = Math.round(raw);
+    return rounded >= 10 ? '10' : rounded.toFixed(1);
   }
   return raw.toFixed(1);
 }
@@ -186,6 +190,9 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
     const enableSubjectAttendance = conf.enableSubjectAttendance !== undefined
       ? Boolean(conf.enableSubjectAttendance)
       : subjectAttendanceFallback;
+    const roundAverages = conf.roundAverages !== undefined
+      ? Boolean(conf.roundAverages)
+      : false;
 
     return {
       periodCount: count,
@@ -193,7 +200,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodNames: names,
       gradingScale,
       enableActivities,
-      enableSubjectAttendance
+      enableSubjectAttendance,
+      roundAverages
     };
   }
 
@@ -207,7 +215,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodNames: ['1er Bimestre', '2do Bimestre', '3er Bimestre', '4to Bimestre', '5to Bimestre'],
       gradingScale: 'numeric_100',
       enableActivities: activitiesFallback,
-      enableSubjectAttendance: subjectAttendanceFallback
+      enableSubjectAttendance: subjectAttendanceFallback,
+      roundAverages: false
     };
   } else if (lLower.includes('universidad') || lLower.includes('licenciatura')) {
     return {
@@ -216,7 +225,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodNames: ['1er Semestre', '2do Semestre'],
       gradingScale: 'numeric_100',
       enableActivities: activitiesFallback,
-      enableSubjectAttendance: subjectAttendanceFallback
+      enableSubjectAttendance: subjectAttendanceFallback,
+      roundAverages: false
     };
   } else if (
     lLower.includes('preescolar') ||
@@ -232,7 +242,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodNames: ['1er Trimestre', '2do Trimestre', '3er Trimestre'],
       gradingScale: 'letters',
       enableActivities: activitiesFallback,
-      enableSubjectAttendance: subjectAttendanceFallback
+      enableSubjectAttendance: subjectAttendanceFallback,
+      roundAverages: false
     };
   } else {
     // Primaria, Secundaria: 3 Trimestres (SEP estándar), 0 a 10
@@ -242,7 +253,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodNames: ['1er Trimestre', '2do Trimestre', '3er Trimestre'],
       gradingScale: 'numeric_10',
       enableActivities: activitiesFallback,
-      enableSubjectAttendance: subjectAttendanceFallback
+      enableSubjectAttendance: subjectAttendanceFallback,
+      roundAverages: false
     };
   }
 }
@@ -261,7 +273,8 @@ export function getEffectiveSubjectGrade(
   bimestre: number,
   studentGrades: StudentGrade[],
   allSubjects: Subject[],
-  scale: GradingScale
+  scale: GradingScale,
+  roundAverages?: boolean
 ): { rawValue: string | number; numericValue: number | null } {
   const bg = studentGrades.find(g => Number(g.bimestre) === Number(bimestre));
   if (!bg || !bg.subjects) {
@@ -323,7 +336,7 @@ export function getEffectiveSubjectGrade(
       return { rawValue: baseRaw!, numericValue: baseNum };
     }
     return {
-      rawValue: formatAverage(allNums[0], 1, scale),
+      rawValue: formatAverage(allNums[0], 1, scale, roundAverages),
       numericValue: allNums[0]
     };
   }
@@ -332,7 +345,7 @@ export function getEffectiveSubjectGrade(
   const sum = allNums.reduce((a, b) => a + b, 0);
   const avg = sum / allNums.length;
   return {
-    rawValue: formatAverage(sum, allNums.length, scale),
+    rawValue: formatAverage(sum, allNums.length, scale, roundAverages),
     numericValue: avg
   };
 }

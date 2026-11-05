@@ -681,9 +681,9 @@ export default function Students() {
 
     return matchesSearch && matchesLevel && matchesGrade && matchesGroup && matchesCycle;
   }).sort((a, b) => {
-    const nameA = `${a.lastName || ''} ${a.name || ''}`.toLowerCase();
-    const nameB = `${b.lastName || ''} ${b.name || ''}`.toLowerCase();
-    return nameA.localeCompare(nameB);
+    const nameA = `${a.lastName || ''} ${a.motherLastName || ''} ${a.name || ''}`.trim().toLowerCase();
+    const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim().toLowerCase();
+    return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
   });
 
   const studentPayments = selectedStudent 

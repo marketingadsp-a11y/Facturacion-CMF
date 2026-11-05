@@ -363,6 +363,7 @@ export interface LevelEvaluationConfig {
   gradingScale?: GradingScale; // 'letters' (Preescolar A, E, ED, RA), 'numeric_10' (0-10), 'numeric_100' (0-100)
   enableActivities?: boolean; // Permite a los docentes registrar columnas de actividades y evaluarlas
   enableSubjectAttendance?: boolean; // Permite pase de lista individual por materia
+  roundAverages?: boolean; // Habilita redondeo estándar de promedios (ej. 9.5 -> 10, 9.4 -> 9.0)
 }
 
 export interface TeacherActivity {

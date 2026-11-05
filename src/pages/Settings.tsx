@@ -52,7 +52,8 @@ import {
   Layers,
   FileSpreadsheet,
   ClipboardList,
-  Upload
+  Upload,
+  Calculator
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -2079,6 +2080,16 @@ export default function Settings() {
                                 {currentConfig.gradingScale === 'letters' ? 'Letras (A, E, ED, RA)' :
                                  currentConfig.gradingScale === 'numeric_100' ? 'Escala 0 a 100' : 'Escala 0 a 10'}
                               </span>
+                              {currentConfig.gradingScale !== 'letters' && (
+                                <span className={cn(
+                                  "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black border",
+                                  currentConfig.roundAverages
+                                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                                    : "bg-slate-50 text-slate-600 border-slate-200"
+                                )}>
+                                  {currentConfig.roundAverages ? 'Redondeo Activo' : 'Sin Redondear'}
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -2244,6 +2255,99 @@ export default function Settings() {
                                 </button>
                               </div>
                             </div>
+                          </div>
+
+                          {/* Regla de Redondeo de Promedios */}
+                          <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5 ml-1 flex items-center gap-1.5">
+                                <Calculator size={13} className="text-indigo-600" />
+                                Regla de Redondeo de Promedios
+                              </label>
+                              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                                {currentConfig.gradingScale === 'letters' ? (
+                                  <span className="text-emerald-700 font-semibold">
+                                    No aplica: En Preescolar se evalúa por letras (A, E, ED, RA) de forma cualitativa.
+                                  </span>
+                                ) : (
+                                  <>
+                                    Define si los promedios de {level} se redondean al entero más próximo (ej. <strong>9.5 sube a 10</strong> y <strong>9.4 baja a 9.0</strong>) o se conservan con su decimal exacto en boletas y reportes.
+                                  </>
+                                )}
+                              </p>
+                            </div>
+
+                            {currentConfig.gradingScale === 'letters' ? (
+                              <div className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200 shrink-0">
+                                <span>No Aplica (Cualitativo)</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 shrink-0 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      roundAverages: false
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    const newSettings: AppSettings = {
+                                      ...settings,
+                                      levelEvaluationConfig: newMap
+                                    };
+                                    setSettings(newSettings);
+                                    try {
+                                      await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                      toast.success(`Promedios de ${level}: Normal (Sin redondear)`);
+                                    } catch (e) {
+                                      console.error("Error auto-saving round averages config:", e);
+                                      toast.error("Error al guardar la configuración de redondeo");
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5",
+                                    !currentConfig.roundAverages
+                                      ? "bg-slate-900 text-white shadow-xs"
+                                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  )}
+                                >
+                                  <span>Normal (Sin redondear)</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      roundAverages: true
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    const newSettings: AppSettings = {
+                                      ...settings,
+                                      levelEvaluationConfig: newMap
+                                    };
+                                    setSettings(newSettings);
+                                    try {
+                                      await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                      toast.success(`Promedios de ${level}: Redondeo activado (9.5 → 10, 9.4 → 9.0)`);
+                                    } catch (e) {
+                                      console.error("Error auto-saving round averages config:", e);
+                                      toast.error("Error al guardar la configuración de redondeo");
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5",
+                                    currentConfig.roundAverages
+                                      ? "bg-amber-600 text-white shadow-xs"
+                                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  )}
+                                >
+                                  <span>Redondear (9.5 → 10, 9.4 → 9.0)</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {/* Registro de Actividades por Nivel */}
