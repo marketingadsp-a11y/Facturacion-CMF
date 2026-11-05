@@ -952,7 +952,7 @@ export default function ParentDashboard() {
                 <div className="grid grid-cols-1 gap-8">
                   {students.filter(student => isStudentFeatureEnabled(student, 'grades')).map((student, sIdx) => {
                     const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
-                    const studentLevelSubjects = subjects.filter(sub => sub.level === student.level && isStudentEnrolledInSubject(sub, student.id, student.grade));
+                    const studentLevelSubjects = subjects.filter(sub => sub.level === student.level && isStudentEnrolledInSubject(sub, student.id, student.grade, student.group, studentGradeDocs));
                     const academicSubjectNames = studentLevelSubjects
                       .filter(isPureAcademicSubject)
                       .map(s => s.name);

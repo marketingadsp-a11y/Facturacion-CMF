@@ -7,6 +7,7 @@ import ReportCardPDF from '../components/ReportCardPDF';
 import { PDFViewer, pdf } from '@react-pdf/renderer';
 import { GraduationCap, Clock, FileDown, Maximize2, Minimize2, X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { buildTeacherSubjectGroupsMap } from '../lib/evaluationUtils';
 
 export default function PrintBoleta() {
   const { studentId } = useParams();
@@ -16,6 +17,7 @@ export default function PrintBoleta() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [cycle, setCycle] = useState<SchoolCycle | null>(null);
   const [teacherName, setTeacherName] = useState<string>('');
+  const [teacherSubjectGroupsMap, setTeacherSubjectGroupsMap] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [fitMode, setFitMode] = useState<'adapted' | 'full'>('adapted');
   const [downloading, setDownloading] = useState(false);
@@ -66,24 +68,28 @@ export default function PrintBoleta() {
 
           if (assignedTeacher) {
             setTeacherName(assignedTeacher);
-          } else {
-            // Fallback: search in users
-            try {
-              const usersSnap = await getDocs(collection(db, 'users'));
-              const teacher = usersSnap.docs
-                .map(d => ({ id: d.id, ...d.data() } as AppUser))
-                .find(u => 
-                  u.role === 'Docente' && 
-                  u.assignedLevel?.toLowerCase().trim() === studentData.level?.toLowerCase().trim() && 
-                  (!u.assignedGrade || u.assignedGrade === studentData.grade) && 
-                  (!u.assignedGroup || u.assignedGroup === studentData.group)
-                );
+          }
+
+          // Fetch users to build teacherSubjectGroupsMap and resolve fallback teacher
+          try {
+            const usersSnap = await getDocs(collection(db, 'users'));
+            const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as AppUser));
+            const tMap = buildTeacherSubjectGroupsMap(allUsers);
+            setTeacherSubjectGroupsMap(tMap);
+
+            if (!assignedTeacher) {
+              const teacher = allUsers.find(u => 
+                u.role === 'Docente' && 
+                u.assignedLevel?.toLowerCase().trim() === studentData.level?.toLowerCase().trim() && 
+                (!u.assignedGrade || u.assignedGrade === studentData.grade) && 
+                (!u.assignedGroup || u.assignedGroup === studentData.group)
+              );
               if (teacher) {
                 setTeacherName(teacher.name);
               }
-            } catch (tErr) {
-              console.warn("Could not fetch teacher:", tErr);
             }
+          } catch (tErr) {
+            console.warn("Could not fetch users/teachers:", tErr);
           }
         }
 
@@ -159,9 +165,10 @@ export default function PrintBoleta() {
         settings={settings}
         cycle={cycle}
         teacherName={teacherName}
+        teacherSubjectGroupsMap={teacherSubjectGroupsMap}
       />
     );
-  }, [student, grades, subjects, settings, cycle, teacherName]);
+  }, [student, grades, subjects, settings, cycle, teacherName, teacherSubjectGroupsMap]);
 
   const handleDownloadPdf = async () => {
     if (!reportCardDoc || !student) return;

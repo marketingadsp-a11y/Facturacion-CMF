@@ -2500,7 +2500,8 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
     isAttendanceCount: boolean;
     isTae: boolean;
     applicableGrades: string[];
-  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [] });
+    applicableGroups: string[];
+  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [], applicableGroups: [] });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
@@ -2564,9 +2565,10 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         taeStudentMode: newSubject.isTae ? 'all' : null,
         taeStudentIds: [],
         applicableGrades: newSubject.applicableGrades || [],
+        applicableGroups: newSubject.applicableGroups || [],
         createdAt: serverTimestamp()
       });
-      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [] });
+      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [], applicableGroups: [] });
       toast.success(newSubject.isTae ? `Materia TAE "${cleanName}" creada. Configura sus alumnos en la pestaña TAES.` : `Materia "${cleanName}" creada correctamente.`);
     } catch (error) {
       console.error("Error creating subject:", error);
@@ -2600,6 +2602,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         isTae: !!editingSubject.isTae,
         taeStudentMode: editingSubject.isTae ? (editingSubject.taeStudentMode || 'all') : null,
         applicableGrades: editingSubject.applicableGrades || [],
+        applicableGroups: editingSubject.applicableGroups || [],
         updatedAt: serverTimestamp()
       });
       toast.success("Materia actualizada correctamente.");
@@ -2662,6 +2665,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
           taeStudentMode: subj.isTae ? (subj.taeStudentMode || 'all') : null,
           taeStudentIds: subj.isTae ? (subj.taeStudentIds || []) : [],
           applicableGrades: subj.applicableGrades || [],
+          applicableGroups: subj.applicableGroups || [],
           createdAt: serverTimestamp()
         });
       }
@@ -2855,6 +2859,80 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                         className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                       <span>{grade}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Group selection row for new subject */}
+        {newSubject.level && (() => {
+          const availGroups = settings?.academicGroups || ['A', 'B', 'C', 'D'];
+          const isAll = !newSubject.applicableGroups || newSubject.applicableGroups.length === 0;
+
+          const toggleGroup = (grp: string) => {
+            let next: string[];
+            if (isAll) {
+              next = availGroups.filter(g => g !== grp);
+            } else if (newSubject.applicableGroups.includes(grp)) {
+              next = newSubject.applicableGroups.filter(g => g !== grp);
+            } else {
+              next = [...newSubject.applicableGroups, grp];
+            }
+            if (next.length === 0 || next.length === availGroups.length) {
+              setNewSubject({ ...newSubject, applicableGroups: [] });
+            } else {
+              setNewSubject({ ...newSubject, applicableGroups: next });
+            }
+          };
+
+          return (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <Users size={14} className="text-indigo-600" />
+                  <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
+                    Grupos aplicables ({newSubject.level}):
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {isAll ? '(Aplica a todos los grupos)' : `(Solo en grupo: ${newSubject.applicableGroups.join(', ')})`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewSubject({ ...newSubject, applicableGroups: [] })}
+                  className={cn(
+                    "text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all",
+                    isAll
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                >
+                  ✓ Todos los grupos
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {availGroups.map(grp => {
+                  const isChecked = isAll || newSubject.applicableGroups.includes(grp);
+                  return (
+                    <label
+                      key={grp}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all",
+                        isChecked
+                          ? "bg-indigo-50 border-indigo-300 text-indigo-900 shadow-xs"
+                          : "bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleGroup(grp)}
+                        className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      />
+                      <span>Grupo {grp}</span>
                     </label>
                   );
                 })}
@@ -3072,6 +3150,75 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       </div>
                                     );
                                   })()}
+
+                                  {/* Group selection in edit mode */}
+                                  {(() => {
+                                    const availGroups = settings?.academicGroups || ['A', 'B', 'C', 'D'];
+                                    const isAll = !editingSubject.applicableGroups || editingSubject.applicableGroups.length === 0;
+
+                                    const toggleGroup = (grp: string) => {
+                                      let next: string[];
+                                      if (isAll) {
+                                        next = availGroups.filter(g => g !== grp);
+                                      } else if (editingSubject.applicableGroups?.includes(grp)) {
+                                        next = editingSubject.applicableGroups.filter(g => g !== grp);
+                                      } else {
+                                        next = [...(editingSubject.applicableGroups || []), grp];
+                                      }
+                                      if (next.length === 0 || next.length === availGroups.length) {
+                                        setEditingSubject({ ...editingSubject, applicableGroups: [] });
+                                      } else {
+                                        setEditingSubject({ ...editingSubject, applicableGroups: next });
+                                      }
+                                    };
+
+                                    return (
+                                      <div className="pt-2 border-t border-indigo-200/60 mt-2">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                                            <Users size={12} className="text-indigo-600" /> Grupos donde se cursa:
+                                            <span className="text-slate-400 font-semibold normal-case">
+                                              {isAll ? '(Todos los grupos)' : `(Solo: ${editingSubject.applicableGroups?.join(', ')})`}
+                                            </span>
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingSubject({ ...editingSubject, applicableGroups: [] })}
+                                            className={cn(
+                                              "text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded transition-all",
+                                              isAll ? "bg-indigo-600 text-white" : "bg-white border border-slate-300 text-slate-600 hover:bg-slate-100"
+                                            )}
+                                          >
+                                            ✓ Todos los grupos
+                                          </button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {availGroups.map(grp => {
+                                            const isChecked = isAll || (editingSubject.applicableGroups || []).includes(grp);
+                                            return (
+                                              <label
+                                                key={grp}
+                                                className={cn(
+                                                  "flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold cursor-pointer transition-all",
+                                                  isChecked
+                                                    ? "bg-white border-indigo-400 text-indigo-900 shadow-xs"
+                                                    : "bg-indigo-100/30 border-indigo-200 text-slate-400"
+                                                )}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked}
+                                                  onChange={() => toggleGroup(grp)}
+                                                  className="w-3 h-3 rounded text-indigo-600 cursor-pointer"
+                                                />
+                                                <span>Grupo {grp}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               ) : (
                                 <>
@@ -3080,6 +3227,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                     {subj.applicableGrades && subj.applicableGrades.length > 0 && (
                                       <span className="text-[9px] font-black text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
                                         <GraduationCap size={10} className="text-amber-600" /> Grados: {subj.applicableGrades.join(', ')}
+                                      </span>
+                                    )}
+                                    {subj.applicableGroups && subj.applicableGroups.length > 0 && (
+                                      <span className="text-[9px] font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
+                                        <Users size={10} className="text-indigo-600" /> Grupos: {subj.applicableGroups.join(', ')}
                                       </span>
                                     )}
                                     {subj.isTae && (
@@ -3111,7 +3263,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       <option value="Recursamiento">Recursamiento</option>
                                     </select>
                                     <button 
-                                      onClick={() => setEditingSubject({ ...subj, applicableGrades: subj.applicableGrades || [] })}
+                                      onClick={() => setEditingSubject({ ...subj, applicableGrades: subj.applicableGrades || [], applicableGroups: subj.applicableGroups || [] })}
                                       className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                                       title="Editar materia"
                                     >

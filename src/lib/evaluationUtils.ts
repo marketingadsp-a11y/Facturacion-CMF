@@ -494,13 +494,23 @@ export function isSubjectLockLevel(levelName?: string | null): boolean {
 
 /**
  * Normalizes grade strings to allow robust matching:
- * e.g. "1ro", "1°", "1", "1ero" -> "1"
+ * e.g. "1ro", "1°", "1", "1ero", "1A", "1° A" -> "1"
  * "2do", "2°", "2" -> "2"
- * "3ro", "3°", "3", "3ero" -> "3"
+ * "3ro", "3°", "3", "3ero", "3ro B" -> "3"
  */
 export function normalizeGradeStr(grade?: string): string {
   if (!grade) return '';
   const g = String(grade).toLowerCase().trim();
+  const match = g.match(/^(\d+)/);
+  if (match) {
+    return match[1];
+  }
+  if (g.startsWith('primer')) return '1';
+  if (g.startsWith('segund')) return '2';
+  if (g.startsWith('tercer')) return '3';
+  if (g.startsWith('cuart')) return '4';
+  if (g.startsWith('quint')) return '5';
+  if (g.startsWith('sext')) return '6';
   return g
     .replace(/[°º]/g, '')
     .replace(/(ro|do|er|ero|to|vo|mo)$/g, '')
@@ -528,11 +538,15 @@ export function getLevelGrades(level?: string, configuredGrades?: string[]): str
 
 /**
  * Checks if a subject applies to a specific grade.
- * If applicableGrades is empty or undefined, it applies to all grades in the level.
+ * If applicableGrades is empty or undefined, it applies to all grades in the level
+ * EXCEPT for Recursamiento subjects which must have explicit grades or enrollment.
  */
 export function isSubjectApplicableToGrade(subject: Subject, studentGrade?: string): boolean {
   if (!studentGrade) return true;
   if (!subject.applicableGrades || subject.applicableGrades.length === 0) {
+    if (subject.category === 'Recursamiento') {
+      return false;
+    }
     return true;
   }
   const rawTarget = studentGrade.toLowerCase().trim();
@@ -547,23 +561,133 @@ export function isSubjectApplicableToGrade(subject: Subject, studentGrade?: stri
 }
 
 /**
+ * Builds a lookup map of subject group assignments across all teachers.
+ * e.g. key = `${subjectId}__${grade}` or `${subjectName}__${grade}` -> ['A', 'B']
+ */
+export function buildTeacherSubjectGroupsMap(users: any[]): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  if (!users || !Array.isArray(users)) return map;
+
+  users.forEach(user => {
+    if (user?.role !== 'Docente' || !user.teacherSubjectGroups) return;
+    Object.entries(user.teacherSubjectGroups).forEach(([key, groups]) => {
+      if (!Array.isArray(groups)) return;
+      if (!map[key]) map[key] = [];
+      groups.forEach((g: string) => {
+        if (!map[key].includes(g)) {
+          map[key].push(g);
+        }
+      });
+    });
+  });
+
+  return map;
+}
+
+/**
  * Checks whether a student is enrolled in a subject.
  * - Grade check: if applicableGrades is specified, student must be in one of those grades.
- * - Non-TAE subjects apply to all students (matching grade).
- * - TAE subjects with taeStudentMode === 'all' apply to all students in the level (matching grade).
- * - TAE subjects with taeStudentMode === 'specific' apply only to students listed in taeStudentIds.
+ * - Recursamiento check: students only take recursamiento if explicitly enrolled or having grades recorded.
+ * - Subject applicableGroups check: if subject is restricted to specific groups, student must match group.
+ * - Teacher groups check: if subject in that grade is restricted to specific groups, student must match.
+ * - TAE check: respects specific student enrollment.
+ * - Safety: if a student has an actual recorded grade in studentGrades for this subject, it is always preserved.
  */
-export function isStudentEnrolledInSubject(subject: Subject, studentId: string, studentGrade?: string): boolean {
+export function isStudentEnrolledInSubject(
+  subject: Subject, 
+  studentId: string, 
+  studentGrade?: string,
+  studentGroup?: string,
+  studentGrades?: StudentGrade[],
+  teacherSubjectGroupsMap?: Record<string, string[]>
+): boolean {
   if (!subject) return false;
-  // Grade applicability check
-  if (studentGrade && subject.applicableGrades && subject.applicableGrades.length > 0) {
+
+  // Helper to check if student has any recorded grade in this subject
+  const hasRecordedGrade = Boolean(studentGrades && studentGrades.some(g => {
+    if (!g || !g.subjects) return false;
+    if (g.subjects[subject.name] !== undefined && g.subjects[subject.name] !== '' && g.subjects[subject.name] !== '-') return true;
+    if (subject.id && g.subjects[subject.id] !== undefined && g.subjects[subject.id] !== '' && g.subjects[subject.id] !== '-') return true;
+    const normSubj = subject.name.toLowerCase().trim();
+    return Object.entries(g.subjects).some(([k, v]) => k.toLowerCase().trim() === normSubj && v !== undefined && v !== '' && v !== '-');
+  }));
+
+  // 1. Grade applicability check
+  if (studentGrade) {
     if (!isSubjectApplicableToGrade(subject, studentGrade)) {
+      if (!hasRecordedGrade) {
+        return false;
+      }
+    }
+  }
+
+  // 2. Recursamiento check:
+  // Subjects in category 'Recursamiento' must ONLY appear if:
+  // - The student is explicitly assigned (e.g. TAE mode specific), OR
+  // - The student has an actual recorded grade in studentGrades
+  if (subject.category === 'Recursamiento') {
+    const isExplicitlyAssigned = Boolean(subject.isTae && subject.taeStudentIds && subject.taeStudentIds.includes(studentId));
+    if (!isExplicitlyAssigned && !hasRecordedGrade) {
       return false;
     }
   }
-  // TAE check
+
+  // 3. Subject-level applicableGroups check
+  if (studentGroup && subject.applicableGroups && subject.applicableGroups.length > 0) {
+    const cleanStudentGroup = studentGroup.trim().toUpperCase();
+    const matchesGroup = subject.applicableGroups.some(g => {
+      const up = g.trim().toUpperCase();
+      return up === 'ALL' || up === 'TODOS' || up === cleanStudentGroup;
+    });
+    if (!matchesGroup && !hasRecordedGrade) {
+      return false;
+    }
+  }
+
+  // 4. Teacher-assigned groups check (from teacherSubjectGroupsMap)
+  if (studentGroup && teacherSubjectGroupsMap && Object.keys(teacherSubjectGroupsMap).length > 0) {
+    const cleanStudentGroup = studentGroup.trim().toUpperCase();
+    const normGrade = normalizeGradeStr(studentGrade);
+    const matchingAssignedGroups: string[] = [];
+
+    const keysToCheck = [
+      `${subject.id}__${studentGrade}`,
+      `${subject.name}__${studentGrade}`,
+      `${subject.id}__${normGrade}`,
+      `${subject.name}__${normGrade}`,
+      `${subject.id}__Preparatoria__${normGrade}`,
+      `${subject.name}__Preparatoria__${normGrade}`,
+      `${subject.id}__Preparatoria__${studentGrade}`,
+      `${subject.name}__Preparatoria__${studentGrade}`,
+      `${subject.id}__Bachillerato__${normGrade}`,
+      `${subject.name}__Bachillerato__${normGrade}`,
+      subject.id,
+      subject.name,
+      `${subject.id}__Preparatoria`,
+      `${subject.name}__Preparatoria`
+    ];
+
+    for (const k of keysToCheck) {
+      if (teacherSubjectGroupsMap[k] && Array.isArray(teacherSubjectGroupsMap[k])) {
+        matchingAssignedGroups.push(...teacherSubjectGroupsMap[k]);
+      }
+    }
+
+    if (matchingAssignedGroups.length > 0) {
+      const isGroupAllowed = matchingAssignedGroups.some(g => {
+        const up = String(g).trim().toUpperCase();
+        return up === 'ALL' || up === 'TODOS' || up === cleanStudentGroup;
+      });
+
+      if (!isGroupAllowed && !hasRecordedGrade) {
+        return false;
+      }
+    }
+  }
+
+  // 5. TAE check
   if (!subject.isTae) return true;
   if (!subject.taeStudentMode || subject.taeStudentMode === 'all') return true;
-  return Boolean(subject.taeStudentIds && subject.taeStudentIds.includes(studentId));
+  return Boolean((subject.taeStudentIds && subject.taeStudentIds.includes(studentId)) || hasRecordedGrade);
 }
 

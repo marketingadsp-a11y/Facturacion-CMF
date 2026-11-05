@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { Student, StudentGrade, AppSettings, SchoolCycle, Subject } from '../types';
 import ReportCardPDF from './ReportCardPDF';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
+import { buildTeacherSubjectGroupsMap } from '../lib/evaluationUtils';
 
 export function getBoletaFileName(student: Student, level?: string, grade?: string, group?: string): string {
   // 1. Nombre y Apellido del Alumno
@@ -99,6 +102,16 @@ export default function BatchBoletasModal({
     const zip = mode === 'zip' ? new JSZip() : null;
     const failedStudents: string[] = [];
 
+    // Fetch teacher subject groups mapping
+    let tMap: Record<string, string[]> = {};
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      tMap = buildTeacherSubjectGroupsMap(allUsers);
+    } catch (uErr) {
+      console.warn("Could not fetch users for batch boletas:", uErr);
+    }
+
     for (let i = 0; i < totalStudents; i++) {
       if (cancelRef.current) break;
 
@@ -134,6 +147,7 @@ export default function BatchBoletasModal({
             settings={settings}
             cycle={cycle}
             teacherName={teacherName}
+            teacherSubjectGroupsMap={tMap}
           />
         );
 

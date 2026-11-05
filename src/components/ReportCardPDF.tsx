@@ -507,6 +507,7 @@ interface ReportCardPDFProps {
   settings: AppSettings | null;
   cycle: SchoolCycle;
   teacherName?: string;
+  teacherSubjectGroupsMap?: Record<string, string[]>;
 }
 
 export default function ReportCardPDF({ 
@@ -515,7 +516,8 @@ export default function ReportCardPDF({
   subjects, 
   settings, 
   cycle,
-  teacherName 
+  teacherName,
+  teacherSubjectGroupsMap
 }: ReportCardPDFProps) {
   // Dedicated landscape boletas matching the official format for Secundaria (1°, 2°, 3°)
   const studentLevelStr = (student?.level || '').toLowerCase().trim();
@@ -591,8 +593,10 @@ export default function ReportCardPDF({
     ? (rawLogo.startsWith('data:') ? rawLogo : `/api/proxy/image?url=${encodeURIComponent(rawLogo)}`)
     : null;
 
-  // Filter subjects for this specific student (respects grade and TAE enrollment):
-  const studentSubjects = subjects.filter(s => isStudentEnrolledInSubject(s, student.id, student.grade));
+  // Filter subjects for this specific student (respects grade, group, TAE enrollment and recursamiento status):
+  const studentSubjects = subjects.filter(s => 
+    isStudentEnrolledInSubject(s, student.id, student.grade, student.group, grades, teacherSubjectGroupsMap)
+  );
 
   // Separate subjects into categories as requested
   const academicSubjects = studentSubjects
@@ -610,10 +614,6 @@ export default function ReportCardPDF({
   const personalDevSubjects = studentSubjects
     .filter(s => s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal')
     .map(s => s.name);
-
-  const hasRecursamientoInLevel = subjects.some(s => 
-    s.category === 'Recursamiento' && (!s.level || s.level.toLowerCase().trim() === student.level?.toLowerCase().trim())
-  );
 
   const observationSubjects = [...academicSubjects, ...recursamientoSubjects];
 
@@ -1114,7 +1114,7 @@ export default function ReportCardPDF({
         {/* ----------------------------------------------------
             SECCIÓN 4: RECURSAMIENTO
             ---------------------------------------------------- */}
-        {(recursamientoSubjects.length > 0 || hasRecursamientoInLevel) && (
+        {recursamientoSubjects.length > 0 && (
           <View wrap={false}>
             <View style={styles.sectionBanner}>
               <Text style={styles.sectionBannerText}>IV. RECURSAMIENTO</Text>
