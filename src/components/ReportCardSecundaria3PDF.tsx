@@ -253,6 +253,7 @@ export default function ReportCardSecundaria3PDF({
   const evalConfig = getLevelEvaluationConfig(settings, student.level);
   const scale = evalConfig.gradingScale || 'numeric_10';
   const roundAverages = Boolean(evalConfig.roundAverages);
+  const roundLinkedSubjects = Boolean(evalConfig.roundLinkedSubjects);
 
   // Helper to normalize strings for robust fuzzy subject matching
   const norm = (str: string) => {
@@ -366,7 +367,7 @@ export default function ReportCardSecundaria3PDF({
   const getSubjectGrade = (matchNames: string[], bimestre: number): string | number => {
     // 1. First, check effective grade logic (which considers linked autonomy subjects)
     for (const name of matchNames) {
-      const eff = getEffectiveSubjectGrade(name, bimestre, grades, subjects, scale, roundAverages);
+      const eff = getEffectiveSubjectGrade(name, bimestre, grades, subjects, scale, roundAverages, roundLinkedSubjects);
       if (eff.rawValue !== '-') {
         return eff.rawValue;
       }

@@ -154,7 +154,9 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       periodNames: ['1er Trimestre', '2do Trimestre', '3er Trimestre'],
       gradingScale: defaultScale,
       enableActivities: false,
-      enableSubjectAttendance: false
+      enableSubjectAttendance: false,
+      roundAverages: false,
+      roundLinkedSubjects: false
     };
   }
 
@@ -193,6 +195,9 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
     const roundAverages = conf.roundAverages !== undefined
       ? Boolean(conf.roundAverages)
       : false;
+    const roundLinkedSubjects = conf.roundLinkedSubjects !== undefined
+      ? Boolean(conf.roundLinkedSubjects)
+      : false;
 
     return {
       periodCount: count,
@@ -201,7 +206,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       gradingScale,
       enableActivities,
       enableSubjectAttendance,
-      roundAverages
+      roundAverages,
+      roundLinkedSubjects
     };
   }
 
@@ -216,7 +222,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       gradingScale: 'numeric_100',
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
-      roundAverages: false
+      roundAverages: false,
+      roundLinkedSubjects: false
     };
   } else if (lLower.includes('universidad') || lLower.includes('licenciatura')) {
     return {
@@ -226,7 +233,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       gradingScale: 'numeric_100',
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
-      roundAverages: false
+      roundAverages: false,
+      roundLinkedSubjects: false
     };
   } else if (
     lLower.includes('preescolar') ||
@@ -243,7 +251,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       gradingScale: 'letters',
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
-      roundAverages: false
+      roundAverages: false,
+      roundLinkedSubjects: false
     };
   } else {
     // Primaria, Secundaria: 3 Trimestres (SEP estándar), 0 a 10
@@ -254,7 +263,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       gradingScale: 'numeric_10',
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
-      roundAverages: false
+      roundAverages: false,
+      roundLinkedSubjects: false
     };
   }
 }
@@ -274,17 +284,17 @@ export function getEffectiveSubjectGrade(
   studentGrades: StudentGrade[],
   allSubjects: Subject[],
   scale: GradingScale,
-  roundAverages?: boolean
+  roundAverages?: boolean,
+  roundLinkedSubjects?: boolean
 ): { rawValue: string | number; numericValue: number | null } {
   const bg = studentGrades.find(g => Number(g.bimestre) === Number(bimestre));
   if (!bg || !bg.subjects) {
     return { rawValue: '-', numericValue: null };
   }
 
-  // Find any Autonomía Curricular subjects linked to this subject
+  // Find any subjects linked to this subject (e.g. Autonomía Curricular, Inglés linked to Lenguajes, etc.)
   const normName = subjectName.trim().toLowerCase();
   const linkedAutonomySubjects = allSubjects.filter(s =>
-    s.category === 'Autonomía Curricular' &&
     s.linkedSubjectName &&
     s.linkedSubjectName.trim().toLowerCase() === normName
   );
@@ -330,23 +340,29 @@ export function getEffectiveSubjectGrade(
     return { rawValue: '-', numericValue: null };
   }
 
+  const shouldRoundLinked = roundLinkedSubjects !== undefined
+    ? Boolean(roundLinkedSubjects)
+    : (roundAverages !== undefined ? Boolean(roundAverages) : false);
+
   if (allNums.length === 1) {
     // If only base or only one linked subject was graded
     if (baseNum !== null) {
       return { rawValue: baseRaw!, numericValue: baseNum };
     }
+    const val = formatAverage(allNums[0], 1, scale, shouldRoundLinked);
     return {
-      rawValue: formatAverage(allNums[0], 1, scale, roundAverages),
-      numericValue: allNums[0]
+      rawValue: val,
+      numericValue: gradeToNumeric(val, scale) ?? allNums[0]
     };
   }
 
   // Multiple grades -> average them
   const sum = allNums.reduce((a, b) => a + b, 0);
   const avg = sum / allNums.length;
+  const val = formatAverage(sum, allNums.length, scale, shouldRoundLinked);
   return {
-    rawValue: formatAverage(sum, allNums.length, scale, roundAverages),
-    numericValue: avg
+    rawValue: val,
+    numericValue: gradeToNumeric(val, scale) ?? (shouldRoundLinked ? Math.round(avg) : avg)
   };
 }
 

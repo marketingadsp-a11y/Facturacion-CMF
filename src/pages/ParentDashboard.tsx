@@ -960,6 +960,7 @@ export default function ParentDashboard() {
                     const evalConfig = getLevelEvaluationConfig(settings, student.level);
                     const scale = evalConfig.gradingScale || 'numeric_10';
                     const roundAverages = Boolean(evalConfig.roundAverages);
+                    const roundLinkedSubjects = Boolean(evalConfig.roundLinkedSubjects);
                     const periodCount = evalConfig.periodCount;
                     const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
 
@@ -967,7 +968,7 @@ export default function ParentDashboard() {
                     const allAcademicPoints: number[] = [];
                     periodIndices.forEach(b => {
                       academicSubjectNames.forEach(subName => {
-                        const eff = getEffectiveSubjectGrade(subName, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages);
+                        const eff = getEffectiveSubjectGrade(subName, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages, roundLinkedSubjects);
                         if (eff.numericValue !== null) {
                           allAcademicPoints.push(eff.numericValue);
                         }
@@ -1059,7 +1060,7 @@ export default function ParentDashboard() {
                                   const subjectPoints: number[] = [];
                                   periodIndices.forEach(b => {
                                     if (isAcademic) {
-                                      const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages);
+                                      const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages, roundLinkedSubjects);
                                       if (eff.numericValue !== null) subjectPoints.push(eff.numericValue);
                                     } else {
                                       const g = studentGradeDocs.find(doc => doc.bimestre === b)?.subjects?.[sub.name];
@@ -1088,7 +1089,7 @@ export default function ParentDashboard() {
                                         let hasGrade = false;
 
                                         if (isAcademic) {
-                                          const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale);
+                                          const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages, roundLinkedSubjects);
                                           if (eff.rawValue !== '-') {
                                             rawGrade = eff.rawValue;
                                             hasGrade = true;

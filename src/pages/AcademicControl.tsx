@@ -1015,6 +1015,7 @@ export default function AcademicControl() {
                       const evalConfig = getLevelEvaluationConfig(settings, displayLevel);
                       const scale = evalConfig.gradingScale || 'numeric_10';
                       const roundAverages = Boolean(evalConfig.roundAverages);
+                      const roundLinkedSubjects = Boolean(evalConfig.roundLinkedSubjects);
 
                       const getBimestreAvg = (num: number) => {
                         const bg = studentGrades.find(g => Number(g.bimestre) === num);
@@ -1022,7 +1023,7 @@ export default function AcademicControl() {
                         
                         const nums: number[] = [];
                         for (const name of academicSubjectNames) {
-                          const result = getEffectiveSubjectGrade(name, num, studentGrades, subjects, scale, roundAverages);
+                          const result = getEffectiveSubjectGrade(name, num, studentGrades, subjects, scale, roundAverages, roundLinkedSubjects);
                           if (result.numericValue !== null) nums.push(result.numericValue);
                         }
 

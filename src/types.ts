@@ -364,6 +364,7 @@ export interface LevelEvaluationConfig {
   enableActivities?: boolean; // Permite a los docentes registrar columnas de actividades y evaluarlas
   enableSubjectAttendance?: boolean; // Permite pase de lista individual por materia
   roundAverages?: boolean; // Habilita redondeo estándar de promedios (ej. 9.5 -> 10, 9.4 -> 9.0)
+  roundLinkedSubjects?: boolean; // Habilita redondeo en materias que suman a una materia académica (ej. Inglés a Lenguajes)
 }
 
 export interface TeacherActivity {

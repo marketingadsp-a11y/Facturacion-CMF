@@ -570,6 +570,7 @@ export default function ReportCardPDF({
   const scale = evalConfig.gradingScale || 'numeric_10';
   const periodCount = evalConfig.periodCount;
   const roundAverages = Boolean(evalConfig.roundAverages);
+  const roundLinkedSubjects = Boolean(evalConfig.roundLinkedSubjects);
   const periodIndices = Array.from({ length: periodCount }, (_, i) => i + 1);
   const isPreescolarOrPrimaria = isObservationsLevel(student.level);
 
@@ -634,7 +635,7 @@ export default function ReportCardPDF({
     // If it's an academic or recursamiento subject, compute effective grade taking into account linked autonomy subjects
     const isAcademic = academicSubjects.includes(subject) || recursamientoSubjects.includes(subject);
     if (isAcademic) {
-      const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale, roundAverages);
+      const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale, roundAverages, roundLinkedSubjects);
       if (effective.rawValue !== '-') {
         return effective.rawValue;
       }
