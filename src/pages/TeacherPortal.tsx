@@ -168,6 +168,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   // Observations state (Preescolar & Primaria)
   const [observationsViewMode, setObservationsViewMode] = useState<'bySubject' | 'byStudent'>('bySubject');
   const [selectedObsSubjectId, setSelectedObsSubjectId] = useState<string>('');
+  const [includeObservationsInPdf, setIncludeObservationsInPdf] = useState<boolean>(true);
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
   const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
@@ -611,6 +612,22 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const isHorarioTabEnabled = settings ? settings.teacherPortalFeatures?.horario !== false : false;
   const isCredencialTabEnabled = settings ? settings.teacherPortalFeatures?.credencial !== false : false;
   const isObservationsTabEnabled = isObservationsLevel(activeLevel) && hasPermission('grading', 'view');
+
+  const totalObservationsCount = useMemo(() => {
+    let count = 0;
+    filteredStudents.forEach(st => {
+      const sg = grades[st.id];
+      if (!sg) return;
+      const obs = { ...(sg.observations || {}), ...(sg.subjectObservations || {}) };
+      Object.values(obs).forEach(v => {
+        if (typeof v === 'string' && v.trim().length > 0) count++;
+      });
+      if (typeof sg.generalObservation === 'string' && sg.generalObservation.trim().length > 0) {
+        count++;
+      }
+    });
+    return count;
+  }, [filteredStudents, grades]);
 
   // Auto-switch tab if current activeTab is disabled in settings
   useEffect(() => {
@@ -2863,7 +2880,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     }
   };
 
-  const handleDownloadGradesListPdf = async () => {
+  const handleDownloadGradesListPdf = async (customIncludeObs?: boolean) => {
     if (filteredStudents.length === 0) {
       toast.error('No hay alumnos registrados en este grupo para generar la lista.');
       return;
@@ -2890,6 +2907,8 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       return;
     }
 
+    const shouldIncludeObs = customIncludeObs !== undefined ? customIncludeObs : includeObservationsInPdf;
+
     setIsDownloadingGradesPdf(true);
     try {
       const periodTitle = evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType} ${selectedBimestre}`;
@@ -2913,6 +2932,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           subjects={subjectsForPdf}
           grades={grades}
           getAbsenceCount={(studentId) => getStudentAbsenceCount(studentId, selectedBimestre)}
+          includeObservations={shouldIncludeObs}
         />
       ).toBlob();
 
@@ -2926,7 +2946,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast.success('Lista oficial de calificaciones descargada en PDF exitosamente.');
+      toast.success(
+        shouldIncludeObs && totalObservationsCount > 0
+          ? 'Lista oficial de calificaciones y observaciones descargada en PDF exitosamente.'
+          : 'Lista oficial de calificaciones descargada en PDF exitosamente.'
+      );
     } catch (err: any) {
       console.error('Error generando lista de calificaciones PDF:', err);
       toast.error('Hubo un error al generar la lista de calificaciones en PDF.');
@@ -3190,9 +3214,21 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                         </span>
                       )}
                     </div>
+                    <label 
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white/90 hover:bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-700 cursor-pointer select-none transition-all shadow-xs"
+                      title="Incluir en el PDF las observaciones pedagógicas registradas"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={includeObservationsInPdf}
+                        onChange={e => setIncludeObservationsInPdf(e.target.checked)}
+                        className="w-3 h-3 text-blue-600 rounded border-slate-300 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Observaciones {totalObservationsCount > 0 ? `(${totalObservationsCount})` : ''}</span>
+                    </label>
                     <button
                       type="button"
-                      onClick={handleDownloadGradesListPdf}
+                      onClick={() => handleDownloadGradesListPdf(includeObservationsInPdf)}
                       disabled={isDownloadingGradesPdf}
                       className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
                       title="Descargar lista oficial de calificaciones del grupo en PDF"
@@ -3797,20 +3833,35 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
                 {/* Opción para descargar lista del grupo con calificaciones asignadas (Solo aparece cuando el periodo esté finalizado) */}
                 {isAllAssignedSubjectsLocked && (
-                  <button
-                    type="button"
-                    onClick={handleDownloadGradesListPdf}
-                    disabled={isDownloadingGradesPdf}
-                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-50"
-                    title={`Descargar lista oficial de calificaciones de ${evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType} ${selectedBimestre}`}`}
-                  >
-                    {isDownloadingGradesPdf ? (
-                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <FileDown size={14} />
-                    )}
-                    <span>Descargar Lista de Calificaciones ({evalConfig.periodType.charAt(0)}{selectedBimestre})</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadGradesListPdf(includeObservationsInPdf)}
+                      disabled={isDownloadingGradesPdf}
+                      className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-50"
+                      title={`Descargar lista oficial de calificaciones de ${evalConfig.periodNames?.[selectedBimestre - 1] || `${evalConfig.periodType} ${selectedBimestre}`}`}
+                    >
+                      {isDownloadingGradesPdf ? (
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <FileDown size={14} />
+                      )}
+                      <span>Descargar Lista de Calificaciones ({evalConfig.periodType.charAt(0)}{selectedBimestre})</span>
+                    </button>
+
+                    <label 
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer select-none transition-all shadow-xs"
+                      title="Incluir en el PDF las observaciones pedagógicas registradas"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={includeObservationsInPdf}
+                        onChange={e => setIncludeObservationsInPdf(e.target.checked)}
+                        className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Incluir observaciones en el PDF {totalObservationsCount > 0 ? `(${totalObservationsCount} registradas)` : ''}</span>
+                    </label>
+                  </div>
                 )}
               </div>
 
@@ -4563,6 +4614,21 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold w-full outline-none focus:bg-white focus:ring-1 focus:ring-slate-900 transition-all"
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={() => handleDownloadGradesListPdf(true)}
+                disabled={isDownloadingGradesPdf}
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                title="Descargar lista con observaciones en PDF"
+              >
+                {isDownloadingGradesPdf ? (
+                  <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <FileDown size={13} />
+                )}
+                <span>Descargar PDF</span>
+              </button>
 
               {hasPermission('grading', 'manage') && (
                 <button

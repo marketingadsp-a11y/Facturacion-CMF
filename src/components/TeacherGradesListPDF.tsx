@@ -229,6 +229,7 @@ export interface TeacherGradesListPDFProps {
   subjects: Subject[]; // Only subjects the teacher has access to!
   grades: Record<string, StudentGrade>; // studentId -> StudentGrade
   getAbsenceCount?: (studentId: string) => number | null;
+  includeObservations?: boolean;
 }
 
 export default function TeacherGradesListPDF({
@@ -240,11 +241,13 @@ export default function TeacherGradesListPDF({
   periodName = '',
   periodNumber = 1,
   periodType = 'Periodo',
+  teacherName = '',
   isSpecificTeacher = false,
   students = [],
   subjects = [],
   grades = {},
   getAbsenceCount,
+  includeObservations = true,
 }: TeacherGradesListPDFProps) {
   // Sort students alphabetically by last names
   const sortedStudents = [...students].sort((a, b) => {
@@ -385,6 +388,75 @@ export default function TeacherGradesListPDF({
     const raw = sg.subjects?.[subj.name] ?? (subj.id ? sg.subjects?.[subj.id] : undefined) ?? (legacyField ? sg[legacyField] : '') ?? '';
     return raw !== '' && raw !== undefined && raw !== null ? String(raw) : '—';
   };
+
+  // Helper to extract all entered observations for a student in this period
+  const getStudentObservations = (student: Student): { subjectName: string; observation: string }[] => {
+    const sg = grades[student.id];
+    if (!sg) return [];
+
+    const entries: { subjectName: string; observation: string }[] = [];
+    const obsMap = { ...(sg.observations || {}), ...(sg.subjectObservations || {}) };
+    const processedKeys = new Set<string>();
+
+    // 1. Process subjects in the current level/teacher list
+    orderedSubjects.forEach(subj => {
+      let text = obsMap[subj.name];
+      let matchedKey = subj.name;
+      if (!text && subj.id && obsMap[subj.id]) {
+        text = obsMap[subj.id];
+        matchedKey = subj.id;
+      }
+      if (!text) {
+        const normName = subj.name.toLowerCase().trim();
+        for (const [k, v] of Object.entries(obsMap)) {
+          if (k.toLowerCase().trim() === normName && v) {
+            text = v;
+            matchedKey = k;
+            break;
+          }
+        }
+      }
+
+      if (text && typeof text === 'string' && text.trim().length > 0) {
+        entries.push({
+          subjectName: subj.name,
+          observation: text.trim()
+        });
+        processedKeys.add(matchedKey);
+        processedKeys.add(subj.name);
+        if (subj.id) processedKeys.add(subj.id);
+      }
+    });
+
+    // 2. Any additional subject observations recorded in obsMap
+    for (const [k, v] of Object.entries(obsMap)) {
+      if (!processedKeys.has(k) && typeof v === 'string' && v.trim().length > 0) {
+        entries.push({
+          subjectName: k,
+          observation: v.trim()
+        });
+        processedKeys.add(k);
+      }
+    }
+
+    // 3. General observation if present
+    if (sg.generalObservation && typeof sg.generalObservation === 'string' && sg.generalObservation.trim().length > 0) {
+      entries.push({
+        subjectName: 'Observación General',
+        observation: sg.generalObservation.trim()
+      });
+    }
+
+    return entries;
+  };
+
+  const studentsWithObservations = sortedStudents
+    .map((student, idx) => ({
+      studentIndex: idx + 1,
+      student,
+      observations: getStudentObservations(student)
+    }))
+    .filter(item => item.observations.length > 0);
 
   const formattedPeriodTitle = periodName || `${periodType} ${periodNumber}`;
   const schoolCCT = (level && settings?.levelCCT?.[level]) || '';
@@ -608,6 +680,176 @@ export default function TeacherGradesListPDF({
           />
         </View>
       </Page>
+
+      {/* ── 2. Observations Page (Rendered when includeObservations is true and observations exist) ── */}
+      {includeObservations && studentsWithObservations.length > 0 && (
+        <Page size="LETTER" orientation="landscape" style={styles.page}>
+          {/* Header Box */}
+          <View style={styles.headerBox} wrap={false}>
+            <View style={styles.headerTop}>
+              <View style={styles.headerLeft}>
+                {proxiedLogo ? (
+                  <Image src={proxiedLogo} style={styles.logo} />
+                ) : null}
+                <View>
+                  <Text style={styles.schoolName}>
+                    {settings?.schoolName || 'INSTITUCIÓN EDUCATIVA'}
+                  </Text>
+                  <Text style={styles.schoolLegal}>
+                    {schoolLegalInfo}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.headerRight}>
+                <Text style={styles.headerRightText}>
+                  OBSERVACIONES Y RECOMENDACIONES
+                </Text>
+                <Text style={styles.headerRightSub}>
+                  {formattedPeriodTitle.toUpperCase()} • CICLO {cycleName || 'ACTUAL'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Meta Strip */}
+            <View style={styles.metaStrip}>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>NIVEL Y GRUPO:</Text>
+                <Text style={styles.metaValue}>{level} • {grade}° "{group}"</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>PERIODO EVALUADO:</Text>
+                <Text style={styles.metaValue}>{formattedPeriodTitle}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>ALUMNOS CON OBSERVACIONES:</Text>
+                <Text style={styles.metaValue}>{studentsWithObservations.length} de {sortedStudents.length}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>DOCENTE:</Text>
+                <Text style={styles.metaValue}>{teacherName || 'DOCENTE'}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Observations Table */}
+          <View style={styles.table}>
+            {/* Table Header Row */}
+            <View style={styles.thRow} wrap={false}>
+              <Text style={[styles.thCell, { width: colNoWidth }]}>#</Text>
+              <Text style={[styles.thCell, { width: 175, textAlign: 'left', paddingLeft: 6 }]}>
+                NOMBRE COMPLETO DEL ALUMNO
+              </Text>
+              <Text style={[styles.thCell, { width: 140, textAlign: 'left', paddingLeft: 6 }]}>
+                ASIGNATURA / ÁREA
+              </Text>
+              <Text style={[styles.thCell, { flex: 1, textAlign: 'left', paddingLeft: 6, borderRightWidth: 0 }]}>
+                OBSERVACIONES Y RECOMENDACIONES PEDAGÓGICAS
+              </Text>
+            </View>
+
+            {/* Observation Rows */}
+            {studentsWithObservations.map((item, stIdx) => {
+              const isEvenStudent = stIdx % 2 === 1;
+              const fullName = `${item.student.lastName || ''} ${item.student.motherLastName || ''} ${item.student.name || ''}`.toUpperCase().trim();
+
+              return item.observations.map((obs, oIdx) => {
+                const isFirst = oIdx === 0;
+                return (
+                  <View
+                    key={`obs-row-${item.student.id}-${oIdx}`}
+                    style={[
+                      styles.tr,
+                      isEvenStudent ? styles.trEven : {},
+                      isFirst && stIdx > 0 ? { borderTopWidth: 1, borderTopColor: '#000000' } : {},
+                      { minHeight: 14, alignItems: 'stretch' }
+                    ]}
+                    wrap={false}
+                  >
+                    <Text style={[
+                      styles.td, 
+                      { 
+                        width: colNoWidth, 
+                        fontSize: 6, 
+                        fontFamily: 'Helvetica-Bold', 
+                        paddingVertical: 3 
+                      }
+                    ]}>
+                      {isFirst ? item.studentIndex : ''}
+                    </Text>
+                    <Text style={[
+                      styles.td, 
+                      { 
+                        width: 175, 
+                        fontSize: 6.2, 
+                        fontFamily: 'Helvetica-Bold', 
+                        textAlign: 'left', 
+                        paddingLeft: 6, 
+                        paddingRight: 4, 
+                        paddingVertical: 3 
+                      }
+                    ]}>
+                      {isFirst ? fullName : ''}
+                    </Text>
+                    <Text style={[
+                      styles.td, 
+                      { 
+                        width: 140, 
+                        fontSize: 5.8, 
+                        fontFamily: 'Helvetica-Bold', 
+                        textAlign: 'left', 
+                        paddingLeft: 6, 
+                        paddingRight: 4, 
+                        paddingVertical: 3,
+                        color: '#111827' 
+                      }
+                    ]}>
+                      {obs.subjectName.toUpperCase()}
+                    </Text>
+                    <Text style={[
+                      styles.td, 
+                      { 
+                        flex: 1, 
+                        fontSize: 6, 
+                        fontFamily: 'Helvetica', 
+                        textAlign: 'left', 
+                        paddingLeft: 6, 
+                        paddingRight: 6, 
+                        paddingVertical: 3, 
+                        lineHeight: 1.25, 
+                        borderRightWidth: 0,
+                        color: '#000000' 
+                      }
+                    ]}>
+                      {obs.observation}
+                    </Text>
+                  </View>
+                );
+              });
+            })}
+          </View>
+
+          {/* Signature */}
+          <View style={styles.signatureRow} wrap={false}>
+            <View style={styles.singleSignatureBox}>
+              <View style={styles.signatureLine} />
+              <Text style={styles.signatureLabel}>FIRMA DEL DOCENTE</Text>
+            </View>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer} fixed>
+            <Text style={styles.footerText}>
+              {settings?.schoolName || 'CONTROL INTEGRAL ESCOLAR'} • {formattedPeriodTitle.toUpperCase()} • OBSERVACIONES
+            </Text>
+            <Text
+              style={styles.pageNumber}
+              render={({ pageNumber, totalPages }) => `Pág. ${pageNumber} de ${totalPages}`}
+              fixed
+            />
+          </View>
+        </Page>
+      )}
     </Document>
   );
 }
