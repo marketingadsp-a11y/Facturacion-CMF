@@ -274,6 +274,19 @@ export default function Settings() {
       grading: { view: true, manage: true },
       timeClock: { view: false, manage: false }
     },
+    Prefecto: {
+      dashboard: { view: true },
+      reception: { view: false, manage: false },
+      students: { view: true, create: false, edit: false, delete: false, viewHistory: false },
+      payments: { view: false, create: false, cancel: false, invoice: false, downloadInvoice: false },
+      expenses: { view: false, create: false, edit: false, delete: false },
+      settings: { view: false, editGeneral: false, editCycles: false, editRules: false, manageUsers: false },
+      announcements: { view: true, manage: false },
+      parents: { view: false, manage: false },
+      controlEscolar: { view: false, manage: false },
+      grading: { view: true, manage: true },
+      timeClock: { view: true, manage: true }
+    },
     'Recepción': {
       dashboard: { view: true },
       reception: { view: true, manage: true },
@@ -3290,6 +3303,8 @@ export default function Settings() {
                   return 'bg-amber-50 text-amber-800 border-amber-200';
                 case 'Docente':
                   return 'bg-blue-50 text-blue-700 border-blue-200';
+                case 'Prefecto':
+                  return 'bg-teal-50 text-teal-700 border-teal-200';
                 case 'Cajero':
                   return 'bg-emerald-50 text-emerald-800 border-emerald-200';
                 case 'Recepción':
@@ -3536,7 +3551,7 @@ export default function Settings() {
 
                     {/* Role Filter Pills */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-                      {(['Todos', 'Superadministrador', 'Administrador', 'Control Escolar', 'Docente', 'Cajero', 'Recepción', 'Visor'] as const).map((role) => {
+                      {(['Todos', 'Superadministrador', 'Administrador', 'Control Escolar', 'Docente', 'Prefecto', 'Cajero', 'Recepción', 'Visor'] as const).map((role) => {
                         const count = role === 'Todos' ? totalCount : allStaffUsers.filter(u => u.role === role).length;
                         const isSelected = userRoleFilter === role;
                         return (
@@ -3712,6 +3727,20 @@ export default function Settings() {
                                           Acceso Total
                                         </span>
                                       )
+                                    ) : user.role === 'Prefecto' ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {(user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])).length > 0 ? (
+                                          (user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])).map(lvl => (
+                                            <span key={lvl} className="text-[10px] font-bold text-teal-850 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                                              {lvl}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                                            Sin niveles asignados
+                                          </span>
+                                        )}
+                                      </div>
                                     ) : (
                                       <span className="text-[10px] text-slate-400 font-bold uppercase">
                                         Institucional
@@ -3780,7 +3809,8 @@ export default function Settings() {
                                             ),
                                             restrictedLevels: user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : []),
                                             restrictedGrades: user.restrictedGrades || (user.assignedGrade ? [user.assignedGrade] : []),
-                                            restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : [])
+                                            restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : []),
+                                            assignedLevels: user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])
                                           });
                                           setShowCurrentPassword(false);
                                           setShowNewPassword(false);
@@ -3871,6 +3901,15 @@ export default function Settings() {
                                   ) : null
                                 )}
 
+                                {user.role === 'Prefecto' && (
+                                  <div className="p-2 bg-teal-50 border border-teal-200 rounded-lg text-xs font-bold text-teal-900 flex items-center justify-between">
+                                    <span className="flex items-center gap-1.5">
+                                      <ShieldCheck size={13} className="text-teal-600" /> 
+                                      Prefectura: {(user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])).join(', ') || 'Sin niveles'}
+                                    </span>
+                                  </div>
+                                )}
+
                                 {/* Permissions count */}
                                 <div className="flex items-center justify-between text-[11px] pt-1">
                                   <span className="text-slate-400 font-bold uppercase text-[10px]">Permisos:</span>
@@ -3911,7 +3950,8 @@ export default function Settings() {
                                         ),
                                         restrictedLevels: user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : []),
                                         restrictedGrades: user.restrictedGrades || (user.assignedGrade ? [user.assignedGrade] : []),
-                                        restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : [])
+                                        restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : []),
+                                        assignedLevels: user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])
                                       });
                                       setShowCurrentPassword(false);
                                       setShowNewPassword(false);
@@ -4133,11 +4173,64 @@ export default function Settings() {
                         <option value="Administrador">Administrador</option>
                         <option value="Control Escolar">Control Escolar</option>
                         <option value="Docente">Docente</option>
+                        <option value="Prefecto">Prefecto</option>
                         <option value="Recepción">Recepción</option>
                         <option value="Visor">Visor</option>
                         <option value="Cajero">Cajero</option>
                       </select>
                   </div>
+
+                  {userFormData.role === 'Prefecto' && (
+                    <div className="p-4 bg-teal-50/80 rounded-2xl border border-teal-200 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ShieldCheck size={16} className="text-teal-600" />
+                        <p className="text-xs font-black text-teal-800 uppercase tracking-wider">
+                          Asignación de Niveles Educativos (Prefectura)
+                        </p>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        Selecciona el o los niveles que gestionará este prefecto para la toma de asistencia al plantel y calificaciones de desarrollo personal (uniforme y conducta).
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
+                        {(settings.academicLevels || ['Secundaria', 'Preparatoria']).map(level => {
+                          const assigned = (userFormData.assignedLevels || userFormData.restrictedLevels || []).includes(level);
+                          return (
+                            <label 
+                              key={level} 
+                              className={cn(
+                                "flex items-center gap-2.5 p-3 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none",
+                                assigned 
+                                  ? "bg-white border-teal-400 text-teal-900 shadow-xs ring-1 ring-teal-400" 
+                                  : "bg-white/60 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-white"
+                              )}
+                            >
+                              <input 
+                                type="checkbox" 
+                                checked={assigned}
+                                onChange={(e) => {
+                                  const current = userFormData.assignedLevels || userFormData.restrictedLevels || [];
+                                  const next = e.target.checked ? [...current, level] : current.filter(l => l !== level);
+                                  setUserFormData({
+                                    ...userFormData, 
+                                    assignedLevels: next,
+                                    restrictedLevels: next,
+                                    assignedLevel: next[0] || ''
+                                  });
+                                }}
+                                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                              />
+                              <span>{level}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {(!userFormData.assignedLevels || userFormData.assignedLevels.length === 0) && (
+                        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded-lg font-medium">
+                          ⚠️ Recuerda seleccionar al menos un nivel educativo (ej. Secundaria o Preparatoria) para este prefecto.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {userFormData.role === 'Control Escolar' && (
                     <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 space-y-4">
@@ -6018,6 +6111,9 @@ export default function Settings() {
                             : {},
                           teacherGroupAccess: isMultiGroup ? 'multiple' : (userFormData.teacherGroupAccess || 'single'),
                           restrictedLevels: finalRestrictedLevels.length > 0 ? finalRestrictedLevels : (userFormData.restrictedLevels || []),
+                          assignedLevels: userFormData.role === 'Prefecto' 
+                            ? (userFormData.assignedLevels || userFormData.restrictedLevels || (userFormData.assignedLevel ? [userFormData.assignedLevel] : []))
+                            : (userFormData.assignedLevels || []),
                           restrictedGrades: finalRestrictedGrades.length > 0 ? finalRestrictedGrades : (userFormData.restrictedGrades || []),
                           restrictedGroups: finalRestrictedGroups,
                           assignedLevel: userFormData.assignedLevel || (finalRestrictedLevels[0] || 'General'),
@@ -6336,6 +6432,31 @@ export default function Settings() {
                           )}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {selectedUserDetail.role === 'Prefecto' && (
+                    <div className="p-4 bg-teal-50/70 rounded-xl border border-teal-200 space-y-3">
+                      <p className="text-[10px] font-black text-teal-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-teal-600" />
+                        Niveles Asignados a Prefectura
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        Niveles educativos donde este prefecto tiene acceso para registrar asistencia al plantel y evaluar aspectos formativos (conducta y uniforme):
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {(selectedUserDetail.assignedLevels || selectedUserDetail.restrictedLevels || (selectedUserDetail.assignedLevel ? [selectedUserDetail.assignedLevel] : [])).length > 0 ? (
+                          (selectedUserDetail.assignedLevels || selectedUserDetail.restrictedLevels || (selectedUserDetail.assignedLevel ? [selectedUserDetail.assignedLevel] : [])).map(lvl => (
+                            <span key={lvl} className="px-3 py-1 rounded-lg bg-white border border-teal-300 text-teal-900 text-xs font-bold shadow-xs">
+                              {lvl}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg font-medium">
+                            Sin niveles específicos asignados (acceso a todos los niveles)
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
 

@@ -68,7 +68,7 @@ export interface Expense {
   createdAt: Timestamp;
 }
 
-export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre' | 'Control Escolar' | 'Docente' | 'Recepción';
+export type UserRole = 'Superadministrador' | 'Administrador' | 'Visor' | 'Cajero' | 'Padre' | 'Control Escolar' | 'Docente' | 'Recepción' | 'Prefecto';
 
 export interface AppPermissions {
   dashboard: {
@@ -202,6 +202,7 @@ export interface AppUser {
   role: UserRole;
   permissions: AppPermissions;
   assignedLevel?: string;
+  assignedLevels?: string[];
   assignedGrade?: string;
   assignedGroup?: string;
   employeeNumber?: string;

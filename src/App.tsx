@@ -39,7 +39,8 @@ import {
   SlidersHorizontal,
   ScrollText,
   Heart,
-  Calendar
+  Calendar,
+  ShieldCheck
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -56,6 +57,7 @@ import Login from './pages/Login';
 import AcademicControl from './pages/AcademicControl';
 import EnrollmentForm from './pages/EnrollmentForm';
 import TeacherPortal from './pages/TeacherPortal';
+import PrefectPortal from './pages/PrefectPortal';
 import Reception from './pages/Reception';
 import ChecadorAdmin from './pages/ChecadorAdmin';
 import ChecadorKiosk from './pages/ChecadorKiosk';
@@ -183,6 +185,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   }, [user?.uid, loading, !!userProfile]);
   
   const isParent = userProfile?.role === 'Padre';
+  const isPrefect = userProfile?.role === 'Prefecto';
 
   useEffect(() => {
     if (isParent && userProfile?.email) {
@@ -201,6 +204,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Avisos', path: '/?tab=avisos', icon: BellRing, section: 'dashboard', action: 'view' },
     { name: 'Facturas', path: '/?tab=facturas', icon: FileText, section: 'dashboard', action: 'view' },
     { name: 'Datos Fiscales', path: '/?tab=billing', icon: CreditCard, section: 'dashboard', action: 'view' },
+  ] : isPrefect ? [
+    { name: 'Prefectura', path: '/prefectura', icon: ShieldCheck, section: 'dashboard', action: 'view' },
+    { name: 'Checador Alumnos', path: '/checador-alumnos', icon: ClipboardList, section: 'timeClock', action: 'view' },
   ] : [
     { name: 'Panel', path: '/', icon: Activity, section: 'dashboard', action: 'view' },
     { name: 'Alumnos', path: '/alumnos', icon: UserRound, section: 'students', action: 'view' },
@@ -211,6 +217,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Checador', path: '/checador-admin', icon: UserRound, section: 'timeClock', action: 'view' },
     { name: 'Checador Alumnos', path: '/checador-alumnos', icon: ClipboardList, section: 'timeClock', action: 'view' },
     { name: 'Control Escolar', path: '/control-escolar', icon: FileBadge, section: 'controlEscolar', action: 'view' },
+    { name: 'Prefectura', path: '/prefectura', icon: ShieldCheck, section: 'controlEscolar', action: 'view' },
     { name: 'Docente', path: '/docentes', icon: Presentation, section: 'grading', action: 'view' },
     { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/ajustes', icon: SlidersHorizontal, section: 'settings', action: 'view' },
@@ -622,7 +629,16 @@ const AppContent = () => {
         element={
           <ProtectedRoute>
             {userProfile?.role === 'Padre' ? <ParentDashboard /> : 
-             userProfile?.role === 'Docente' ? <TeacherPortal appSettings={appSettings} /> : <Dashboard />}
+             userProfile?.role === 'Docente' ? <TeacherPortal appSettings={appSettings} /> : 
+             userProfile?.role === 'Prefecto' ? <PrefectPortal appSettings={appSettings} /> : <Dashboard />}
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/prefectura" 
+        element={
+          <ProtectedRoute>
+            {isParent ? <Navigate to="/" /> : <PrefectPortal appSettings={appSettings} />}
           </ProtectedRoute>
         } 
       />

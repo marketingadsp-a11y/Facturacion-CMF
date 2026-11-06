@@ -162,6 +162,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     if (!userProfile) return false;
     if (userProfile.role === 'Superadministrador') return true;
     if (userProfile.role === 'Control Escolar' && (section === 'grading' || section === 'controlEscolar')) return true;
+    if (userProfile.role === 'Prefecto' && (section === 'timeClock' || section === 'grading' || section === 'dashboard' || (section === 'students' && action === 'view'))) return true;
     
     const sectionPerms = userProfile.permissions?.[section] as any;
     if (!sectionPerms) return false;
