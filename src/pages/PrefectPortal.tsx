@@ -998,14 +998,14 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200/80 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Main Navigation Tabs */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto overflow-x-auto">
+          <div className="flex items-center gap-2 bg-slate-100/90 p-2 rounded-2xl border border-slate-200/90 w-full sm:w-auto overflow-x-auto shadow-inner">
             <button
               onClick={() => setActiveTab('attendance')}
               className={cn(
-                "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
+                "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'attendance'
-                  ? "bg-white text-teal-850 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                  ? "bg-teal-700 text-white shadow-md shadow-teal-900/25 border border-teal-800 ring-2 ring-teal-500/20"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 shadow-2xs"
               )}
             >
               Asistencia al Plantel
@@ -1014,10 +1014,10 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
             <button
               onClick={() => setActiveTab('development')}
               className={cn(
-                "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
+                "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'development'
-                  ? "bg-white text-teal-850 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                  ? "bg-teal-700 text-white shadow-md shadow-teal-900/25 border border-teal-800 ring-2 ring-teal-500/20"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 shadow-2xs"
               )}
             >
               Desarrollo Personal (Conducta y Uniforme)
@@ -1026,10 +1026,10 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
             <button
               onClick={() => setActiveTab('summary')}
               className={cn(
-                "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
+                "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'summary'
-                  ? "bg-white text-teal-850 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                  ? "bg-teal-700 text-white shadow-md shadow-teal-900/25 border border-teal-800 ring-2 ring-teal-500/20"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 shadow-2xs"
               )}
             >
               Resumen y Reportes
