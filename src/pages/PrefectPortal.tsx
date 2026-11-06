@@ -63,6 +63,41 @@ import {
   HelpCircle
 } from 'lucide-react';
 
+// Weekend & School Day Helper Functions
+export const isWeekend = (dateStr: string): boolean => {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();
+  return day === 0 || day === 6;
+};
+
+export const getNearestSchoolDay = (date: Date = new Date()): string => {
+  const d = new Date(date);
+  const day = d.getDay();
+  if (day === 6) {
+    d.setDate(d.getDate() - 1);
+  } else if (day === 0) {
+    d.setDate(d.getDate() - 2);
+  }
+  return format(d, 'yyyy-MM-dd');
+};
+
+export const getNextSchoolDay = (dateStr: string): string => {
+  let d = new Date(dateStr + 'T12:00:00');
+  do {
+    d = addDays(d, 1);
+  } while (d.getDay() === 0 || d.getDay() === 6);
+  return format(d, 'yyyy-MM-dd');
+};
+
+export const getPrevSchoolDay = (dateStr: string): string => {
+  let d = new Date(dateStr + 'T12:00:00');
+  do {
+    d = subDays(d, 1);
+  } while (d.getDay() === 0 || d.getDay() === 6);
+  return format(d, 'yyyy-MM-dd');
+};
+
 interface PrefectPortalProps {
   appSettings?: AppSettings | null;
 }
@@ -91,8 +126,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
   const [selectedGroup, setSelectedGroup] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Attendance Date
-  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  // Attendance Date (defaults to nearest school day, avoiding weekends)
+  const [selectedDate, setSelectedDate] = useState<string>(() => getNearestSchoolDay(new Date()));
 
   // Evaluation Period
   const [selectedPeriod, setSelectedPeriod] = useState<number>(1);
@@ -284,13 +319,34 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     return map;
   }, [classLocks, evalConfig.periodCount, selectedLevel, selectedGrade, selectedGroup, devSubjects]);
 
-  // Auto-advance to the default period (first open period or dateTargetPeriod)
+  // Effective period for registering attendance:
+  // If the standard period for the date is closed by prefectura, automatically register in the first available/open period!
+  const effectiveAttendancePeriod = useMemo(() => {
+    // 1. If dateTargetPeriod is open, use it directly
+    if (!lockedPeriodsMap[dateTargetPeriod]) {
+      return dateTargetPeriod;
+    }
+
+    // 2. If dateTargetPeriod is closed, find the first available (unlocked) period >= dateTargetPeriod
+    const allPeriods = Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1);
+    const nextOpen = allPeriods.find(p => p >= dateTargetPeriod && !lockedPeriodsMap[p]);
+    if (nextOpen) return nextOpen;
+
+    // 3. Otherwise find any open period
+    const anyOpen = allPeriods.find(p => !lockedPeriodsMap[p]);
+    if (anyOpen) return anyOpen;
+
+    // 4. Fallback if all periods are closed
+    return dateTargetPeriod;
+  }, [dateTargetPeriod, lockedPeriodsMap, evalConfig.periodCount]);
+
+  // Auto-advance to the default period (first open period or effectiveAttendancePeriod)
   useEffect(() => {
     if (hasManuallySelectedPeriodRef.current) return;
     
-    // Check if the period corresponding to today/selected date is unlocked
-    if (!lockedPeriodsMap[dateTargetPeriod]) {
-      setSelectedPeriod(dateTargetPeriod);
+    // Check if the effective period corresponding to today/selected date is unlocked
+    if (!lockedPeriodsMap[effectiveAttendancePeriod]) {
+      setSelectedPeriod(effectiveAttendancePeriod);
       return;
     }
 
@@ -301,10 +357,10 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     if (firstOpen) {
       setSelectedPeriod(firstOpen);
     } else {
-      // If all periods are locked, stay on the last period or dateTargetPeriod
-      setSelectedPeriod(dateTargetPeriod);
+      // If all periods are locked, stay on effectiveAttendancePeriod
+      setSelectedPeriod(effectiveAttendancePeriod);
     }
-  }, [dateTargetPeriod, lockedPeriodsMap, evalConfig.periodCount]);
+  }, [effectiveAttendancePeriod, lockedPeriodsMap, evalConfig.periodCount]);
 
   const isCurrentPeriodLocked = useMemo(() => {
     return Boolean(lockedPeriodsMap[selectedPeriod]);
@@ -423,10 +479,11 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     return { total, present, absent, tardy, excused, registered, percentage };
   }, [filteredStudents, attendanceList]);
 
-  // Helper to calculate student cumulative school absences in a period
+  // Helper to calculate student cumulative school absences in a period (excluding weekends)
   const getStudentAbsenceCountForPeriod = useCallback((studentId: string, period: number): number => {
     return cycleAbsences.filter(att => {
       if (att.studentId !== studentId) return false;
+      if (isWeekend(att.date)) return false; // Sábados y domingos no cuentan
       const attPeriod = att.period || getPeriodForDate(att.date, evalConfig.periodCount);
       return attPeriod === period;
     }).length;
@@ -434,10 +491,18 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
 
   // Set single attendance record
   const handleSetAttendance = async (student: Student, newStatus: 'Asistió' | 'Falta' | 'Retardo' | 'Justificado', reason?: string) => {
+    if (isWeekend(selectedDate)) {
+      toast.error("No se puede registrar asistencia en fines de semana (días inhábiles).");
+      return;
+    }
+    if (lockedPeriodsMap[effectiveAttendancePeriod]) {
+      toast.warn(`El Periodo ${effectiveAttendancePeriod} se encuentra cerrado.`);
+      return;
+    }
     if (!currentCycleId) return;
 
     const attId = `${student.id}_${selectedDate}`;
-    const targetPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+    const targetPeriod = effectiveAttendancePeriod;
 
     try {
       setIsAutoSaving(true);
@@ -470,8 +535,12 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      // 3. Recalculate absence count in grades collection for targetPeriod
-      const otherAbsences = cycleAbsences.filter(a => !(a.studentId === student.id && a.date === selectedDate));
+      // 3. Recalculate absence count in grades collection for targetPeriod (excluding weekends)
+      const otherAbsences = cycleAbsences.filter(a => {
+        if (a.studentId === student.id && a.date === selectedDate) return false;
+        if (isWeekend(a.date)) return false;
+        return true;
+      });
       const newAbsenceCount = otherAbsences.filter(a => {
         if (a.studentId !== student.id) return false;
         const p = a.period || getPeriodForDate(a.date, evalConfig.periodCount);
@@ -507,12 +576,20 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
 
   // Mark all students as 'Asistió'
   const handleMarkAllPresent = async () => {
+    if (isWeekend(selectedDate)) {
+      toast.error("No se puede registrar asistencia en fines de semana (días inhábiles).");
+      return;
+    }
+    if (lockedPeriodsMap[effectiveAttendancePeriod]) {
+      toast.warn(`El Periodo ${effectiveAttendancePeriod} se encuentra cerrado.`);
+      return;
+    }
     if (!currentCycleId || filteredStudents.length === 0) return;
 
     try {
       setIsAutoSaving(true);
       const batch = writeBatch(db);
-      const targetPeriod = getPeriodForDate(selectedDate, evalConfig.periodCount);
+      const targetPeriod = effectiveAttendancePeriod;
 
       filteredStudents.forEach(student => {
         const attId = `${student.id}_${selectedDate}`;
@@ -969,33 +1046,55 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           {/* Contextual Controller based on Tab: Date Picker for Attendance, Period Selector for Development */}
           {activeTab === 'attendance' ? (
             <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Fecha de Asistencia</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-slate-500 uppercase">Fecha de Asistencia</label>
+                <span className="text-[11px] font-bold text-teal-700 capitalize">
+                  {format(new Date(selectedDate + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}
+                </span>
+              </div>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setSelectedDate(subDays(new Date(selectedDate + 'T12:00:00'), 1).toISOString().split('T')[0])}
+                  onClick={() => setSelectedDate(getPrevSchoolDay(selectedDate))}
                   className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer"
-                  title="Día anterior"
+                  title="Día hábil anterior (omite sábados y domingos)"
                 >
                   <ChevronLeft size={14} />
                 </button>
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    if (isWeekend(val)) {
+                      toast.warn("Los sábados y domingos son días inhábiles. Se seleccionó el día hábil más cercano.");
+                      setSelectedDate(getNearestSchoolDay(new Date(val + 'T12:00:00')));
+                    } else {
+                      setSelectedDate(val);
+                    }
+                  }}
                   className="flex-1 px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
                 />
                 <button
                   type="button"
-                  onClick={() => setSelectedDate(addDays(new Date(selectedDate + 'T12:00:00'), 1).toISOString().split('T')[0])}
+                  onClick={() => setSelectedDate(getNextSchoolDay(selectedDate))}
                   className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer"
-                  title="Día siguiente"
+                  title="Día hábil siguiente (omite sábados y domingos)"
                 >
                   <ChevronRight size={14} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedDate(format(new Date(), 'yyyy-MM-dd'))}
+                  onClick={() => {
+                    const today = new Date();
+                    if (today.getDay() === 0 || today.getDay() === 6) {
+                      toast.info("Hoy es fin de semana (inhábil). Mostrando viernes.");
+                      setSelectedDate(getNearestSchoolDay(today));
+                    } else {
+                      setSelectedDate(format(today, 'yyyy-MM-dd'));
+                    }
+                  }}
                   className="px-2.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold cursor-pointer"
                   title="Hoy"
                 >
@@ -1113,6 +1212,49 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
       {/* TAB 1: ASISTENCIA AL PLANTEL (GENERAL) */}
       {activeTab === 'attendance' && (
         <div className="space-y-4">
+          {/* Weekend warning banner */}
+          {isWeekend(selectedDate) && (
+            <div className="bg-amber-50/90 border border-amber-300 text-amber-900 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider">
+                    Fin de semana (Día Inhábil) — No se registra asistencia
+                  </p>
+                  <p className="text-[11px] text-amber-800/80">
+                    Los sábados y domingos no cuentan para el registro ni cálculo de inasistencias escolares.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDate(getNearestSchoolDay(new Date(selectedDate + 'T12:00:00')))}
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer text-center"
+              >
+                Ir a día hábil (Viernes)
+              </button>
+            </div>
+          )}
+
+          {/* Period closed warning banner if effectiveAttendancePeriod is locked */}
+          {Boolean(lockedPeriodsMap[effectiveAttendancePeriod]) && (
+            <div className="bg-rose-50/90 border border-rose-300 text-rose-900 rounded-2xl p-4 flex items-center gap-3 shadow-xs">
+              <div className="w-9 h-9 rounded-xl bg-rose-200/80 text-rose-800 flex items-center justify-center shrink-0">
+                <Lock size={18} />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider">
+                  Periodo {effectiveAttendancePeriod} Bloqueado / Cerrado
+                </p>
+                <p className="text-[11px] text-rose-800/80">
+                  Para modificar o registrar asistencia en este periodo, puedes abrirlo desde la pestaña de "Desarrollo Personal".
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
@@ -1152,7 +1294,13 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Acción Rápida</span>
               <button
                 onClick={handleMarkAllPresent}
-                className="mt-1 w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1"
+                disabled={isWeekend(selectedDate) || Boolean(lockedPeriodsMap[effectiveAttendancePeriod])}
+                className={cn(
+                  "mt-1 w-full py-1.5 px-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1",
+                  isWeekend(selectedDate) || Boolean(lockedPeriodsMap[effectiveAttendancePeriod])
+                    ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed"
+                    : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                )}
               >
                 <Check size={13} /> Todos Asistió
               </button>
@@ -1171,8 +1319,19 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                 </p>
               </div>
 
-              <div className="text-xs text-slate-500 font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                Periodo actual: <span className="text-teal-700 font-black">P{dateTargetPeriod}</span>
+              <div className="flex items-center gap-2 text-xs font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                <span className="text-slate-500">Periodo activo:</span>
+                <span className="text-teal-700 font-black">P{effectiveAttendancePeriod}</span>
+                {Boolean(lockedPeriodsMap[dateTargetPeriod]) && dateTargetPeriod !== effectiveAttendancePeriod && (
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                    P{dateTargetPeriod} cerrado
+                  </span>
+                )}
+                {Boolean(lockedPeriodsMap[effectiveAttendancePeriod]) && (
+                  <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <Lock size={10} /> Cerrado
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1183,7 +1342,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                     <th className="py-3.5 px-4 w-12 text-center">#</th>
                     <th className="py-3.5 px-4">Alumno</th>
                     <th className="py-3.5 px-4">Nivel / Grado / Grupo</th>
-                    <th className="py-3.5 px-4 text-center">Inasistencias en P{dateTargetPeriod}</th>
+                    <th className="py-3.5 px-4 text-center">Inasistencias en P{effectiveAttendancePeriod}</th>
                     <th className="py-3.5 px-4 text-center">Estado de Asistencia Hoy</th>
                     <th className="py-3.5 px-4">Justificación / Motivo</th>
                   </tr>
@@ -1200,7 +1359,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                     filteredStudents.map((st, idx) => {
                       const att = attendanceList.find(a => a.studentId === st.id);
                       const currentStatus = att?.status || 'Asistió';
-                      const periodAbsences = getStudentAbsenceCountForPeriod(st.id, dateTargetPeriod);
+                      const periodAbsences = getStudentAbsenceCountForPeriod(st.id, effectiveAttendancePeriod);
+                      const isAttendanceDisabled = isWeekend(selectedDate) || Boolean(lockedPeriodsMap[effectiveAttendancePeriod]);
 
                       return (
                         <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1255,11 +1415,15 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               {/* Asistió */}
                               <button
                                 onClick={() => handleSetAttendance(st, 'Asistió')}
+                                disabled={isAttendanceDisabled}
                                 className={cn(
-                                  "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                                  "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                  isAttendanceDisabled && "cursor-not-allowed",
                                   currentStatus === 'Asistió'
                                     ? "bg-emerald-600 text-white shadow-xs"
-                                    : "text-slate-600 hover:text-emerald-700 hover:bg-white/80"
+                                    : isAttendanceDisabled
+                                      ? "text-slate-400 opacity-60"
+                                      : "text-slate-600 hover:text-emerald-700 hover:bg-white/80 cursor-pointer"
                                 )}
                                 title="Marcar como Asistió"
                               >
@@ -1269,11 +1433,15 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               {/* Falta */}
                               <button
                                 onClick={() => handleSetAttendance(st, 'Falta')}
+                                disabled={isAttendanceDisabled}
                                 className={cn(
-                                  "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                                  "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                  isAttendanceDisabled && "cursor-not-allowed",
                                   currentStatus === 'Falta'
                                     ? "bg-rose-600 text-white shadow-xs"
-                                    : "text-slate-600 hover:text-rose-700 hover:bg-white/80"
+                                    : isAttendanceDisabled
+                                      ? "text-slate-400 opacity-60"
+                                      : "text-slate-600 hover:text-rose-700 hover:bg-white/80 cursor-pointer"
                                 )}
                                 title="Marcar con Falta"
                               >
@@ -1283,14 +1451,19 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               {/* Retardo */}
                               <button
                                 onClick={() => {
+                                  if (isAttendanceDisabled) return;
                                   setJustifyingStudent({ student: st, status: 'Retardo' });
                                   setJustificationReason(att?.justificationReason || '');
                                 }}
+                                disabled={isAttendanceDisabled}
                                 className={cn(
-                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                  isAttendanceDisabled && "cursor-not-allowed",
                                   currentStatus === 'Retardo'
                                     ? "bg-amber-500 text-white shadow-xs"
-                                    : "text-slate-600 hover:text-amber-700 hover:bg-white/80"
+                                    : isAttendanceDisabled
+                                      ? "text-slate-400 opacity-60"
+                                      : "text-slate-600 hover:text-amber-700 hover:bg-white/80 cursor-pointer"
                                 )}
                                 title="Registrar Retardo"
                               >
@@ -1300,14 +1473,19 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               {/* Justificado */}
                               <button
                                 onClick={() => {
+                                  if (isAttendanceDisabled) return;
                                   setJustifyingStudent({ student: st, status: 'Justificado' });
                                   setJustificationReason(att?.justificationReason || '');
                                 }}
+                                disabled={isAttendanceDisabled}
                                 className={cn(
-                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                                  isAttendanceDisabled && "cursor-not-allowed",
                                   currentStatus === 'Justificado'
                                     ? "bg-blue-600 text-white shadow-xs"
-                                    : "text-slate-600 hover:text-blue-700 hover:bg-white/80"
+                                    : isAttendanceDisabled
+                                      ? "text-slate-400 opacity-60"
+                                      : "text-slate-600 hover:text-blue-700 hover:bg-white/80 cursor-pointer"
                                 )}
                                 title="Registrar Justificante"
                               >
