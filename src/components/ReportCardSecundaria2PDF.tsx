@@ -5,7 +5,8 @@ import {
   getLevelEvaluationConfig, 
   gradeToNumeric, 
   formatAverage,
-  getEffectiveSubjectGrade 
+  getEffectiveSubjectGrade,
+  isAttendanceIncludedInReportCard
 } from '../lib/evaluationUtils';
 
 const BORDER_COLOR = '#000000';
@@ -819,7 +820,10 @@ export default function ReportCardSecundaria2PDF({
                 </View>
                 {[1, 2, 3].map(p => {
                   const bg = grades.find(g => Number(g.bimestre) === p);
-                  const val = bg?.attendance !== undefined && bg?.attendance !== null && bg?.attendance !== '' ? bg.attendance : 0;
+                  const isPeriodAttendanceIncluded = isAttendanceIncludedInReportCard(evalConfig, student.level, p);
+                  const val = isPeriodAttendanceIncluded
+                    ? (bg?.attendance !== undefined && bg?.attendance !== null && bg?.attendance !== '' ? bg.attendance : 0)
+                    : '-';
                   const isLast = p === 3;
                   return (
                     <View 

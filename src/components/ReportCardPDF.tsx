@@ -11,7 +11,8 @@ import {
   getEffectiveSubjectGrade, 
   isObservationsLevel, 
   getSubjectObservation,
-  isStudentEnrolledInSubject
+  isStudentEnrolledInSubject,
+  isAttendanceIncludedInReportCard
 } from '../lib/evaluationUtils';
 
 const styles = StyleSheet.create({
@@ -677,6 +678,9 @@ export default function ReportCardPDF({
 
     const subjectObj = subjects.find(s => s.name?.toLowerCase().trim() === subject.toLowerCase().trim());
     if (subjectObj?.isAttendanceCount && bg.attendance !== undefined && bg.attendance !== null && bg.attendance !== '') {
+      if (!isAttendanceIncludedInReportCard(evalConfig, student.level, Number(bimestre))) {
+        return '-';
+      }
       return bg.attendance;
     }
 
@@ -685,6 +689,9 @@ export default function ReportCardPDF({
       const field = behaviorMap[normKey];
       const val = bg[field];
       if (val !== undefined && val !== null && val !== '') {
+        if (field === 'attendance' && !isAttendanceIncludedInReportCard(evalConfig, student.level, Number(bimestre))) {
+          return '-';
+        }
         if (!isAttendanceAspect(subject)) {
           if (val === 0 || val === '0' || (!isNaN(parseFloat(String(val))) && parseFloat(String(val)) < 1)) {
             return '-';

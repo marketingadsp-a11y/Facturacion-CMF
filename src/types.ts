@@ -365,6 +365,7 @@ export interface LevelEvaluationConfig {
   enableSubjectAttendance?: boolean; // Permite pase de lista individual por materia
   roundAverages?: boolean; // Habilita redondeo estándar de promedios (ej. 9.5 -> 10, 9.4 -> 9.0)
   roundLinkedSubjects?: boolean; // Habilita redondeo en materias que suman a una materia académica (ej. Inglés a Lenguajes)
+  attendancePeriodsInReportCard?: number[]; // Periodos donde las inasistencias se suman/muestran en la boleta (ej. [1, 2, 3] o []). Si no incluye el periodo, no cuentan.
 }
 
 export interface TeacherActivity {

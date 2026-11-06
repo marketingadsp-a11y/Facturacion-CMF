@@ -198,6 +198,10 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
     const roundLinkedSubjects = conf.roundLinkedSubjects !== undefined
       ? Boolean(conf.roundLinkedSubjects)
       : false;
+    const isSecundariaLevel = /secundaria/i.test(trimmedLevel);
+    const attendancePeriodsInReportCard = conf.attendancePeriodsInReportCard !== undefined
+      ? (Array.isArray(conf.attendancePeriodsInReportCard) ? conf.attendancePeriodsInReportCard : [])
+      : (isSecundariaLevel ? [] : Array.from({ length: count }, (_, i) => i + 1));
 
     return {
       periodCount: count,
@@ -207,12 +211,14 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       enableActivities,
       enableSubjectAttendance,
       roundAverages,
-      roundLinkedSubjects
+      roundLinkedSubjects,
+      attendancePeriodsInReportCard
     };
   }
 
   // 2. Intelligent defaults based on Mexican standard educational levels:
   const lLower = trimmedLevel;
+  const isSecundariaDefault = lLower.includes('secundaria');
   if (lLower.includes('prepa') || lLower.includes('bachiller')) {
     // Preparatoria / Bachillerato: 5 bimestres, 0 a 100
     return {
@@ -223,7 +229,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
       roundAverages: false,
-      roundLinkedSubjects: false
+      roundLinkedSubjects: false,
+      attendancePeriodsInReportCard: [1, 2, 3, 4, 5]
     };
   } else if (lLower.includes('universidad') || lLower.includes('licenciatura')) {
     return {
@@ -234,7 +241,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
       roundAverages: false,
-      roundLinkedSubjects: false
+      roundLinkedSubjects: false,
+      attendancePeriodsInReportCard: [1, 2]
     };
   } else if (
     lLower.includes('preescolar') ||
@@ -252,7 +260,8 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
       roundAverages: false,
-      roundLinkedSubjects: false
+      roundLinkedSubjects: false,
+      attendancePeriodsInReportCard: [1, 2, 3]
     };
   } else {
     // Primaria, Secundaria: 3 Trimestres (SEP estándar), 0 a 10
@@ -264,9 +273,37 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       enableActivities: activitiesFallback,
       enableSubjectAttendance: subjectAttendanceFallback,
       roundAverages: false,
-      roundLinkedSubjects: false
+      roundLinkedSubjects: false,
+      // En Secundaria por defecto las inasistencias NO cuentan en la boleta; en Primaria u otros sí cuentan
+      attendancePeriodsInReportCard: isSecundariaDefault ? [] : [1, 2, 3]
     };
   }
+}
+
+/**
+ * Checks whether attendance / absences should be counted / summed in the report card (boleta)
+ * for a specific period of a given educational level.
+ * Defaults to FALSE for Secundaria (per user requirement) and TRUE for other levels if not configured.
+ */
+export function isAttendanceIncludedInReportCard(
+  evalConfig: LevelEvaluationConfig | null | undefined,
+  levelName?: string,
+  period?: number
+): boolean {
+  if (period === undefined || period === null) return false;
+  const isSecundaria = levelName ? /secundaria/i.test(levelName) : false;
+
+  if (evalConfig?.attendancePeriodsInReportCard !== undefined) {
+    return Array.isArray(evalConfig.attendancePeriodsInReportCard) && evalConfig.attendancePeriodsInReportCard.includes(Number(period));
+  }
+
+  // Fallback defaults:
+  // For Secundaria, absences do NOT count by default on the boleta
+  if (isSecundaria) {
+    return false;
+  }
+  // For other levels, default to including all periods
+  return true;
 }
 
 /**

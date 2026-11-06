@@ -54,7 +54,8 @@ import {
   ClipboardList,
   Upload,
   Calculator,
-  Link2
+  Link2,
+  UserX
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -2589,6 +2590,143 @@ export default function Settings() {
                                 </button>
                               );
                             })()}
+                          </div>
+
+                          {/* Inasistencias en Boleta de Calificaciones (por Periodo) */}
+                          <div className="pt-3 border-t border-slate-100 flex flex-col gap-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5 ml-1 flex items-center gap-1.5">
+                                  <UserX size={13} className="text-rose-600" />
+                                  Inasistencias en Boleta de Calificaciones (por Periodo)
+                                </label>
+                                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                                  Elige en qué periodos se sumarán y mostrarán las inasistencias en la boleta. Si un periodo está desactivado, no contará en la boleta.
+                                  {/secundaria/i.test(level) && (
+                                    <span className="block text-[11px] text-indigo-700 font-bold mt-0.5">
+                                      * En Secundaria (1ro, 2do y 3ro), por defecto las inasistencias están desactivadas.
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const allPeriods = Array.from({ length: currentConfig.periodCount }, (_, i) => i + 1);
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      attendancePeriodsInReportCard: allPeriods
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    const newSettings: AppSettings = { ...settings, levelEvaluationConfig: newMap };
+                                    setSettings(newSettings);
+                                    try {
+                                      await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                      toast.success(`Inasistencias activadas en todos los periodos de ${level}`);
+                                    } catch (e) {
+                                      console.error("Error saving attendance periods:", e);
+                                      toast.error("Error al guardar la configuración");
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold transition-all border border-slate-200"
+                                  title="Sumar inasistencias en todos los periodos"
+                                >
+                                  Sumar en todos
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updated: LevelEvaluationConfig = {
+                                      ...currentConfig,
+                                      attendancePeriodsInReportCard: []
+                                    };
+                                    const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                    newMap[level] = updated;
+                                    const newSettings: AppSettings = { ...settings, levelEvaluationConfig: newMap };
+                                    setSettings(newSettings);
+                                    try {
+                                      await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                      toast.success(`Inasistencias desactivadas en la boleta para ${level}`);
+                                    } catch (e) {
+                                      console.error("Error saving attendance periods:", e);
+                                      toast.error("Error al guardar la configuración");
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-md text-[10px] font-bold border border-rose-200 transition-all"
+                                  title="No contar inasistencias en ningún periodo"
+                                >
+                                  No contar en ninguno
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                              {Array.from({ length: currentConfig.periodCount }, (_, i) => i + 1).map((pNum) => {
+                                const pName = currentConfig.periodNames?.[pNum - 1] || `${pNum}° Periodo`;
+                                const isSecundaria = /secundaria/i.test(level);
+                                const isPeriodActive = currentConfig.attendancePeriodsInReportCard !== undefined
+                                  ? currentConfig.attendancePeriodsInReportCard.includes(pNum)
+                                  : (isSecundaria ? false : true);
+
+                                return (
+                                  <button
+                                    key={`att-period-${level}-${pNum}`}
+                                    type="button"
+                                    onClick={async () => {
+                                      const currentList = currentConfig.attendancePeriodsInReportCard !== undefined
+                                        ? currentConfig.attendancePeriodsInReportCard
+                                        : (isSecundaria ? [] : Array.from({ length: currentConfig.periodCount }, (_, i) => i + 1));
+                                      
+                                      const nextList = currentList.includes(pNum)
+                                        ? currentList.filter(p => p !== pNum)
+                                        : [...currentList, pNum].sort((a, b) => a - b);
+
+                                      const updated: LevelEvaluationConfig = {
+                                        ...currentConfig,
+                                        attendancePeriodsInReportCard: nextList
+                                      };
+                                      const newMap = { ...(settings.levelEvaluationConfig || {}) };
+                                      newMap[level] = updated;
+                                      const newSettings: AppSettings = { ...settings, levelEvaluationConfig: newMap };
+                                      setSettings(newSettings);
+                                      try {
+                                        await setDoc(doc(db, 'settings', 'general'), newSettings, { merge: true });
+                                        toast.success(`${pName} (${level}): ${nextList.includes(pNum) ? 'Inasistencias cuentan en boleta' : 'Inasistencias no cuentan'}`);
+                                      } catch (e) {
+                                        console.error("Error saving attendance period:", e);
+                                        toast.error("Error al guardar la configuración");
+                                      }
+                                    }}
+                                    className={cn(
+                                      "px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-between border text-left",
+                                      isPeriodActive
+                                        ? "bg-emerald-50 text-emerald-900 border-emerald-300 shadow-xs hover:bg-emerald-100"
+                                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900"
+                                    )}
+                                  >
+                                    <div className="flex flex-col min-w-0 pr-2">
+                                      <span className="text-[11px] font-bold truncate">{pName}</span>
+                                      <span className={cn(
+                                        "text-[9px] font-black uppercase tracking-wider",
+                                        isPeriodActive ? "text-emerald-700" : "text-slate-400"
+                                      )}>
+                                        {isPeriodActive ? "Suma en boleta" : "No cuenta"}
+                                      </span>
+                                    </div>
+                                    <div className={cn(
+                                      "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0",
+                                      isPeriodActive ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-400"
+                                    )}>
+                                      {isPeriodActive ? "✓" : "✕"}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
                       );
