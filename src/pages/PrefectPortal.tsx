@@ -911,7 +911,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
   return (
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Banner / Header */}
-      <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden flex items-center justify-between">
+      <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
             Panel de Prefectura
@@ -921,6 +921,69 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               Responsable: {userProfile.name}
             </p>
           )}
+        </div>
+
+        {/* Date Selector placed directly on the right side of the header banner */}
+        <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-2.5 sm:px-4 sm:py-2.5 flex flex-col gap-1.5 shadow-inner shrink-0">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-[10px] font-bold text-teal-300 uppercase tracking-wider flex items-center gap-1">
+              <Calendar size={12} className="text-teal-400" />
+              Fecha de Asistencia
+            </span>
+            <span className="text-xs font-bold text-slate-100 capitalize">
+              {format(new Date(selectedDate + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedDate(getPrevSchoolDay(selectedDate))}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors cursor-pointer"
+              title="Día hábil anterior (omite sábados y domingos)"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                if (isWeekend(val)) {
+                  toast.warn("Los sábados y domingos son días inhábiles. Se seleccionó el día hábil más cercano.");
+                  setSelectedDate(getNearestSchoolDay(new Date(val + 'T12:00:00')));
+                } else {
+                  setSelectedDate(val);
+                }
+              }}
+              className="px-3 py-1.5 bg-white text-slate-900 font-bold text-xs rounded-xl border border-white/20 outline-none focus:ring-2 focus:ring-teal-400 shadow-sm cursor-pointer"
+            />
+            <button
+              type="button"
+              onClick={() => setSelectedDate(getNextSchoolDay(selectedDate))}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors cursor-pointer"
+              title="Día hábil siguiente (omite sábados y domingos)"
+            >
+              <ChevronRight size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const today = new Date();
+                if (today.getDay() === 0 || today.getDay() === 6) {
+                  toast.info("Hoy es fin de semana (inhábil). Mostrando viernes.");
+                  setSelectedDate(getNearestSchoolDay(today));
+                } else {
+                  setSelectedDate(format(today, 'yyyy-MM-dd'));
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-colors cursor-pointer shadow-xs"
+              title="Hoy (o último día hábil si es fin de semana)"
+            >
+              Hoy
+            </button>
+          </div>
         </div>
       </div>
 
@@ -979,8 +1042,11 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           </div>
         </div>
 
-        {/* Filter Toolbar: Nivel, Grade, Group, Search & Date/Period */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-4 border-t border-slate-100">
+        {/* Filter Toolbar: Nivel, Grade, Group, Search & (if not attendance) Period */}
+        <div className={cn(
+          "grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100",
+          activeTab === 'attendance' ? "lg:grid-cols-4" : "lg:grid-cols-5"
+        )}>
           {/* Nivel Selector */}
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nivel Educativo</label>
@@ -1043,66 +1109,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
             </div>
           </div>
 
-          {/* Contextual Controller based on Tab: Date Picker for Attendance, Period Selector for Development */}
-          {activeTab === 'attendance' ? (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[11px] font-bold text-slate-500 uppercase">Fecha de Asistencia</label>
-                <span className="text-[11px] font-bold text-teal-700 capitalize">
-                  {format(new Date(selectedDate + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate(getPrevSchoolDay(selectedDate))}
-                  className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer"
-                  title="Día hábil anterior (omite sábados y domingos)"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (!val) return;
-                    if (isWeekend(val)) {
-                      toast.warn("Los sábados y domingos son días inhábiles. Se seleccionó el día hábil más cercano.");
-                      setSelectedDate(getNearestSchoolDay(new Date(val + 'T12:00:00')));
-                    } else {
-                      setSelectedDate(val);
-                    }
-                  }}
-                  className="flex-1 px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate(getNextSchoolDay(selectedDate))}
-                  className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer"
-                  title="Día hábil siguiente (omite sábados y domingos)"
-                >
-                  <ChevronRight size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = new Date();
-                    if (today.getDay() === 0 || today.getDay() === 6) {
-                      toast.info("Hoy es fin de semana (inhábil). Mostrando viernes.");
-                      setSelectedDate(getNearestSchoolDay(today));
-                    } else {
-                      setSelectedDate(format(today, 'yyyy-MM-dd'));
-                    }
-                  }}
-                  className="px-2.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold cursor-pointer"
-                  title="Hoy"
-                >
-                  Hoy
-                </button>
-              </div>
-            </div>
-          ) : (
+          {/* Period Selector (shown on Desarrollo Personal and Summary tabs) */}
+          {activeTab !== 'attendance' && (
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Periodo de Evaluación</label>
               <div className="flex items-center gap-1.5">
