@@ -911,14 +911,14 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
   return (
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Banner / Header */}
-      <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-xl border border-blue-900/40 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
               Panel de Prefectura
             </h1>
             {availableLevels.length === 1 && selectedLevel && (
-              <span className="px-2.5 py-1 bg-teal-500/20 border border-teal-400/30 text-teal-300 rounded-xl text-xs font-bold tracking-wide">
+              <span className="px-2.5 py-1 bg-blue-500/20 border border-blue-400/30 text-blue-200 rounded-xl text-xs font-bold tracking-wide">
                 {selectedLevel}
               </span>
             )}
@@ -933,8 +933,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
         {/* Date Selector placed directly on the right side of the header banner */}
         <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-2.5 sm:px-4 sm:py-2.5 flex flex-col gap-1.5 shadow-inner shrink-0">
           <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="text-[10px] font-bold text-teal-300 uppercase tracking-wider flex items-center gap-1">
-              <Calendar size={12} className="text-teal-400" />
+            <span className="text-[10px] font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1">
+              <Calendar size={12} className="text-blue-400" />
               Fecha de Asistencia
             </span>
             <span className="text-xs font-bold text-slate-100 capitalize">
@@ -964,7 +964,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                   setSelectedDate(val);
                 }
               }}
-              className="px-3 py-1.5 bg-white text-slate-900 font-bold text-xs rounded-xl border border-white/20 outline-none focus:ring-2 focus:ring-teal-400 shadow-sm cursor-pointer"
+              className="px-3 py-1.5 bg-white text-slate-900 font-bold text-xs rounded-xl border border-white/20 outline-none focus:ring-2 focus:ring-blue-400 shadow-sm cursor-pointer"
             />
             <button
               type="button"
@@ -985,7 +985,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                   setSelectedDate(format(today, 'yyyy-MM-dd'));
                 }
               }}
-              className="px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-colors cursor-pointer shadow-xs"
+              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs transition-colors cursor-pointer shadow-xs"
               title="Hoy (o último día hábil si es fin de semana)"
             >
               Hoy
@@ -1004,8 +1004,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               className={cn(
                 "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'attendance'
-                  ? "bg-teal-700 text-white shadow-md shadow-teal-900/25 border border-teal-800 ring-2 ring-teal-500/20"
-                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 shadow-2xs"
+                  ? "bg-blue-900 text-white shadow-md shadow-blue-950/30 border border-blue-950 ring-2 ring-blue-500/20"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-blue-50/50 hover:text-blue-900 hover:border-blue-200 shadow-2xs"
               )}
             >
               Asistencia al Plantel
@@ -1016,8 +1016,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               className={cn(
                 "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'development'
-                  ? "bg-teal-700 text-white shadow-md shadow-teal-900/25 border border-teal-800 ring-2 ring-teal-500/20"
-                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 shadow-2xs"
+                  ? "bg-blue-900 text-white shadow-md shadow-blue-950/30 border border-blue-950 ring-2 ring-blue-500/20"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-blue-50/50 hover:text-blue-900 hover:border-blue-200 shadow-2xs"
               )}
             >
               Desarrollo Personal (Conducta y Uniforme)
@@ -1028,8 +1028,8 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               className={cn(
                 "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'summary'
-                  ? "bg-teal-700 text-white shadow-md shadow-teal-900/25 border border-teal-800 ring-2 ring-teal-500/20"
-                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 shadow-2xs"
+                  ? "bg-blue-900 text-white shadow-md shadow-blue-950/30 border border-blue-950 ring-2 ring-blue-500/20"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-blue-50/50 hover:text-blue-900 hover:border-blue-200 shadow-2xs"
               )}
             >
               Resumen y Reportes
@@ -1062,7 +1062,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                   setSelectedGrade('Todos');
                   setSelectedGroup('Todos');
                 }}
-                className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+                className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
               >
                 {availableLevels.map(lvl => (
                   <option key={lvl} value={lvl}>{lvl}</option>
@@ -1077,7 +1077,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
             <select
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
-              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
             >
               <option value="Todos">Todos</option>
               {availableGrades.map(g => (
@@ -1092,7 +1092,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer"
             >
               <option value="Todos">Todos</option>
               {availableGroups.map(grp => (
@@ -1111,7 +1111,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                 placeholder="Nombre, apellidos, matrícula o CURP..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
               />
             </div>
           </div>
@@ -1136,14 +1136,14 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                         isSelected 
                           ? (isLocked 
                               ? "bg-slate-800 text-white border-slate-800 shadow-sm" 
-                              : "bg-teal-600 text-white border-teal-600 shadow-sm")
+                              : "bg-blue-900 text-white border-blue-950 shadow-sm")
                           : (isLocked
                               ? "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
-                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50")
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50 hover:text-blue-900")
                       )}
                     >
                       <span>P{p}</span>
-                      {isLocked ? <Lock size={11} className="text-slate-300" /> : <Unlock size={11} className="text-teal-300" />}
+                      {isLocked ? <Lock size={11} className="text-slate-300" /> : <Unlock size={11} className="text-blue-300" />}
                     </button>
                   );
                 })}
@@ -1159,12 +1159,12 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           "rounded-2xl p-4 border flex items-center justify-between gap-4 transition-all",
           isCurrentPeriodLocked
             ? "bg-amber-50/90 border-amber-300 text-amber-900"
-            : "bg-teal-50/80 border-teal-200 text-teal-900"
+            : "bg-blue-50/80 border-blue-200 text-blue-950"
         )}>
           <div className="flex items-center gap-3">
             <div className={cn(
               "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-              isCurrentPeriodLocked ? "bg-amber-200/80 text-amber-800" : "bg-teal-200/80 text-teal-800"
+              isCurrentPeriodLocked ? "bg-amber-200/80 text-amber-800" : "bg-blue-200/80 text-blue-900"
             )}>
               {isCurrentPeriodLocked ? <Lock size={20} /> : <Unlock size={20} />}
             </div>
@@ -1205,7 +1205,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                 <button
                   type="button"
                   onClick={() => handleMassFillGrade('conduct', 10)}
-                  className="px-3 py-1.5 bg-white hover:bg-teal-100/70 border border-teal-300 rounded-xl text-xs font-bold text-teal-900 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-white hover:bg-blue-100/70 border border-blue-300 rounded-xl text-xs font-bold text-blue-950 transition-colors cursor-pointer"
                   title="Llenar Conducta con 10 para los alumnos mostrados"
                 >
                   10 en Conducta
@@ -1213,7 +1213,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                 <button
                   type="button"
                   onClick={() => handleMassFillGrade('uniform', 10)}
-                  className="px-3 py-1.5 bg-white hover:bg-teal-100/70 border border-teal-300 rounded-xl text-xs font-bold text-teal-900 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-white hover:bg-blue-100/70 border border-blue-300 rounded-xl text-xs font-bold text-blue-950 transition-colors cursor-pointer"
                   title="Llenar Uniforme con 10 para los alumnos mostrados"
                 >
                   10 en Uniforme
@@ -1336,7 +1336,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
 
               <div className="flex items-center gap-2 text-xs font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200">
                 <span className="text-slate-500">Periodo activo:</span>
-                <span className="text-teal-700 font-black">P{effectiveAttendancePeriod}</span>
+                <span className="text-blue-900 font-black">P{effectiveAttendancePeriod}</span>
                 {Boolean(lockedPeriodsMap[dateTargetPeriod]) && dateTargetPeriod !== effectiveAttendancePeriod && (
                   <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">
                     P{dateTargetPeriod} cerrado
@@ -1386,7 +1386,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                           {/* Student Info */}
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center font-black text-xs shrink-0">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-900 flex items-center justify-center font-black text-xs shrink-0">
                                 {st.name?.charAt(0) || 'A'}
                               </div>
                               <div>
@@ -1536,7 +1536,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
             <div>
               <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <Sparkles size={16} className="text-teal-600" />
+                <Sparkles size={16} className="text-blue-700" />
                 Calificaciones de Desarrollo Personal • Periodo {selectedPeriod}
               </h3>
               <p className="text-xs text-slate-500">
@@ -1630,7 +1630,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               "w-20 text-center py-1.5 px-2 rounded-xl text-sm font-black transition-all outline-none border",
                               isCurrentPeriodLocked
                                 ? "bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed"
-                                : "bg-slate-50 focus:bg-white focus:ring-2 focus:ring-teal-500 border-slate-200 text-slate-900 shadow-2xs"
+                                : "bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 border-slate-200 text-slate-900 shadow-2xs"
                             )}
                             placeholder="-"
                           />
@@ -1656,7 +1656,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               "w-20 text-center py-1.5 px-2 rounded-xl text-sm font-black transition-all outline-none border",
                               isCurrentPeriodLocked
                                 ? "bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed"
-                                : "bg-slate-50 focus:bg-white focus:ring-2 focus:ring-teal-500 border-slate-200 text-slate-900 shadow-2xs"
+                                : "bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 border-slate-200 text-slate-900 shadow-2xs"
                             )}
                             placeholder="-"
                           />
@@ -1685,7 +1685,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                                   "w-20 text-center py-1.5 px-2 rounded-xl text-sm font-black transition-all outline-none border",
                                   isCurrentPeriodLocked
                                     ? "bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed"
-                                    : "bg-slate-50 focus:bg-white focus:ring-2 focus:ring-teal-500 border-slate-200 text-slate-900"
+                                    : "bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 border-slate-200 text-slate-900"
                                 )}
                                 placeholder="-"
                               />
@@ -1700,7 +1700,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                               <Lock size={12} /> Bloqueado
                             </span>
                           ) : (conductVal || uniformVal) ? (
-                            <span className="inline-flex items-center gap-1 text-teal-700 font-bold">
+                            <span className="inline-flex items-center gap-1 text-blue-800 font-bold">
                               <CheckCircle2 size={12} /> Calificado
                             </span>
                           ) : (
@@ -1773,7 +1773,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles size={18} className="text-teal-600" />
+                <Sparkles size={18} className="text-blue-700" />
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
                   Desarrollo Personal • Resumen Periodo {selectedPeriod}
                 </h3>
@@ -1833,7 +1833,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                 return (!isNaN(c) && c < 8) || (!isNaN(u) && u < 8);
               }).length === 0 && (
                 <div className="p-8 text-center text-slate-400">
-                  <CheckCircle2 size={32} className="mx-auto mb-2 text-teal-500" />
+                  <CheckCircle2 size={32} className="mx-auto mb-2 text-blue-600" />
                   <p className="text-xs font-bold text-slate-700">Sin incidencias</p>
                   <p className="text-xs text-slate-500">Todos los alumnos evaluados mantienen 8 o superior en desarrollo personal.</p>
                 </div>
@@ -1849,7 +1849,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <Clock size={16} className="text-teal-600" />
+                <Clock size={16} className="text-blue-700" />
                 Registrar {justifyingStudent.status}
               </h3>
               <button
@@ -1873,7 +1873,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                 value={justificationReason}
                 onChange={(e) => setJustificationReason(e.target.value)}
                 placeholder="Ej. Cita médica, permiso de dirección, transporte..."
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-blue-600 resize-none"
               />
             </div>
 
@@ -1891,7 +1891,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                   handleSetAttendance(justifyingStudent.student, justifyingStudent.status, justificationReason);
                   setJustifyingStudent(null);
                 }}
-                className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                className="px-5 py-2 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
               >
                 Confirmar {justifyingStudent.status}
               </button>
