@@ -461,6 +461,59 @@ export default function ReportCardSecundaria1PDF({
   const T3_COL0_WIDTH = 110;
   const T3_PERIOD_WIDTH = 55; // 55 * 3 = 165 + 110 = 275 pt
 
+  // Helper to resolve development aspects (Conducta, Uniforme) checking subjects first, then legacy fields
+  const getDevelopmentAspectGrade = (bg: StudentGrade | undefined, legacyField: keyof StudentGrade, matchNames: string[]): string | number => {
+    if (!bg) return '-';
+
+    // 1. Check in bg.subjects first (where teachers enter subject grades)
+    if (bg.subjects) {
+      for (const m of matchNames) {
+        if (bg.subjects[m] !== undefined && bg.subjects[m] !== null && bg.subjects[m] !== '') {
+          return bg.subjects[m];
+        }
+      }
+      const lowerMatch = matchNames.map(m => m.toLowerCase().trim());
+      for (const [k, v] of Object.entries(bg.subjects)) {
+        if (lowerMatch.includes(k.toLowerCase().trim()) && v !== undefined && v !== null && v !== '') {
+          return v;
+        }
+      }
+    }
+
+    // 2. Check in legacy root field (e.g. bg.conduct, bg.uniform)
+    const legVal = bg[legacyField];
+    if (legVal !== undefined && legVal !== null && legVal !== '') {
+      return legVal as string | number;
+    }
+
+    return '-';
+  };
+
+  const getAttendanceAspectGrade = (bg: StudentGrade | undefined, p: number): string | number => {
+    if (!isAttendanceIncludedInReportCard(evalConfig, student.level, p)) {
+      return '-';
+    }
+    if (!bg) return 0;
+    if (bg.attendance !== undefined && bg.attendance !== null && bg.attendance !== '') {
+      return bg.attendance;
+    }
+    if (bg.subjects) {
+      const matchNames = ['INASISTENCIAS', 'Inasistencias', 'FALTAS', 'Faltas', 'ASISTENCIA', 'Asistencia'];
+      for (const m of matchNames) {
+        if (bg.subjects[m] !== undefined && bg.subjects[m] !== null && bg.subjects[m] !== '') {
+          return bg.subjects[m];
+        }
+      }
+      for (const [k, v] of Object.entries(bg.subjects)) {
+        const normKey = k.toLowerCase().trim();
+        if ((normKey === 'inasistencias' || normKey === 'faltas' || normKey === 'asistencia') && v !== undefined && v !== null && v !== '') {
+          return v;
+        }
+      }
+    }
+    return 0;
+  };
+
   return (
     <Document>
       <Page size="LETTER" orientation="landscape" style={styles.page}>
@@ -784,7 +837,7 @@ export default function ReportCardSecundaria1PDF({
                 </View>
                 {[1, 2, 3].map(p => {
                   const bg = grades.find(g => Number(g.bimestre) === p);
-                  const val = bg?.conduct !== undefined && bg?.conduct !== null && bg?.conduct !== '' ? bg.conduct : '-';
+                  const val = getDevelopmentAspectGrade(bg, 'conduct', ['CONDUCTA', 'Conducta']);
                   const isLast = p === 3;
                   return (
                     <View 
@@ -804,7 +857,7 @@ export default function ReportCardSecundaria1PDF({
                 </View>
                 {[1, 2, 3].map(p => {
                   const bg = grades.find(g => Number(g.bimestre) === p);
-                  const val = bg?.uniform !== undefined && bg?.uniform !== null && bg?.uniform !== '' ? bg.uniform : '-';
+                  const val = getDevelopmentAspectGrade(bg, 'uniform', ['UNIFORME', 'Uniforme']);
                   const isLast = p === 3;
                   return (
                     <View 
@@ -824,10 +877,7 @@ export default function ReportCardSecundaria1PDF({
                 </View>
                 {[1, 2, 3].map(p => {
                   const bg = grades.find(g => Number(g.bimestre) === p);
-                  const isPeriodAttendanceIncluded = isAttendanceIncludedInReportCard(evalConfig, student.level, p);
-                  const val = isPeriodAttendanceIncluded
-                    ? (bg?.attendance !== undefined && bg?.attendance !== null && bg?.attendance !== '' ? bg.attendance : 0)
-                    : '-';
+                  const val = getAttendanceAspectGrade(bg, p);
                   const isLast = p === 3;
                   return (
                     <View 

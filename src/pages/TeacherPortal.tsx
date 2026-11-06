@@ -1113,11 +1113,20 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       }
     });
 
-    const conduct = raw.conduct === 0 || raw.conduct === '0' ? '' : (raw.conduct ?? '');
-    const uniform = raw.uniform === 0 || raw.uniform === '0' ? '' : (raw.uniform ?? '');
-    const tasksNotDone = raw.tasksNotDone === 0 || raw.tasksNotDone === '0' ? '' : (raw.tasksNotDone ?? '');
-    const tardies = raw.tardies === 0 || raw.tardies === '0' ? '' : (raw.tardies ?? '');
-    const cleanliness = raw.cleanliness === 0 || raw.cleanliness === '0' ? '' : (raw.cleanliness ?? '');
+    const getSubjVal = (matchNames: string[]) => {
+      for (const [k, v] of Object.entries(subjects)) {
+        if (matchNames.includes(k.toLowerCase().trim()) && v !== '' && v !== undefined && v !== null && v !== 0 && v !== '0') {
+          return v;
+        }
+      }
+      return '';
+    };
+
+    const conduct = raw.conduct === 0 || raw.conduct === '0' ? '' : (raw.conduct || getSubjVal(['conducta']));
+    const uniform = raw.uniform === 0 || raw.uniform === '0' ? '' : (raw.uniform || getSubjVal(['uniforme']));
+    const tasksNotDone = raw.tasksNotDone === 0 || raw.tasksNotDone === '0' ? '' : (raw.tasksNotDone || getSubjVal(['tareas', 'tareas no realizadas']));
+    const tardies = raw.tardies === 0 || raw.tardies === '0' ? '' : (raw.tardies || getSubjVal(['retardo', 'retardos']));
+    const cleanliness = raw.cleanliness === 0 || raw.cleanliness === '0' ? '' : (raw.cleanliness || getSubjVal(['aseo', 'limpieza']));
 
     return {
       ...raw,
@@ -1744,6 +1753,14 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         };
         // Clean up legacy dot-notated literal field if it exists
         updateData[`subjects.${field}`] = deleteField();
+
+        // Also synchronize legacy root fields if this subject is a formativo/desarrollo personal aspect
+        const norm = (field || '').toLowerCase().trim();
+        if (norm === 'conducta') updateData.conduct = valToSave;
+        else if (norm === 'uniforme') updateData.uniform = valToSave;
+        else if (norm === 'tareas' || norm === 'tareas no realizadas') updateData.tasksNotDone = valToSave;
+        else if (norm === 'retardo' || norm === 'retardos') updateData.tardies = valToSave;
+        else if (norm === 'aseo' || norm === 'limpieza') updateData.cleanliness = valToSave;
       } else {
         if (value === '' || value === null || value === undefined) {
           updateData[field] = deleteField();
@@ -1754,6 +1771,25 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         } else {
           const num = parseFloat(String(value));
           updateData[field] = isNaN(num) ? deleteField() : num;
+        }
+
+        // Also synchronize subjects map if this legacy field matches an active subject
+        const legacyToSubjNames: Record<string, string[]> = {
+          conduct: ['conducta'],
+          uniform: ['uniforme'],
+          tasksNotDone: ['tareas', 'tareas no realizadas'],
+          tardies: ['retardo', 'retardos'],
+          cleanliness: ['aseo', 'limpieza']
+        };
+        const aliases = legacyToSubjNames[field];
+        if (aliases) {
+          activeLevelSubjects.forEach(s => {
+            if (aliases.includes((s.name || '').toLowerCase().trim())) {
+              if (!updateData.subjects) updateData.subjects = {};
+              updateData.subjects[s.name] = updateData[field];
+              updateData[`subjects.${s.name}`] = deleteField();
+            }
+          });
         }
       }
 
@@ -2335,9 +2371,27 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           createdBy: grade.createdBy || userProfile?.id || 'system'
         };
 
-        // Clean up legacy formativos fields if blank, 0, or < 1
+        // Clean up legacy formativos fields if blank, 0, or < 1, checking subjects fallback
+        const legacyAspectMap: Record<string, string[]> = {
+          conduct: ['conducta'],
+          uniform: ['uniforme'],
+          tasksNotDone: ['tareas', 'tareas no realizadas'],
+          tardies: ['retardo', 'retardos'],
+          cleanliness: ['aseo', 'limpieza']
+        };
+
         ['conduct', 'uniform', 'tasksNotDone', 'tardies', 'cleanliness'].forEach(f => {
-          const v = (grade as any)[f];
+          let v = (grade as any)[f];
+          if (v === '' || v === undefined || v === null) {
+            const aliases = legacyAspectMap[f] || [];
+            for (const [k, subjV] of Object.entries(grade.subjects || {})) {
+              if (aliases.includes(k.toLowerCase().trim()) && subjV !== '' && subjV !== undefined && subjV !== null) {
+                v = subjV;
+                break;
+              }
+            }
+          }
+
           if (v === '' || v === undefined || v === null || v === 0 || v === '0' || (!isNaN(parseFloat(String(v))) && parseFloat(String(v)) < 1)) {
             updateData[f] = deleteField();
           } else {
