@@ -934,21 +934,17 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Banner / Header */}
       <div className="bg-[#1e3a8a] text-white rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#172554]">
-        <div className="flex items-center gap-3.5 sm:gap-4">
+        <div className="flex items-center gap-4 sm:gap-5">
           {currentLevelLogo && !logoLoadError ? (
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white p-1.5 border border-blue-900 flex items-center justify-center shrink-0 overflow-hidden">
-              <img 
-                src={currentLevelLogo} 
-                alt={`Logotipo ${selectedLevel || 'Nivel'}`} 
-                className="w-full h-full object-contain"
-                referrerPolicy="no-referrer"
-                onError={() => setLogoLoadError(true)}
-              />
-            </div>
+            <img 
+              src={currentLevelLogo} 
+              alt={`Logotipo ${selectedLevel || 'Nivel'}`} 
+              className="h-20 sm:h-24 w-auto max-w-[160px] sm:max-w-[200px] object-contain shrink-0"
+              referrerPolicy="no-referrer"
+              onError={() => setLogoLoadError(true)}
+            />
           ) : (
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#172554] border border-blue-900 flex items-center justify-center shrink-0 text-blue-200">
-              <GraduationCap size={28} />
-            </div>
+            <GraduationCap className="w-14 h-14 sm:w-16 sm:h-16 text-blue-200 shrink-0" />
           )}
 
           <div>
