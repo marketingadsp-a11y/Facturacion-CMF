@@ -141,6 +141,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
   // Active Justification Modal / Prompt
   const [justifyingStudent, setJustifyingStudent] = useState<{ student: Student; status: 'Justificado' | 'Retardo' } | null>(null);
   const [justificationReason, setJustificationReason] = useState<string>('');
+  const [logoLoadError, setLogoLoadError] = useState(false);
 
   // Load general settings
   useEffect(() => {
@@ -193,6 +194,27 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
   const evalConfig = useMemo(() => {
     return getLevelEvaluationConfig(settings, selectedLevel);
   }, [settings, selectedLevel]);
+
+  // Resolve logo for currently selected level (with fallback to school general logo)
+  const currentLevelLogo = useMemo(() => {
+    const cleanLevel = selectedLevel?.trim();
+    if (cleanLevel && settings?.levelLogos) {
+      if (settings.levelLogos[cleanLevel] && settings.levelLogos[cleanLevel].trim().length > 0) {
+        return settings.levelLogos[cleanLevel].trim();
+      }
+      const matchedKey = Object.keys(settings.levelLogos).find(
+        k => k.trim().toLowerCase() === cleanLevel.toLowerCase()
+      );
+      if (matchedKey && settings.levelLogos[matchedKey] && settings.levelLogos[matchedKey].trim().length > 0) {
+        return settings.levelLogos[matchedKey].trim();
+      }
+    }
+    return settings?.logoUrl?.trim() || null;
+  }, [selectedLevel, settings]);
+
+  useEffect(() => {
+    setLogoLoadError(false);
+  }, [currentLevelLogo]);
 
   // Determine period corresponding to the selected date
   const dateTargetPeriod = useMemo(() => {
@@ -912,22 +934,40 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Banner / Header */}
       <div className="bg-[#1e3a8a] text-white rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#172554]">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              Panel de Prefectura
-            </h1>
-            {availableLevels.length === 1 && selectedLevel && (
-              <span className="px-2.5 py-1 bg-[#172554] text-white border border-blue-900 rounded-lg text-xs font-bold tracking-wide">
-                {selectedLevel}
-              </span>
+        <div className="flex items-center gap-3.5 sm:gap-4">
+          {currentLevelLogo && !logoLoadError ? (
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white p-1.5 border border-blue-900 flex items-center justify-center shrink-0 overflow-hidden">
+              <img 
+                src={currentLevelLogo} 
+                alt={`Logotipo ${selectedLevel || 'Nivel'}`} 
+                className="w-full h-full object-contain"
+                referrerPolicy="no-referrer"
+                onError={() => setLogoLoadError(true)}
+              />
+            </div>
+          ) : (
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#172554] border border-blue-900 flex items-center justify-center shrink-0 text-blue-200">
+              <GraduationCap size={28} />
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                Panel de Prefectura
+              </h1>
+              {availableLevels.length === 1 && selectedLevel && (
+                <span className="px-2.5 py-1 bg-[#172554] text-white border border-blue-900 rounded-lg text-xs font-bold tracking-wide">
+                  {selectedLevel}
+                </span>
+              )}
+            </div>
+            {userProfile?.name && (
+              <p className="text-xs text-blue-200 font-medium mt-1">
+                Responsable: {userProfile.name}
+              </p>
             )}
           </div>
-          {userProfile?.name && (
-            <p className="text-xs text-blue-200 font-medium mt-1">
-              Responsable: {userProfile.name}
-            </p>
-          )}
         </div>
 
         {/* Date Selector placed directly on the right side of the header banner */}
