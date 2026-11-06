@@ -913,9 +913,16 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
       {/* Top Banner / Header */}
       <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-            Panel de Prefectura
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+              Panel de Prefectura
+            </h1>
+            {availableLevels.length === 1 && selectedLevel && (
+              <span className="px-2.5 py-1 bg-teal-500/20 border border-teal-400/30 text-teal-300 rounded-xl text-xs font-bold tracking-wide">
+                {selectedLevel}
+              </span>
+            )}
+          </div>
           {userProfile?.name && (
             <p className="text-xs text-slate-400 font-medium mt-1">
               Responsable: {userProfile.name}
@@ -1042,76 +1049,76 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           </div>
         </div>
 
-        {/* Filter Toolbar: Nivel, Grade, Group, Search & (if not attendance) Period */}
-        <div className={cn(
-          "grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100",
-          activeTab === 'attendance' ? "lg:grid-cols-4" : "lg:grid-cols-5"
-        )}>
-          {/* Nivel Selector */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nivel Educativo</label>
-            <select
-              value={selectedLevel}
-              onChange={(e) => {
-                setSelectedLevel(e.target.value);
-                setSelectedGrade('Todos');
-                setSelectedGroup('Todos');
-              }}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
-            >
-              {availableLevels.map(lvl => (
-                <option key={lvl} value={lvl}>{lvl}</option>
-              ))}
-            </select>
-          </div>
-          {/* Grado Filter */}
-          <div>
+        {/* Filter Toolbar: Nivel (if multiple), Grade, Group, Search & (if not attendance) Period */}
+        <div className="flex flex-col sm:flex-row sm:items-end flex-wrap gap-3 pt-4 border-t border-slate-100">
+          {/* Nivel Selector (only shown if user has multiple levels available) */}
+          {availableLevels.length > 1 && (
+            <div className="w-full sm:w-36 md:w-40 shrink-0">
+              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nivel Educativo</label>
+              <select
+                value={selectedLevel}
+                onChange={(e) => {
+                  setSelectedLevel(e.target.value);
+                  setSelectedGrade('Todos');
+                  setSelectedGroup('Todos');
+                }}
+                className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              >
+                {availableLevels.map(lvl => (
+                  <option key={lvl} value={lvl}>{lvl}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Grado Filter (compact) */}
+          <div className="w-full sm:w-28 md:w-32 shrink-0">
             <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Grado</label>
             <select
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
             >
-              <option value="Todos">Todos los Grados</option>
+              <option value="Todos">Todos</option>
               {availableGrades.map(g => (
                 <option key={g} value={g}>{g}° Grado</option>
               ))}
             </select>
           </div>
 
-          {/* Grupo Filter */}
-          <div>
+          {/* Grupo Filter (compact) */}
+          <div className="w-full sm:w-28 md:w-32 shrink-0">
             <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Grupo</label>
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
             >
-              <option value="Todos">Todos los Grupos</option>
+              <option value="Todos">Todos</option>
               {availableGroups.map(grp => (
                 <option key={grp} value={grp}>Grupo "{grp}"</option>
               ))}
             </select>
           </div>
 
-          {/* Search Input */}
-          <div>
+          {/* Search Input (Takes maximum preference and expands to fill space) */}
+          <div className="flex-1 min-w-[200px] sm:min-w-[260px]">
             <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Buscar Alumno</label>
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Nombre o matrícula..."
+                placeholder="Nombre, apellidos, matrícula o CURP..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs"
               />
             </div>
           </div>
 
           {/* Period Selector (shown on Desarrollo Personal and Summary tabs) */}
           {activeTab !== 'attendance' && (
-            <div>
+            <div className="w-full sm:w-48 md:w-56 shrink-0">
               <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Periodo de Evaluación</label>
               <div className="flex items-center gap-1.5">
                 {Array.from({ length: evalConfig.periodCount }, (_, i) => i + 1).map(p => {
