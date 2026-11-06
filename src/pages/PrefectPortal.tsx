@@ -1065,11 +1065,6 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                   ? `Periodo ${selectedPeriod} Bloqueado (Modo Solo Lectura)` 
                   : `Periodo ${selectedPeriod} Activo y Abierto para Captura`}
               </p>
-              <p className="text-xs opacity-90 mt-0.5">
-                {isCurrentPeriodLocked
-                  ? "Este periodo se encuentra cerrado. Las calificaciones se muestran para consulta y no pueden editarse. Puedes presionar \"Abrir Periodo\" si necesitas modificar calificaciones."
-                  : "Ingresa o edita calificaciones de conducta y uniforme. Los cambios se sincronizan en tiempo real directamente en la boleta del alumno."}
-              </p>
             </div>
           </div>
 
