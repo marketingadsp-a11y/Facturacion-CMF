@@ -20,6 +20,7 @@ import {
   Clock, 
   DollarSign,
   ShieldAlert,
+  ShieldCheck,
   Users,
   Lock,
   Unlock,

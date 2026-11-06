@@ -387,7 +387,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
         if (s.level !== selectedLevel) return false;
         if (selectedGrade !== 'Todos' && s.grade !== selectedGrade) return false;
         if (selectedGroup !== 'Todos' && s.group !== selectedGroup) return false;
-        if (searchTerm && !studentMatchesSearch(s, searchTerm)) return false;
+        if (searchTerm && !studentMatchesSearch([s.name, s.lastName, s.motherLastName, s.matricula, s.curp], searchTerm)) return false;
         return true;
       })
       .sort((a, b) => {
@@ -683,7 +683,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
         const status = att?.status || 'Sin registrar';
         const reason = att?.justificationReason || '';
         return [
-          `"${st.enrollmentCode || st.matricula || ''}"`,
+          `"${st.matricula || ''}"`,
           `"${st.level || ''}"`,
           `"${st.grade || ''}"`,
           `"${st.group || ''}"`,
@@ -708,7 +708,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
       const rows = filteredStudents.map(st => {
         const g = gradesMap[st.id];
         return [
-          `"${st.enrollmentCode || st.matricula || ''}"`,
+          `"${st.matricula || ''}"`,
           `"${st.level || ''}"`,
           `"${st.grade || ''}"`,
           `"${st.group || ''}"`,
@@ -1152,7 +1152,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                                   {st.lastName} {st.motherLastName || ''} {st.name}
                                 </p>
                                 <span className="text-[10px] text-slate-400 font-mono">
-                                  {st.enrollmentCode || st.matricula || 'Sin matrícula'}
+                                  {st.matricula || 'Sin matrícula'}
                                 </span>
                               </div>
                             </div>
@@ -1337,7 +1337,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                                 {st.lastName} {st.motherLastName || ''} {st.name}
                               </p>
                               <span className="text-[10px] text-slate-400 font-mono">
-                                {st.enrollmentCode || st.matricula || ''}
+                                {st.matricula || ''}
                               </span>
                             </div>
                           </div>
@@ -1642,3 +1642,4 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     </div>
   );
 }
+
