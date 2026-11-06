@@ -385,7 +385,13 @@ export default function TeacherGradesListPDF({
       norm === 'aseo' ? 'cleanliness' : null
     ) as keyof StudentGrade | null;
 
+    const isPersonalDev = subj.category === 'Aspectos Formativos' || subj.category === 'Desarrollo Personal';
     const raw = sg.subjects?.[subj.name] ?? (subj.id ? sg.subjects?.[subj.id] : undefined) ?? (legacyField ? sg[legacyField] : '') ?? '';
+    if (isPersonalDev && !isAttendanceTrackingSubject(subj)) {
+      if (raw === '' || raw === undefined || raw === null || raw === 0 || raw === '0' || (!isNaN(parseFloat(String(raw))) && parseFloat(String(raw)) < 1)) {
+        return '—';
+      }
+    }
     return raw !== '' && raw !== undefined && raw !== null ? String(raw) : '—';
   };
 

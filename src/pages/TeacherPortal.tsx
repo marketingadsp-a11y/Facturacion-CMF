@@ -737,6 +737,19 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     );
   }, [activeLevelSubjects]);
 
+  // Helper to check if a subject name or legacy field corresponds to Desarrollo Personal / Aspectos Formativos
+  const isPersonalDevSubjectOrField = useCallback((fieldOrSubjName: string, isSubject: boolean) => {
+    if (!isSubject) {
+      return ['conduct', 'uniform', 'attendance', 'tasksNotDone', 'tardies', 'cleanliness'].includes(fieldOrSubjName);
+    }
+    const lower = (fieldOrSubjName || '').toLowerCase().trim();
+    if (['conducta', 'uniforme', 'faltas', 'falta', 'inasistencia', 'inasistencias', 'tareas', 'tareas no realizadas', 'retardo', 'retardos', 'aseo', 'limpieza'].includes(lower)) {
+      return true;
+    }
+    const found = activeLevelSubjects.find(s => s.name === fieldOrSubjName || s.id === fieldOrSubjName);
+    return found ? (found.category === 'Aspectos Formativos' || found.category === 'Desarrollo Personal') : false;
+  }, [activeLevelSubjects]);
+
   // Autonomía Curricular subjects only
   const autonomyCurricularSubjects = useMemo(() => {
     return activeLevelSubjects.filter(s => 
@@ -1100,12 +1113,23 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       }
     });
 
+    const conduct = raw.conduct === 0 || raw.conduct === '0' ? '' : (raw.conduct ?? '');
+    const uniform = raw.uniform === 0 || raw.uniform === '0' ? '' : (raw.uniform ?? '');
+    const tasksNotDone = raw.tasksNotDone === 0 || raw.tasksNotDone === '0' ? '' : (raw.tasksNotDone ?? '');
+    const tardies = raw.tardies === 0 || raw.tardies === '0' ? '' : (raw.tardies ?? '');
+    const cleanliness = raw.cleanliness === 0 || raw.cleanliness === '0' ? '' : (raw.cleanliness ?? '');
+
     return {
       ...raw,
       id: docId,
       subjects,
       subjectObservations,
-      observations
+      observations,
+      conduct,
+      uniform,
+      tasksNotDone,
+      tardies,
+      cleanliness
     };
   };
 
@@ -1142,12 +1166,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
               subjects: {},
               subjectObservations: {},
               observations: {},
-              conduct: 0,
-              uniform: 0,
-              attendance: 0,
-              tasksNotDone: 0,
-              tardies: 0,
-              cleanliness: 0,
+              conduct: '',
+              uniform: '',
+              attendance: '',
+              tasksNotDone: '',
+              tardies: '',
+              cleanliness: '',
               updatedAt: null as any,
               createdBy: ''
             };
@@ -1646,12 +1670,24 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           norm === 'aseo' ? 'cleanliness' : null
         ) as keyof StudentGrade | null;
 
+        const isPersonalDev = subj.category === 'Aspectos Formativos' || subj.category === 'Desarrollo Personal';
         const val = gradeDoc?.subjects?.[subj.name] ??
           gradeDoc?.subjects?.[subj.id] ??
           (legacyField ? gradeDoc?.[legacyField] : undefined);
 
         if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '-') {
-          filledSlots++;
+          if (isPersonalDev) {
+            if (gradingScale === 'letters') {
+              filledSlots++;
+            } else {
+              const numVal = parseFloat(String(val));
+              if (!isNaN(numVal) && numVal >= 1) {
+                filledSlots++;
+              }
+            }
+          } else {
+            filledSlots++;
+          }
         }
       }
     }
@@ -1688,9 +1724,13 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         createdBy: userProfile?.id || 'system'
       };
 
+      const isPersonalDev = isPersonalDevSubjectOrField(field, isSubject);
+
       if (isSubject) {
         let valToSave: any;
         if (value === '' || value === null || value === undefined) {
+          valToSave = deleteField();
+        } else if (isPersonalDev && (value === 0 || value === '0' || (!isNaN(parseFloat(String(value))) && parseFloat(String(value)) < 1))) {
           valToSave = deleteField();
         } else if (gradingScale === 'letters') {
           valToSave = String(value).toUpperCase().trim();
@@ -1706,12 +1746,14 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         updateData[`subjects.${field}`] = deleteField();
       } else {
         if (value === '' || value === null || value === undefined) {
-          updateData[field] = 0;
+          updateData[field] = deleteField();
+        } else if (isPersonalDev && (value === 0 || value === '0' || (!isNaN(parseFloat(String(value))) && parseFloat(String(value)) < 1))) {
+          updateData[field] = deleteField();
         } else if (gradingScale === 'letters') {
           updateData[field] = String(value).toUpperCase().trim();
         } else {
           const num = parseFloat(String(value));
-          updateData[field] = isNaN(num) ? 0 : num;
+          updateData[field] = isNaN(num) ? deleteField() : num;
         }
       }
 
@@ -1737,8 +1779,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
     const currentGrade = grades[studentId];
     let rawVal = isSubject ? (currentGrade?.subjects?.[field] ?? '') : (currentGrade?.[field as keyof StudentGrade] ?? '');
 
-    // Clean up trailing dot e.g. "9." -> "9"
-    if (typeof rawVal === 'string' && rawVal.endsWith('.')) {
+    const isPersonalDev = isPersonalDevSubjectOrField(field, isSubject);
+
+    if (isPersonalDev && (rawVal === 0 || rawVal === '0' || (!isNaN(parseFloat(String(rawVal))) && parseFloat(String(rawVal)) < 1))) {
+      rawVal = '';
+      handleGradeChange(studentId, field, '', isSubject);
+    } else if (typeof rawVal === 'string' && rawVal.endsWith('.')) {
       rawVal = rawVal.slice(0, -1);
       handleGradeChange(studentId, field, rawVal, isSubject);
     }
@@ -1757,13 +1803,15 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       : isBimestreLocked;
     if (isThisLocked && !canBypassLock) return;
 
+    const isPersonalDev = isPersonalDevSubjectOrField(field, isSubject);
+
     let parsedVal: any = value;
     if (isSubject) {
       if (gradingScale === 'letters') {
         parsedVal = value ? String(value).toUpperCase().trim() : '';
       } else {
         const strVal = String(value ?? '').trim();
-        if (strVal === '') {
+        if (strVal === '' || (isPersonalDev && (strVal === '0' || parseFloat(strVal) === 0))) {
           parsedVal = '';
         } else {
           // Allow only valid decimal numbers (digits and at most one decimal point)
@@ -1779,7 +1827,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         parsedVal = value ? String(value).toUpperCase().trim() : '';
       } else {
         const strVal = String(value ?? '').trim();
-        if (strVal === '') {
+        if (strVal === '' || (isPersonalDev && (strVal === '0' || parseFloat(strVal) === 0))) {
           parsedVal = '';
         } else {
           if (!/^[0-9]*\.?[0-9]*$/.test(strVal)) return;
@@ -1799,12 +1847,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         bimestre: selectedBimestre,
         cycleId: currentCycleId,
         subjects: {},
-        conduct: 0,
-        uniform: 0,
-        attendance: 0,
-        tasksNotDone: 0,
-        tardies: 0,
-        cleanliness: 0,
+        conduct: '',
+        uniform: '',
+        attendance: '',
+        tasksNotDone: '',
+        tardies: '',
+        cleanliness: '',
         updatedAt: serverTimestamp() as any,
         createdBy: userProfile?.id || ''
       };
@@ -1832,16 +1880,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       };
     });
 
-    // Debounced autosave (1200ms) - only if complete number, not trailing dot or empty
+    // Debounced autosave
     if (saveTimeoutRef.current[dirtyKey]) {
       clearTimeout(saveTimeoutRef.current[dirtyKey]);
     }
-    const isPartial = typeof parsedVal === 'string' && (parsedVal.endsWith('.') || parsedVal === '');
-    if (!isPartial) {
+    const isTrailingDot = typeof parsedVal === 'string' && parsedVal.endsWith('.');
+    if (!isTrailingDot) {
+      const delay = parsedVal === '' ? 400 : 1200;
       saveTimeoutRef.current[dirtyKey] = setTimeout(() => {
         saveSingleGrade(studentId, field, parsedVal, isSubject);
         delete saveTimeoutRef.current[dirtyKey];
-      }, 1200);
+      }, delay);
     }
   };
 
@@ -2008,12 +2057,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             bimestre: selectedBimestre,
             cycleId: currentCycleId,
             subjects: {},
-            conduct: 0,
-            uniform: 0,
-            attendance: 0,
-            tasksNotDone: 0,
-            tardies: 0,
-            cleanliness: 0,
+            conduct: '',
+            uniform: '',
+            attendance: '',
+            tasksNotDone: '',
+            tardies: '',
+            cleanliness: '',
             updatedAt: serverTimestamp() as any,
             createdBy: userProfile?.id || 'system'
           };
@@ -2114,12 +2163,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         subjects: {},
         subjectObservations: {},
         observations: {},
-        conduct: 0,
-        uniform: 0,
-        attendance: 0,
-        tasksNotDone: 0,
-        tardies: 0,
-        cleanliness: 0,
+        conduct: '',
+        uniform: '',
+        attendance: '',
+        tasksNotDone: '',
+        tardies: '',
+        cleanliness: '',
         updatedAt: serverTimestamp() as any,
         createdBy: userProfile?.id || 'system'
       };
@@ -2260,18 +2309,18 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           bimestre: selectedBimestre,
           cycleId: currentCycleId,
           subjects: {},
-          conduct: 0,
-          uniform: 0,
-          attendance: 0,
-          tasksNotDone: 0,
-          tardies: 0,
-          cleanliness: 0,
+          conduct: '',
+          uniform: '',
+          attendance: '',
+          tasksNotDone: '',
+          tardies: '',
+          cleanliness: '',
           updatedAt: serverTimestamp() as any,
           createdBy: userProfile?.id || 'system'
         };
 
         const autoFaltas = trackerSubj ? getStudentAbsenceCount(student.id, selectedBimestre) : null;
-        const finalAttendance = autoFaltas !== null ? autoFaltas : (grade.attendance ?? 0);
+        const finalAttendance = autoFaltas !== null ? autoFaltas : (grade.attendance !== '' && grade.attendance !== undefined ? grade.attendance : deleteField());
 
         const id = `${student.id}_B${selectedBimestre}_${currentCycleId}`;
         const curBatch = batches[batches.length - 1];
@@ -2286,21 +2335,34 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
           createdBy: grade.createdBy || userProfile?.id || 'system'
         };
 
+        // Clean up legacy formativos fields if blank, 0, or < 1
+        ['conduct', 'uniform', 'tasksNotDone', 'tardies', 'cleanliness'].forEach(f => {
+          const v = (grade as any)[f];
+          if (v === '' || v === undefined || v === null || v === 0 || v === '0' || (!isNaN(parseFloat(String(v))) && parseFloat(String(v)) < 1)) {
+            updateData[f] = deleteField();
+          } else {
+            updateData[f] = gradingScale === 'letters' ? String(v).toUpperCase().trim() : (parseFloat(String(v)) || v);
+          }
+        });
+
         const subjectsToUpdate: Record<string, any> = {};
         activeLevelSubjects.forEach(s => {
           if (!isStudentEnrolledInSubject(s, student.id, student.grade)) return;
           if (isSubjectLockedInPeriod(selectedBimestre, s.id, s.name) && !canBypassLock) {
             return;
           }
+          const isDev = s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal';
           const val = grade.subjects?.[s.name];
           if (val !== undefined && val !== null && val !== '') {
-            if (gradingScale === 'letters') {
+            if (isDev && (val === 0 || val === '0' || (!isNaN(parseFloat(String(val))) && parseFloat(String(val)) < 1))) {
+              subjectsToUpdate[s.name] = deleteField();
+            } else if (gradingScale === 'letters') {
               subjectsToUpdate[s.name] = String(val).toUpperCase().trim();
             } else {
               const num = parseFloat(String(val));
               subjectsToUpdate[s.name] = isNaN(num) ? val : num;
             }
-          } else if (val === '') {
+          } else if (val === '' || val === undefined || val === null) {
             subjectsToUpdate[s.name] = deleteField();
           }
           // Clean up legacy dot notation field
@@ -2549,12 +2611,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             bimestre: targetPeriod,
             cycleId: currentCycleId,
             subjects: {},
-            conduct: 0,
-            uniform: 0,
-            attendance: 0,
-            tasksNotDone: 0,
-            tardies: 0,
-            cleanliness: 0,
+            conduct: '',
+            uniform: '',
+            attendance: '',
+            tasksNotDone: '',
+            tardies: '',
+            cleanliness: '',
             updatedAt: serverTimestamp() as any,
             createdBy: userProfile.id
           };
@@ -4126,12 +4188,12 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                     {filteredStudents.map((student) => {
                       const studentGrade = grades[student.id] || {
                         subjects: {},
-                        conduct: 0,
-                        uniform: 0,
-                        attendance: 0,
-                        tasksNotDone: 0,
-                        tardies: 0,
-                        cleanliness: 0
+                        conduct: '',
+                        uniform: '',
+                        attendance: '',
+                        tasksNotDone: '',
+                        tardies: '',
+                        cleanliness: ''
                       };
 
                       return (
@@ -4257,13 +4319,17 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                 norm === 'aseo' ? 'cleanliness' : null
                               ) as keyof StudentGrade | null;
 
-                              const gradeVal = isAttendanceTracker
+                              const rawDevVal = isAttendanceTracker
                                 ? (autoAbsenceCount !== null 
                                     ? autoAbsenceCount 
                                     : (studentGrade.attendance !== undefined && studentGrade.attendance !== '' 
                                         ? studentGrade.attendance 
-                                        : (studentGrade.subjects?.[subj.name] ?? 0)))
+                                        : (studentGrade.subjects?.[subj.name] ?? '')))
                                 : (studentGrade.subjects?.[subj.name] ?? (legacyField ? studentGrade[legacyField] : '') ?? '');
+
+                              const gradeVal = (!isAttendanceTracker && (rawDevVal === 0 || rawDevVal === '0' || (!isNaN(parseFloat(String(rawDevVal))) && parseFloat(String(rawDevVal)) < 1)))
+                                ? ''
+                                : (rawDevVal ?? '');
 
                               return (
                                 <td 
@@ -4291,7 +4357,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                           handleGradeBlur(student.id, 'attendance', false);
                                         }}
                                         className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all tabular-nums"
-                                        placeholder="0"
+                                        placeholder="—"
                                       />
                                     ) : gradingScale === 'letters' ? (
                                       <select
@@ -4345,7 +4411,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                           }
                                         }}
                                         className="w-full bg-indigo-50/30 border border-transparent rounded px-1 py-2 text-center text-[10px] font-black text-indigo-950 focus:bg-white focus:border-indigo-400 outline-none transition-all italic tabular-nums"
-                                        placeholder={gradingScale === 'numeric_100' ? "0-100" : "-"}
+                                        placeholder="—"
                                       />
                                     );
                                   })()}

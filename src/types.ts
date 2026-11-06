@@ -412,12 +412,12 @@ export interface StudentGrade {
   subjectObservations?: Record<string, string>; // Observación por materia académica (ej. clave: nombre de materia)
   observations?: Record<string, string>; // Alias de respaldo
   generalObservation?: string;
-  conduct: number | string;
-  uniform: number | string;
-  attendance: number | string;
-  tasksNotDone: number | string;
-  tardies: number | string;
-  cleanliness: number | string;
+  conduct?: number | string;
+  uniform?: number | string;
+  attendance?: number | string;
+  tasksNotDone?: number | string;
+  tardies?: number | string;
+  cleanliness?: number | string;
   updatedAt: Timestamp;
   createdBy: string;
 }

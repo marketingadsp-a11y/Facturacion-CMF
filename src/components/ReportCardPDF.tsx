@@ -631,6 +631,13 @@ export default function ReportCardPDF({
     'aseo': 'cleanliness'
   };
 
+  const isAttendanceAspect = (subjName: string): boolean => {
+    const subjObj = subjects.find(s => s.name?.toLowerCase().trim() === subjName.toLowerCase().trim());
+    if (subjObj?.isAttendanceCount) return true;
+    const norm = subjName.toLowerCase().trim();
+    return ['asistencia', 'inasistencia', 'inasistencias', 'faltas', 'retardo', 'retardos'].includes(norm);
+  };
+
   const getGrade = (subject: string, bimestre: number): string | number => {
     // If it's an academic or recursamiento subject, compute effective grade taking into account linked autonomy subjects
     const isAcademic = academicSubjects.includes(subject) || recursamientoSubjects.includes(subject);
@@ -644,15 +651,27 @@ export default function ReportCardPDF({
     const bg = grades.find(g => Number(g.bimestre) === Number(bimestre));
     if (!bg) return '-';
 
+    const isPersonalDev = personalDevSubjects.some(p => p.toLowerCase().trim() === subject.toLowerCase().trim());
+
     if (bg.subjects) {
-      if (bg.subjects[subject] !== undefined && bg.subjects[subject] !== '') {
-        return bg.subjects[subject];
-      }
       const normSubj = subject.toLowerCase().trim();
-      for (const [k, val] of Object.entries(bg.subjects)) {
-        if (k.toLowerCase().trim() === normSubj && val !== undefined && val !== '') {
-          return val;
+      let matchedVal = bg.subjects[subject];
+      if (matchedVal === undefined || matchedVal === '') {
+        for (const [k, val] of Object.entries(bg.subjects)) {
+          if (k.toLowerCase().trim() === normSubj && val !== undefined && val !== '') {
+            matchedVal = val;
+            break;
+          }
         }
+      }
+
+      if (matchedVal !== undefined && matchedVal !== '') {
+        if (isPersonalDev && !isAttendanceAspect(subject)) {
+          if (matchedVal === 0 || matchedVal === '0' || (!isNaN(parseFloat(String(matchedVal))) && parseFloat(String(matchedVal)) < 1)) {
+            return '-';
+          }
+        }
+        return matchedVal;
       }
     }
 
@@ -666,6 +685,11 @@ export default function ReportCardPDF({
       const field = behaviorMap[normKey];
       const val = bg[field];
       if (val !== undefined && val !== null && val !== '') {
+        if (!isAttendanceAspect(subject)) {
+          if (val === 0 || val === '0' || (!isNaN(parseFloat(String(val))) && parseFloat(String(val)) < 1)) {
+            return '-';
+          }
+        }
         return val as string | number;
       }
       return '-';
@@ -677,13 +701,6 @@ export default function ReportCardPDF({
   const effectivePersonalDevList = personalDevSubjects.length > 0 
     ? personalDevSubjects 
     : ['Conducta', 'Uniforme', 'Asistencia'];
-
-  const isAttendanceAspect = (subjName: string): boolean => {
-    const subjObj = subjects.find(s => s.name?.toLowerCase().trim() === subjName.toLowerCase().trim());
-    if (subjObj?.isAttendanceCount) return true;
-    const norm = subjName.toLowerCase().trim();
-    return ['asistencia', 'inasistencia', 'inasistencias', 'faltas', 'retardo', 'retardos'].includes(norm);
-  };
 
   const getSubjectAvg = (subject: string) => {
     if (isAttendanceAspect(subject)) {

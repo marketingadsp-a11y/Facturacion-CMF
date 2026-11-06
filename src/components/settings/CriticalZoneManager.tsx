@@ -7,6 +7,7 @@ import {
   serverTimestamp, 
   query, 
   where,
+  deleteField,
   DocumentReference 
 } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -523,12 +524,12 @@ export default function CriticalZoneManager({ cycles, currentCycleId, onRefresh 
                 ref: doc(db, 'grades', d.id),
                 data: {
                   subjects: {},
-                  conduct: 0,
-                  uniform: 0,
-                  attendance: 0,
-                  tasksNotDone: 0,
-                  tardies: 0,
-                  cleanliness: 0,
+                  conduct: deleteField(),
+                  uniform: deleteField(),
+                  attendance: deleteField(),
+                  tasksNotDone: deleteField(),
+                  tardies: deleteField(),
+                  cleanliness: deleteField(),
                   updatedAt: serverTimestamp()
                 }
               });
