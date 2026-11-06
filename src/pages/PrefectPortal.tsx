@@ -410,11 +410,11 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
 
     filteredStudents.forEach(st => {
       const att = attendanceList.find(a => a.studentId === st.id);
-      if (!att) return;
-      if (att.status === 'Asistió') present++;
-      else if (att.status === 'Falta') absent++;
-      else if (att.status === 'Retardo') tardy++;
-      else if (att.status === 'Justificado') excused++;
+      const status = att?.status || 'Asistió';
+      if (status === 'Asistió') present++;
+      else if (status === 'Falta') absent++;
+      else if (status === 'Retardo') tardy++;
+      else if (status === 'Justificado') excused++;
     });
 
     const registered = present + absent + tardy + excused;
@@ -669,6 +669,106 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     }
   };
 
+  // Toggle Period Lock / Finalize for current period
+  const handleTogglePeriodLock = async () => {
+    if (!currentCycleId || !selectedLevel) return;
+
+    const willLock = !isCurrentPeriodLocked;
+    const actionLabel = willLock ? 'cerrar' : 'abrir';
+    const periodLabel = `Periodo ${selectedPeriod}`;
+
+    const confirmMsg = willLock 
+      ? `¿Estás seguro de que deseas CERRAR el ${periodLabel} para ${selectedLevel}?\n\nAl cerrarlo, quedará protegido en modo solo lectura para evitar modificaciones no deseadas.`
+      : `¿Estás seguro de que deseas ABRIR el ${periodLabel} para ${selectedLevel}?\n\nAl abrirlo, podrás editar calificaciones de conducta y uniforme nuevamente.`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    try {
+      setIsAutoSaving(true);
+      const batch = writeBatch(db);
+
+      // Target grades and groups
+      const targetGrades = selectedGrade !== 'Todos' ? [selectedGrade] : (availableGrades.length > 0 ? availableGrades : ['1', '2', '3']);
+      const targetGroups = selectedGroup !== 'Todos' ? [selectedGroup] : (availableGroups.length > 0 ? availableGroups : ['A', 'B']);
+
+      // Dev subjects
+      const subjectsToLock = devSubjects.length > 0 
+        ? devSubjects 
+        : [
+            { id: 'conducta', name: 'CONDUCTA' },
+            { id: 'uniforme', name: 'UNIFORME' }
+          ];
+
+      if (willLock) {
+        targetGrades.forEach(g => {
+          targetGroups.forEach(grp => {
+            // Lock dev subjects
+            subjectsToLock.forEach(s => {
+              const lockId = `${selectedPeriod}_${selectedLevel}_${g}_${grp}_${currentCycleId}_${s.id}`;
+              const ref = doc(db, 'bimestreLocks', lockId);
+              batch.set(ref, {
+                id: lockId,
+                bimestre: selectedPeriod,
+                level: selectedLevel,
+                grade: g,
+                group: grp,
+                cycleId: currentCycleId,
+                subjectId: s.id,
+                subjectName: s.name,
+                locked: true,
+                lockedAt: serverTimestamp(),
+                lockedBy: userProfile?.id || 'prefectura'
+              });
+            });
+
+            // Global group lock
+            const globalLockId = `${selectedPeriod}_${selectedLevel}_${g}_${grp}_${currentCycleId}`;
+            const globalRef = doc(db, 'bimestreLocks', globalLockId);
+            batch.set(globalRef, {
+              id: globalLockId,
+              bimestre: selectedPeriod,
+              level: selectedLevel,
+              grade: g,
+              group: grp,
+              cycleId: currentCycleId,
+              locked: true,
+              lockedAt: serverTimestamp(),
+              lockedBy: userProfile?.id || 'prefectura'
+            });
+          });
+        });
+
+        await batch.commit();
+        toast.success(`¡${periodLabel} cerrado exitosamente!`);
+      } else {
+        // Unlock / Open: delete matching locks
+        const locksToDelete = classLocks.filter(l => {
+          if (Number(l.bimestre) !== Number(selectedPeriod)) return false;
+          if (selectedGrade !== 'Todos' && l.grade !== selectedGrade) return false;
+          if (selectedGroup !== 'Todos' && l.group !== selectedGroup) return false;
+          return true;
+        });
+
+        locksToDelete.forEach(l => {
+          const ref = doc(db, 'bimestreLocks', l.id);
+          batch.delete(ref);
+        });
+
+        await batch.commit();
+        toast.success(`¡${periodLabel} abierto exitosamente! Ya puedes editar calificaciones.`);
+      }
+
+      setLastSavedTime(new Date());
+    } catch (err) {
+      console.error(`Error al ${actionLabel} periodo:`, err);
+      toast.error(`Error al ${actionLabel} el periodo`);
+    } finally {
+      setIsAutoSaving(false);
+    }
+  };
+
   // Export CSV of Attendance or Grades
   const handleExportCSV = () => {
     if (filteredStudents.length === 0) {
@@ -734,84 +834,21 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
   return (
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Banner / Header */}
-      <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-400/20 text-teal-300 border border-teal-400/30 text-xs font-black uppercase tracking-wider">
-                <ShieldCheck size={14} className="text-teal-400" />
-                Control de Prefectura
-              </span>
-              <span className="text-xs text-slate-400 font-medium">
-                {userProfile?.name ? `Responsable: ${userProfile.name}` : 'Módulo Prefectural'}
-              </span>
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              Panel de Prefectura
-            </h1>
-            <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Gestión centralizada de asistencia al plantel y calificaciones de desarrollo personal (conducta y uniforme) para alumnos de nivel secundaria y preparatoria.
-            </p>
+      <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden flex items-center justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-400/20 text-teal-300 border border-teal-400/30 text-xs font-black uppercase tracking-wider">
+              <ShieldCheck size={14} className="text-teal-400" />
+              Control de Prefectura
+            </span>
+            <span className="text-xs text-slate-400 font-medium">
+              {userProfile?.name ? `Responsable: ${userProfile.name}` : 'Módulo Prefectural'}
+            </span>
           </div>
 
-          {/* Quick Date & Save Status */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-white/10 backdrop-blur-md p-3.5 rounded-2xl border border-white/10 shrink-0">
-            <div className="flex items-center gap-2 text-xs text-slate-200">
-              <Calendar size={16} className="text-teal-400" />
-              <span className="font-bold capitalize">
-                {format(new Date(selectedDate + 'T12:00:00'), "EEEE d 'de' MMMM, yyyy", { locale: es })}
-              </span>
-            </div>
-
-            <div className="h-4 w-px bg-white/20 hidden sm:block" />
-
-            <div className="flex items-center gap-1.5 text-[11px]">
-              {isAutoSaving ? (
-                <span className="flex items-center gap-1.5 text-amber-300 font-bold">
-                  <RefreshCw size={12} className="animate-spin" /> Guardando...
-                </span>
-              ) : lastSavedTime ? (
-                <span className="flex items-center gap-1.5 text-teal-300 font-bold">
-                  <Check size={13} /> Guardado {format(lastSavedTime, 'HH:mm:ss')}
-                </span>
-              ) : (
-                <span className="text-slate-400">Listo para capturar</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Level Selector Tabs inside Header */}
-        <div className="relative z-10 mt-6 pt-6 border-t border-white/10 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2 flex items-center gap-1.5">
-            <GraduationCap size={14} className="text-teal-400" /> Nivel Educativo:
-          </span>
-          {availableLevels.map(lvl => {
-            const isSelected = selectedLevel === lvl;
-            return (
-              <button
-                key={lvl}
-                onClick={() => {
-                  setSelectedLevel(lvl);
-                  setSelectedGrade('Todos');
-                  setSelectedGroup('Todos');
-                }}
-                className={cn(
-                  "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2 border",
-                  isSelected
-                    ? "bg-white text-slate-900 border-white shadow-lg shadow-black/20"
-                    : "bg-white/10 hover:bg-white/20 text-white/90 border-white/10"
-                )}
-              >
-                <span>{lvl}</span>
-                {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />}
-              </button>
-            );
-          })}
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+            Panel de Prefectura
+          </h1>
         </div>
       </div>
 
@@ -823,39 +860,36 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
             <button
               onClick={() => setActiveTab('attendance')}
               className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
+                "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'attendance'
                   ? "bg-white text-teal-850 shadow-sm border border-slate-200"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
               )}
             >
-              <UserCheck size={16} className={activeTab === 'attendance' ? "text-teal-600" : "text-slate-400"} />
               Asistencia al Plantel
             </button>
 
             <button
               onClick={() => setActiveTab('development')}
               className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
+                "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'development'
                   ? "bg-white text-teal-850 shadow-sm border border-slate-200"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
               )}
             >
-              <Sparkles size={16} className={activeTab === 'development' ? "text-teal-600" : "text-slate-400"} />
               Desarrollo Personal (Conducta y Uniforme)
             </button>
 
             <button
               onClick={() => setActiveTab('summary')}
               className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
+                "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer whitespace-nowrap",
                 activeTab === 'summary'
                   ? "bg-white text-teal-850 shadow-sm border border-slate-200"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
               )}
             >
-              <FileSpreadsheet size={16} className={activeTab === 'summary' ? "text-teal-600" : "text-slate-400"} />
               Resumen y Reportes
             </button>
           </div>
@@ -873,8 +907,25 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
           </div>
         </div>
 
-        {/* Filter Toolbar: Grade, Group, Search & Date/Period */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4 border-t border-slate-100">
+        {/* Filter Toolbar: Nivel, Grade, Group, Search & Date/Period */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-4 border-t border-slate-100">
+          {/* Nivel Selector */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nivel Educativo</label>
+            <select
+              value={selectedLevel}
+              onChange={(e) => {
+                setSelectedLevel(e.target.value);
+                setSelectedGrade('Todos');
+                setSelectedGroup('Todos');
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+            >
+              {availableLevels.map(lvl => (
+                <option key={lvl} value={lvl}>{lvl}</option>
+              ))}
+            </select>
+          </div>
           {/* Grado Filter */}
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Grado</label>
@@ -1016,30 +1067,56 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               </p>
               <p className="text-xs opacity-90 mt-0.5">
                 {isCurrentPeriodLocked
-                  ? "Este periodo ha sido cerrado por Control Escolar o Administración. Las calificaciones de conducta y uniforme se muestran para consulta informativa y no pueden ser modificadas."
-                  : "Ingresa o edita las calificaciones de conducta y uniforme. Los cambios se sincronizan en tiempo real directamente en la boleta del alumno."}
+                  ? "Este periodo se encuentra cerrado. Las calificaciones se muestran para consulta y no pueden editarse. Puedes presionar \"Abrir Periodo\" si necesitas modificar calificaciones."
+                  : "Ingresa o edita calificaciones de conducta y uniforme. Los cambios se sincronizan en tiempo real directamente en la boleta del alumno."}
               </p>
             </div>
           </div>
 
-          {!isCurrentPeriodLocked && (
-            <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {isCurrentPeriodLocked ? (
               <button
-                onClick={() => handleMassFillGrade('conduct', 10)}
-                className="px-3 py-1.5 bg-white hover:bg-teal-100/70 border border-teal-300 rounded-xl text-xs font-bold text-teal-900 transition-colors cursor-pointer"
-                title="Llenar Conducta con 10 para los alumnos mostrados"
+                type="button"
+                onClick={handleTogglePeriodLock}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                title="Abrir este periodo para permitir captura y edición"
               >
-                10 en Conducta
+                <Unlock size={13} />
+                <span>Abrir Periodo {selectedPeriod}</span>
               </button>
+            ) : (
               <button
-                onClick={() => handleMassFillGrade('uniform', 10)}
-                className="px-3 py-1.5 bg-white hover:bg-teal-100/70 border border-teal-300 rounded-xl text-xs font-bold text-teal-900 transition-colors cursor-pointer"
-                title="Llenar Uniforme con 10 para los alumnos mostrados"
+                type="button"
+                onClick={handleTogglePeriodLock}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                title="Cerrar y proteger este periodo en modo solo lectura"
               >
-                10 en Uniforme
+                <Lock size={13} />
+                <span>Cerrar Periodo {selectedPeriod}</span>
               </button>
-            </div>
-          )}
+            )}
+
+            {!isCurrentPeriodLocked && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleMassFillGrade('conduct', 10)}
+                  className="px-3 py-1.5 bg-white hover:bg-teal-100/70 border border-teal-300 rounded-xl text-xs font-bold text-teal-900 transition-colors cursor-pointer"
+                  title="Llenar Conducta con 10 para los alumnos mostrados"
+                >
+                  10 en Conducta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMassFillGrade('uniform', 10)}
+                  className="px-3 py-1.5 bg-white hover:bg-teal-100/70 border border-teal-300 rounded-xl text-xs font-bold text-teal-900 transition-colors cursor-pointer"
+                  title="Llenar Uniforme con 10 para los alumnos mostrados"
+                >
+                  10 en Uniforme
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -1132,7 +1209,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
                   ) : (
                     filteredStudents.map((st, idx) => {
                       const att = attendanceList.find(a => a.studentId === st.id);
-                      const currentStatus = att?.status;
+                      const currentStatus = att?.status || 'Asistió';
                       const periodAbsences = getStudentAbsenceCountForPeriod(st.id, dateTargetPeriod);
 
                       return (
