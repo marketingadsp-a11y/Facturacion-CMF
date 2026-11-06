@@ -835,20 +835,15 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Top Banner / Header */}
       <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden flex items-center justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-400/20 text-teal-300 border border-teal-400/30 text-xs font-black uppercase tracking-wider">
-              <ShieldCheck size={14} className="text-teal-400" />
-              Control de Prefectura
-            </span>
-            <span className="text-xs text-slate-400 font-medium">
-              {userProfile?.name ? `Responsable: ${userProfile.name}` : 'Módulo Prefectural'}
-            </span>
-          </div>
-
+        <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
             Panel de Prefectura
           </h1>
+          {userProfile?.name && (
+            <p className="text-xs text-slate-400 font-medium mt-1">
+              Responsable: {userProfile.name}
+            </p>
+          )}
         </div>
       </div>
 
