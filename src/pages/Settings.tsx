@@ -3808,10 +3808,18 @@ export default function Settings() {
                                                 ? 'multiple'
                                                 : 'single'
                                             ),
-                                            restrictedLevels: user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : []),
+                                            restrictedLevels: (user.restrictedLevels && user.restrictedLevels.length > 0)
+                                              ? user.restrictedLevels
+                                              : ((user.assignedLevels && user.assignedLevels.length > 0)
+                                                  ? user.assignedLevels
+                                                  : (user.assignedLevel ? [user.assignedLevel] : [])),
                                             restrictedGrades: user.restrictedGrades || (user.assignedGrade ? [user.assignedGrade] : []),
                                             restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : []),
-                                            assignedLevels: user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])
+                                            assignedLevels: (user.assignedLevels && user.assignedLevels.length > 0)
+                                              ? user.assignedLevels
+                                              : ((user.restrictedLevels && user.restrictedLevels.length > 0)
+                                                  ? user.restrictedLevels
+                                                  : (user.assignedLevel ? [user.assignedLevel] : []))
                                           });
                                           setShowCurrentPassword(false);
                                           setShowNewPassword(false);
@@ -3949,10 +3957,18 @@ export default function Settings() {
                                             ? 'multiple'
                                             : 'single'
                                         ),
-                                        restrictedLevels: user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : []),
+                                        restrictedLevels: (user.restrictedLevels && user.restrictedLevels.length > 0)
+                                          ? user.restrictedLevels
+                                          : ((user.assignedLevels && user.assignedLevels.length > 0)
+                                              ? user.assignedLevels
+                                              : (user.assignedLevel ? [user.assignedLevel] : [])),
                                         restrictedGrades: user.restrictedGrades || (user.assignedGrade ? [user.assignedGrade] : []),
                                         restrictedGroups: user.restrictedGroups || (user.assignedGroup ? [user.assignedGroup] : []),
-                                        assignedLevels: user.assignedLevels || user.restrictedLevels || (user.assignedLevel ? [user.assignedLevel] : [])
+                                        assignedLevels: (user.assignedLevels && user.assignedLevels.length > 0)
+                                          ? user.assignedLevels
+                                          : ((user.restrictedLevels && user.restrictedLevels.length > 0)
+                                              ? user.restrictedLevels
+                                              : (user.assignedLevel ? [user.assignedLevel] : []))
                                       });
                                       setShowCurrentPassword(false);
                                       setShowNewPassword(false);
@@ -4249,11 +4265,16 @@ export default function Settings() {
                               <label key={level} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:text-indigo-600">
                                 <input 
                                   type="checkbox" 
-                                  checked={(userFormData.restrictedLevels || []).includes(level)}
+                                  checked={(userFormData.restrictedLevels || userFormData.assignedLevels || []).includes(level)}
                                   onChange={(e) => {
-                                    const current = userFormData.restrictedLevels || [];
+                                    const current = userFormData.restrictedLevels || userFormData.assignedLevels || [];
                                     const next = e.target.checked ? [...current, level] : current.filter(l => l !== level);
-                                    setUserFormData({...userFormData, restrictedLevels: next});
+                                    setUserFormData({
+                                      ...userFormData, 
+                                      restrictedLevels: next,
+                                      assignedLevels: next,
+                                      assignedLevel: next[0] || ''
+                                    });
                                   }}
                                   className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
                                 />
@@ -6111,13 +6132,17 @@ export default function Settings() {
                             ? finalTeacherGradeGroups
                             : {},
                           teacherGroupAccess: isMultiGroup ? 'multiple' : (userFormData.teacherGroupAccess || 'single'),
-                          restrictedLevels: finalRestrictedLevels.length > 0 ? finalRestrictedLevels : (userFormData.restrictedLevels || []),
+                          restrictedLevels: userFormData.role === 'Control Escolar'
+                            ? (userFormData.restrictedLevels || userFormData.assignedLevels || [])
+                            : (finalRestrictedLevels.length > 0 ? finalRestrictedLevels : (userFormData.restrictedLevels || [])),
                           assignedLevels: userFormData.role === 'Prefecto' 
                             ? (userFormData.assignedLevels || userFormData.restrictedLevels || (userFormData.assignedLevel ? [userFormData.assignedLevel] : []))
-                            : (userFormData.assignedLevels || []),
+                            : (userFormData.role === 'Control Escolar'
+                                ? (userFormData.assignedLevels || userFormData.restrictedLevels || [])
+                                : (userFormData.assignedLevels || [])),
                           restrictedGrades: finalRestrictedGrades.length > 0 ? finalRestrictedGrades : (userFormData.restrictedGrades || []),
                           restrictedGroups: finalRestrictedGroups,
-                          assignedLevel: userFormData.assignedLevel || (finalRestrictedLevels[0] || 'General'),
+                          assignedLevel: userFormData.assignedLevel || (finalRestrictedLevels[0] || (userFormData.restrictedLevels?.[0] || 'General')),
                           assignedGrade: userFormData.assignedGrade || (finalRestrictedGrades[0] || ''),
                           assignedGroup: userFormData.assignedGroup || (finalRestrictedGroups[0] || ''),
                           id: uid,
@@ -6420,9 +6445,9 @@ export default function Settings() {
                       {selectedUserDetail.role === 'Control Escolar' && (
                         <div className="pt-2 border-t border-blue-200/60 text-[11px]">
                           <span className="text-blue-700 font-bold block mb-1">Alcance de Niveles Permitidos:</span>
-                          {selectedUserDetail.restrictedLevels?.length ? (
+                          {(selectedUserDetail.restrictedLevels?.length || selectedUserDetail.assignedLevels?.length) ? (
                             <div className="flex flex-wrap gap-1">
-                              {selectedUserDetail.restrictedLevels.map(lvl => (
+                              {((selectedUserDetail.restrictedLevels?.length ? selectedUserDetail.restrictedLevels : selectedUserDetail.assignedLevels) || []).map(lvl => (
                                 <span key={lvl} className="bg-white border border-blue-200 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded">
                                   {lvl}
                                 </span>

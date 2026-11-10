@@ -10,7 +10,7 @@ import {
   PieChart as PieChartIcon, LogOut, Settings as SettingsIcon, Bell,
   Plus, Edit2, Trash2, AlertTriangle, X as XIcon, User, LayoutDashboard, Save,
   CheckCircle2, Activity, UserRound, Heart, Banknote,
-  FileBadge, ClipboardList, Presentation, SlidersHorizontal, BellRing, ArrowRight, Sparkles, Eye
+  FileBadge, ClipboardList, Presentation, SlidersHorizontal, BellRing, ArrowRight, Sparkles, Eye, ShieldCheck
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { formatCurrency, cn } from '../lib/utils';
@@ -476,6 +476,13 @@ export default function Dashboard() {
         icon: FileBadge,
         to: '/control-escolar',
         hasAccess: hasPermission('controlEscolar', 'view')
+      },
+      {
+        id: 'prefectura',
+        title: 'Prefectura y Asistencia',
+        icon: ShieldCheck,
+        to: '/prefectura',
+        hasAccess: hasPermission('controlEscolar', 'view') || userProfile?.role === 'Prefecto'
       },
       {
         id: 'alumnos',

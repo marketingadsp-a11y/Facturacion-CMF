@@ -434,17 +434,44 @@ export default function AcademicControl() {
   };
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
-  const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
+  const restrictedLevels = useMemo(() => {
+    if (isSuperAdmin) return [];
+    if (userProfile?.restrictedLevels && userProfile.restrictedLevels.length > 0) {
+      return userProfile.restrictedLevels;
+    }
+    if (userProfile?.assignedLevels && userProfile.assignedLevels.length > 0) {
+      return userProfile.assignedLevels;
+    }
+    if (userProfile?.assignedLevel) {
+      return [userProfile.assignedLevel];
+    }
+    return [];
+  }, [isSuperAdmin, userProfile?.restrictedLevels, userProfile?.assignedLevels, userProfile?.assignedLevel]);
+
   const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
   const restrictedGroups = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGroups || []), [isSuperAdmin, userProfile?.restrictedGroups]);
 
   const availableLevels = useMemo(() => {
-    const all = settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Bachillerato'];
+    const all = settings?.academicLevels || ['Preescolar', 'Primaria', 'Secundaria', 'Preparatoria'];
     if (restrictedLevels.length > 0) {
-      return all.filter(lvl => restrictedLevels.includes(lvl));
+      return all.filter(lvl => 
+        restrictedLevels.some(r => r.trim().toLowerCase() === lvl.trim().toLowerCase())
+      );
     }
     return all;
   }, [settings?.academicLevels, restrictedLevels]);
+
+  // Synchronize filterLevel when availableLevels or restrictedLevels change
+  useEffect(() => {
+    if (availableLevels.length > 0) {
+      if (restrictedLevels.length > 0) {
+        if (!filterLevel || !availableLevels.some(l => l.trim().toLowerCase() === filterLevel.trim().toLowerCase())) {
+          setFilterLevel(availableLevels[0]);
+          setSelectedLevel(availableLevels[0]);
+        }
+      }
+    }
+  }, [availableLevels, restrictedLevels, filterLevel]);
 
   const availableGrades = useMemo(() => {
     const all = settings?.academicGrades || ['1ro', '2do', '3ro', '4to', '5to', '6to'];
@@ -464,7 +491,7 @@ export default function AcademicControl() {
 
   const filteredEnrollments = enrollments.filter(e => {
     // Restricciones granulares asignadas al usuario
-    if (restrictedLevels.length > 0 && !restrictedLevels.includes(e.level)) return false;
+    if (restrictedLevels.length > 0 && !restrictedLevels.some(r => r.trim().toLowerCase() === (e.level || '').trim().toLowerCase())) return false;
     if (restrictedGrades.length > 0 && !restrictedGrades.includes(e.grade)) return false;
 
     const matchesSearch = studentMatchesSearch([
@@ -480,7 +507,7 @@ export default function AcademicControl() {
 
   const filteredStudents = students.filter(s => {
     // Restricciones granulares asignadas al usuario
-    if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+    if (restrictedLevels.length > 0 && !restrictedLevels.some(r => r.trim().toLowerCase() === (s.level || '').trim().toLowerCase())) return false;
     if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
     if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
 
@@ -509,7 +536,7 @@ export default function AcademicControl() {
     if (!targetLevel) return [];
     
     const levelStudents = students.filter(s => {
-      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedLevels.length > 0 && !restrictedLevels.some(r => r.trim().toLowerCase() === (s.level || '').trim().toLowerCase())) return false;
       if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
       if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
 
@@ -571,7 +598,7 @@ export default function AcademicControl() {
     const tGroup = exportGroup || filterGroup;
 
     return students.filter(s => {
-      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedLevels.length > 0 && !restrictedLevels.some(r => r.trim().toLowerCase() === (s.level || '').trim().toLowerCase())) return false;
       if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
       if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
 
@@ -591,7 +618,7 @@ export default function AcademicControl() {
   const currentGroupStudents = useMemo(() => {
     if (!filterLevel || !filterGrade || !filterGroup) return [];
     return students.filter(s => {
-      if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+      if (restrictedLevels.length > 0 && !restrictedLevels.some(r => r.trim().toLowerCase() === (s.level || '').trim().toLowerCase())) return false;
       if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
       if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
 
@@ -913,7 +940,7 @@ export default function AcademicControl() {
                 onChange={(e) => setFilterLevel(e.target.value)}
                 className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-[9px] font-black uppercase tracking-tight outline-none focus:border-slate-900"
               >
-                <option value="">TODOS NIVELES</option>
+                {availableLevels.length > 1 && <option value="">TODOS NIVELES</option>}
                 {availableLevels.map(level => (
                   <option key={level} value={level}>{level}</option>
                 ))}
@@ -944,7 +971,7 @@ export default function AcademicControl() {
               {(filterLevel || filterGrade || filterGroup || searchTerm || (filterCycleId !== (settings?.currentCycleId || ''))) && (
                 <button
                   onClick={() => {
-                    setFilterLevel('');
+                    setFilterLevel(availableLevels.length === 1 ? availableLevels[0] : '');
                     setFilterGrade('');
                     setFilterGroup('');
                     setSearchTerm('');
@@ -1217,7 +1244,7 @@ export default function AcademicControl() {
                 <div className="grid grid-cols-1 gap-4">
                   <button
                     onClick={() => {
-                      setFilterLevel('');
+                      setFilterLevel(availableLevels.length === 1 ? availableLevels[0] : '');
                       setFilterGrade('');
                       setFilterGroup('');
                       setIsGroupSelectModalOpen(false);
@@ -1225,8 +1252,12 @@ export default function AcademicControl() {
                     className="w-full py-4 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1 transition-all group"
                   >
                     <UserRound size={20} className="text-slate-400 group-hover:text-slate-900 transition-colors" />
-                    <span className="text-[11px] font-black text-slate-900 uppercase tracking-widest">Ver Todos los Alumnos</span>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase italic">Matrícula General</span>
+                    <span className="text-[11px] font-black text-slate-900 uppercase tracking-widest">
+                      {availableLevels.length === 1 ? `Ver Alumnos de ${availableLevels[0]}` : 'Ver Todos los Alumnos'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase italic">
+                      {availableLevels.length === 1 ? 'Nivel Asignado' : 'Matrícula General'}
+                    </span>
                   </button>
 
                   <div className="relative py-4">
@@ -1246,7 +1277,7 @@ export default function AcademicControl() {
                         onChange={(e) => setSelectedLevel(e.target.value)}
                         className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-slate-900 transition-all uppercase"
                       >
-                        <option value="">NIVEL</option>
+                        {availableLevels.length > 1 && <option value="">NIVEL</option>}
                         {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
                       </select>
                     </div>
@@ -2351,7 +2382,7 @@ export default function AcademicControl() {
 
                 {migrationSourceCycle && (() => {
                   const srcStudents = students.filter(s => {
-                    if (restrictedLevels.length > 0 && !restrictedLevels.includes(s.level)) return false;
+                    if (restrictedLevels.length > 0 && !restrictedLevels.some(r => r.trim().toLowerCase() === (s.level || '').trim().toLowerCase())) return false;
                     if (restrictedGrades.length > 0 && !restrictedGrades.includes(s.grade)) return false;
                     if (restrictedGroups.length > 0 && !restrictedGroups.includes(s.group || '')) return false;
                     return s.cycleId === migrationSourceCycle || (s.cycles && s.cycles.includes(migrationSourceCycle)) || (!s.cycleId && migrationSourceCycle === settings?.currentCycleId);

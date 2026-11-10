@@ -157,27 +157,38 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     return unsub;
   }, []);
 
-  // Determine available levels for the logged user
+  // Determine available levels for the logged user (respecting assigned/restricted levels)
   const availableLevels = useMemo(() => {
     const allConfigured = settings?.academicLevels || ['Secundaria', 'Preparatoria'];
     
-    // If the user is a Prefecto, prioritize their assigned levels
-    if (userProfile?.role === 'Prefecto') {
-      const assigned = userProfile.assignedLevels && userProfile.assignedLevels.length > 0 
-        ? userProfile.assignedLevels 
-        : (userProfile.restrictedLevels && userProfile.restrictedLevels.length > 0 
-            ? userProfile.restrictedLevels 
-            : (userProfile.assignedLevel ? [userProfile.assignedLevel] : []));
+    // Superadministrador always has unrestricted access to all levels
+    if (userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com') {
+      return allConfigured;
+    }
+
+    // Resolve any restricted or assigned levels for the user (Prefecto, Control Escolar, etc.)
+    const assigned = (userProfile?.restrictedLevels && userProfile.restrictedLevels.length > 0)
+      ? userProfile.restrictedLevels
+      : ((userProfile?.assignedLevels && userProfile.assignedLevels.length > 0)
+          ? userProfile.assignedLevels
+          : (userProfile?.assignedLevel ? [userProfile.assignedLevel] : []));
       
-      if (assigned.length > 0) {
-        return allConfigured.filter(lvl => assigned.includes(lvl));
+    if (assigned.length > 0) {
+      const filtered = allConfigured.filter(lvl => 
+        assigned.some(a => a.trim().toLowerCase() === lvl.trim().toLowerCase())
+      );
+      if (filtered.length > 0) {
+        return filtered;
       }
-      // Default preference for Prefectura: Secundaria y Preparatoria
+    }
+
+    // If role is Prefecto and no levels are explicitly assigned, default to Secundaria / Preparatoria
+    if (userProfile?.role === 'Prefecto') {
       const prefDefault = allConfigured.filter(lvl => /secundaria|preparatoria|bachillerato/i.test(lvl));
       return prefDefault.length > 0 ? prefDefault : allConfigured;
     }
 
-    // Admins / Superadmins / Control Escolar see all levels
+    // If role is Control Escolar or other and no restrictions are assigned, see all configured levels
     return allConfigured;
   }, [settings?.academicLevels, userProfile]);
 
@@ -256,7 +267,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     return list;
   }, [subjects]);
 
-  // Available grades and groups for the selected level
+  // Available grades and groups for the selected level (respecting user restrictions)
   const availableGrades = useMemo(() => {
     const levelStudents = students.filter(s => s.level === selectedLevel);
     const setGrades = new Set<string>();
@@ -267,8 +278,12 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     fromSettings.forEach(g => {
       if (levelStudents.some(s => s.grade === g)) setGrades.add(g);
     });
-    return Array.from(setGrades).sort();
-  }, [students, selectedLevel, settings?.academicGrades]);
+    const list = Array.from(setGrades).sort();
+    if (userProfile?.role !== 'Superadministrador' && userProfile?.restrictedGrades && userProfile.restrictedGrades.length > 0) {
+      return list.filter(g => userProfile.restrictedGrades!.includes(g));
+    }
+    return list;
+  }, [students, selectedLevel, settings?.academicGrades, userProfile]);
 
   const availableGroups = useMemo(() => {
     const levelStudents = students.filter(s => s.level === selectedLevel && (selectedGrade === 'Todos' || s.grade === selectedGrade));
@@ -280,8 +295,12 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
     fromSettings.forEach(g => {
       if (levelStudents.some(s => s.group === g)) setGroups.add(g);
     });
-    return Array.from(setGroups).sort();
-  }, [students, selectedLevel, selectedGrade, settings?.academicGroups]);
+    const list = Array.from(setGroups).sort();
+    if (userProfile?.role !== 'Superadministrador' && userProfile?.restrictedGroups && userProfile.restrictedGroups.length > 0) {
+      return list.filter(grp => userProfile.restrictedGroups!.includes(grp));
+    }
+    return list;
+  }, [students, selectedLevel, selectedGrade, settings?.academicGroups, userProfile]);
 
   // Load bimestre locks for current cycle and level
   useEffect(() => {
@@ -460,9 +479,15 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
 
   // Filtered students in current view
   const filteredStudents = useMemo(() => {
+    const isSuper = userProfile?.role === 'Superadministrador';
+    const rGrades = !isSuper && userProfile?.restrictedGrades && userProfile.restrictedGrades.length > 0 ? userProfile.restrictedGrades : null;
+    const rGroups = !isSuper && userProfile?.restrictedGroups && userProfile.restrictedGroups.length > 0 ? userProfile.restrictedGroups : null;
+
     return students
       .filter(s => {
         if (s.level !== selectedLevel) return false;
+        if (rGrades && !rGrades.includes(s.grade)) return false;
+        if (rGroups && !rGroups.includes(s.group || '')) return false;
         if (selectedGrade !== 'Todos' && s.grade !== selectedGrade) return false;
         if (selectedGroup !== 'Todos' && s.group !== selectedGroup) return false;
         if (searchTerm && !studentMatchesSearch([s.name, s.lastName, s.motherLastName, s.matricula, s.curp], searchTerm)) return false;
@@ -476,7 +501,7 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
         const nameB = `${b.lastName || ''} ${b.motherLastName || ''} ${b.name || ''}`.trim();
         return nameA.localeCompare(nameB);
       });
-  }, [students, selectedLevel, selectedGrade, selectedGroup, searchTerm]);
+  }, [students, selectedLevel, selectedGrade, selectedGroup, searchTerm, userProfile]);
 
   // Attendance metrics for today / selectedDate
   const attendanceStats = useMemo(() => {

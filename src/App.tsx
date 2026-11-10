@@ -638,7 +638,7 @@ const AppContent = () => {
         path="/prefectura" 
         element={
           <ProtectedRoute>
-            {isParent ? <Navigate to="/" /> : <PrefectPortal appSettings={appSettings} />}
+            {isParent || (!hasPermission('controlEscolar', 'view') && userProfile?.role !== 'Prefecto' && userProfile?.role !== 'Superadministrador' && userProfile?.role !== 'Administrador') ? <Navigate to="/" /> : <PrefectPortal appSettings={appSettings} />}
           </ProtectedRoute>
         } 
       />
