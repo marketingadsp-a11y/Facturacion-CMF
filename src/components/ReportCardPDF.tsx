@@ -705,9 +705,17 @@ export default function ReportCardPDF({
     return '-';
   };
 
-  const effectivePersonalDevList = personalDevSubjects.length > 0 
+  const isPrepa = Boolean(student?.level && /preparatoria|bachillerato|prepa/i.test(student.level));
+
+  const effectivePersonalDevList = (personalDevSubjects.length > 0 
     ? personalDevSubjects 
-    : ['Conducta', 'Uniforme', 'Asistencia'];
+    : (isPrepa ? ['Conducta', 'Uniforme'] : ['Conducta', 'Uniforme', 'Asistencia'])
+  ).filter(aspect => {
+    if (isPrepa && isAttendanceAspect(aspect)) {
+      return false;
+    }
+    return true;
+  });
 
   const getSubjectAvg = (subject: string) => {
     if (isAttendanceAspect(subject)) {
@@ -1024,44 +1032,22 @@ export default function ReportCardPDF({
             <Text style={styles.tableHeaderAvg}>PROM</Text>
           </View>
 
-          {personalDevSubjects.length > 0 ? (
-            personalDevSubjects.map((aspect, idx) => (
-              <View 
-                key={`row-dev-${idx}`} 
-                style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
-              >
-                <Text style={styles.tableCellSubject}>{String(aspect || '').toUpperCase()}</Text>
-                {periodIndices.map(num => (
-                  <Text key={`g-dev-${aspect}-${num}`} style={styles.tableCellPeriod}>
-                    {getGrade(aspect, num)}
-                  </Text>
-                ))}
-                <Text style={styles.tableCellAvg}>
-                  {getSubjectAvg(aspect)}
+          {effectivePersonalDevList.map((aspect, idx) => (
+            <View 
+              key={`row-dev-${idx}`} 
+              style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
+            >
+              <Text style={styles.tableCellSubject}>{String(aspect || '').toUpperCase()}</Text>
+              {periodIndices.map(num => (
+                <Text key={`g-dev-${aspect}-${num}`} style={styles.tableCellPeriod}>
+                  {getGrade(aspect, num)}
                 </Text>
-              </View>
-            ))
-          ) : (
-            <>
-              {/* Default behavior/formative entries if no dedicated subjects */}
-              {['Conducta', 'Uniforme', 'Asistencia'].map((aspect, idx) => (
-                <View 
-                  key={`row-dev-def-${idx}`} 
-                  style={[styles.tableRow, idx % 2 === 1 ? { backgroundColor: '#FAFAFA' } : {}]}
-                >
-                  <Text style={styles.tableCellSubject}>{String(aspect || '').toUpperCase()}</Text>
-                  {periodIndices.map(num => (
-                    <Text key={`g-dev-def-${aspect}-${num}`} style={styles.tableCellPeriod}>
-                      {getGrade(aspect, num)}
-                    </Text>
-                  ))}
-                  <Text style={styles.tableCellAvg}>
-                    {getSubjectAvg(aspect)}
-                  </Text>
-                </View>
               ))}
-            </>
-          )}
+              <Text style={styles.tableCellAvg}>
+                {getSubjectAvg(aspect)}
+              </Text>
+            </View>
+          ))}
 
           {/* Personal Dev Promedios Summary Row */}
           <View style={styles.tableSummaryRow}>

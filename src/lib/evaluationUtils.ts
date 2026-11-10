@@ -230,7 +230,7 @@ export function getLevelEvaluationConfig(settings: AppSettings | null, levelName
       enableSubjectAttendance: subjectAttendanceFallback,
       roundAverages: false,
       roundLinkedSubjects: false,
-      attendancePeriodsInReportCard: [1, 2, 3, 4, 5]
+      attendancePeriodsInReportCard: []
     };
   } else if (lLower.includes('universidad') || lLower.includes('licenciatura')) {
     return {
@@ -292,6 +292,12 @@ export function isAttendanceIncludedInReportCard(
 ): boolean {
   if (period === undefined || period === null) return false;
   const isSecundaria = levelName ? /secundaria/i.test(levelName) : false;
+  const isPrepa = levelName ? /preparatoria|bachillerato|prepa/i.test(levelName) : false;
+
+  // En Preparatoria las inasistencias/asistencias NO se incluyen en la boleta
+  if (isPrepa) {
+    return false;
+  }
 
   if (evalConfig?.attendancePeriodsInReportCard !== undefined) {
     return Array.isArray(evalConfig.attendancePeriodsInReportCard) && evalConfig.attendancePeriodsInReportCard.includes(Number(period));
