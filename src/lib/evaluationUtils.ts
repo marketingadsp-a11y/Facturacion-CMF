@@ -117,9 +117,10 @@ export function formatAverage(sum: number, count: number, scale: GradingScale, r
   }
   if (roundAverages) {
     const rounded = Math.round(raw);
-    return rounded >= 10 ? '10' : rounded.toFixed(1);
+    return rounded.toString();
   }
-  return raw.toFixed(1);
+  const formatted = raw.toFixed(1);
+  return formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted;
 }
 
 /**
@@ -390,12 +391,15 @@ export function getEffectiveSubjectGrade(
   if (allNums.length === 1) {
     // If only base or only one linked subject was graded
     if (baseNum !== null) {
-      return { rawValue: baseRaw!, numericValue: baseNum };
+      const bStr = String(baseRaw);
+      const cleanBase = bStr.endsWith('.0') ? bStr.slice(0, -2) : baseRaw!;
+      return { rawValue: cleanBase, numericValue: baseNum };
     }
     const val = formatAverage(allNums[0], 1, scale, shouldRoundLinked);
+    const cleanVal = typeof val === 'string' && val.endsWith('.0') ? val.slice(0, -2) : val;
     return {
-      rawValue: val,
-      numericValue: gradeToNumeric(val, scale) ?? allNums[0]
+      rawValue: cleanVal,
+      numericValue: gradeToNumeric(cleanVal, scale) ?? allNums[0]
     };
   }
 
@@ -403,9 +407,10 @@ export function getEffectiveSubjectGrade(
   const sum = allNums.reduce((a, b) => a + b, 0);
   const avg = sum / allNums.length;
   const val = formatAverage(sum, allNums.length, scale, shouldRoundLinked);
+  const cleanVal = typeof val === 'string' && val.endsWith('.0') ? val.slice(0, -2) : val;
   return {
-    rawValue: val,
-    numericValue: gradeToNumeric(val, scale) ?? (shouldRoundLinked ? Math.round(avg) : avg)
+    rawValue: cleanVal,
+    numericValue: gradeToNumeric(cleanVal, scale) ?? (shouldRoundLinked ? Math.round(avg) : avg)
   };
 }
 

@@ -675,7 +675,8 @@ export default function ReportCardPDF({
             return '-';
           }
         }
-        return matchedVal;
+        const strVal = String(matchedVal);
+        return strVal.endsWith('.0') ? strVal.slice(0, -2) : matchedVal;
       }
     }
 

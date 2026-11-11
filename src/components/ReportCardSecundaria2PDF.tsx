@@ -389,7 +389,8 @@ export default function ReportCardSecundaria2PDF({
         return normM === normKey || m === key;
       });
       if (isMatch) {
-        return val;
+        const strVal = String(val);
+        return strVal.endsWith('.0') ? strVal.slice(0, -2) : val;
       }
     }
 
@@ -397,7 +398,8 @@ export default function ReportCardSecundaria2PDF({
     for (const m of matchNames) {
       const matchedSubject = subjects.find(s => norm(s.name) === norm(m));
       if (matchedSubject && rawSubjects[matchedSubject.id] !== undefined && rawSubjects[matchedSubject.id] !== '') {
-        return rawSubjects[matchedSubject.id];
+        const strVal = String(rawSubjects[matchedSubject.id]);
+        return strVal.endsWith('.0') ? strVal.slice(0, -2) : rawSubjects[matchedSubject.id];
       }
     }
 
