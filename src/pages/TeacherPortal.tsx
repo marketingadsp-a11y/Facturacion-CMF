@@ -172,7 +172,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const [includeObservationsInPdf, setIncludeObservationsInPdf] = useState<boolean>(true);
 
   const isSuperAdmin = userProfile?.role === 'Superadministrador' || userProfile?.email?.toLowerCase() === 'cramonmb@gmail.com';
-  const isSpecificTeacher = userProfile?.role === 'Docente' && userProfile.teacherSubjectAccess === 'specific';
+  const isSpecificTeacher = userProfile?.role === 'Docente' && (
+    userProfile.teacherSubjectAccess === 'specific' ||
+    (userProfile.teacherSubjectAccess !== 'all' && Array.isArray(userProfile.assignedSubjects) && userProfile.assignedSubjects.length > 0)
+  );
   const canBypassLock = isSuperAdmin || ['Superadministrador', 'Administrador', 'Control Escolar'].includes(userProfile?.role || '');
   const restrictedLevels = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedLevels || []), [isSuperAdmin, userProfile?.restrictedLevels]);
   const restrictedGrades = useMemo(() => isSuperAdmin ? [] : (userProfile?.restrictedGrades || []), [isSuperAdmin, userProfile?.restrictedGrades]);
@@ -1348,9 +1351,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
   const isSubjectLockedInPeriod = useCallback((b: number, subjectId?: string, subjectName?: string): boolean => {
     if (!classLocks || classLocks.length === 0) return false;
 
-    // 1. Check if there is a global lock for this period
-    const hasGlobal = classLocks.some(l => Number(l.bimestre) === Number(b) && !l.subjectId && l.locked);
-    if (hasGlobal) return true;
+    // 1. For Preescolar / Primaria: check if there is a global lock for this period
+    if (!isSecundariaOrPrepa) {
+      const hasGlobal = classLocks.some(l => Number(l.bimestre) === Number(b) && !l.subjectId && l.locked);
+      if (hasGlobal) return true;
+    }
 
     // 2. If subject-level locking applies (Secundaria or Preparatoria)
     if (isSecundariaOrPrepa && (subjectId || subjectName)) {
@@ -1375,13 +1380,14 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
         periodsMap[b] = classLocks.some(l => Number(l.bimestre) === Number(b) && !l.subjectId && l.locked);
       } else {
         // For Secundaria / Preparatoria:
-        // A period is fully locked for this teacher only if all of their relevant subjects are locked
+        // A period is fully locked for this teacher ONLY if all of their relevant subjects are locked
         if (activeTab === 'activities' && selectedSubjectId) {
           periodsMap[b] = isSubjectLockedInPeriod(b, selectedSubjectId, selectedSubject?.name);
         } else if (activeLevelSubjects.length > 0) {
           periodsMap[b] = activeLevelSubjects.every(s => isSubjectLockedInPeriod(b, s.id, s.name));
         } else {
-          periodsMap[b] = classLocks.some(l => Number(l.bimestre) === Number(b) && l.locked);
+          // If subjects are not loaded yet or teacher has no subjects in this class, period is NOT locked
+          periodsMap[b] = false;
         }
       }
     });
@@ -1401,7 +1407,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       } else if (activeLevelSubjects.length > 0) {
         setIsBimestreLocked(activeLevelSubjects.every(s => isSubjectLockedInPeriod(selectedBimestre, s.id, s.name)));
       } else {
-        setIsBimestreLocked(!!lockedPeriods[selectedBimestre]);
+        setIsBimestreLocked(false);
       }
     }
   }, [lockedPeriods, selectedBimestre, isSecundariaOrPrepa, activeTab, selectedSubjectId, selectedSubject, selectedObsSubjectId, selectedObsSubject, activeLevelSubjects, isSubjectLockedInPeriod]);
@@ -1411,7 +1417,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       return !!lockedPeriods[selectedBimestre];
     }
     if (activeLevelSubjects.length === 0) {
-      return !!lockedPeriods[selectedBimestre];
+      return false;
     }
     return activeLevelSubjects.every(s => isSubjectLockedInPeriod(selectedBimestre, s.id, s.name));
   }, [isSecundariaOrPrepa, lockedPeriods, selectedBimestre, activeLevelSubjects, isSubjectLockedInPeriod]);
@@ -2472,6 +2478,10 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
 
     if (isSecundariaOrPrepa) {
       if (subjectParam === 'ALL') {
+        if (!isSpecificTeacher) {
+          toast.warning("Para finalizar periodos, debes seleccionar cada materia individualmente.");
+          return;
+        }
         lockAll = true;
       } else if (subjectParam) {
         targetSubj = subjectParam;
@@ -2485,10 +2495,14 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
       }
     }
 
+    const unlockedSubjsForConfirm = isSecundariaOrPrepa && lockAll
+      ? activeLevelSubjects.filter(s => !isSubjectLockedInPeriod(selectedBimestre, s.id, s.name))
+      : [];
+
     const confirmMsg = targetSubj
       ? `¿Estás seguro de finalizar las calificaciones de la materia "${targetSubj.name}" para ${periodLabel}? Una vez finalizada, no podrás editarla a menos que un administrador te habilite.`
       : lockAll
-        ? `¿Estás seguro de finalizar todas las materias de ${periodLabel}? Una vez finalizadas, no podrás editarlas a menos que un administrador te habilite.`
+        ? `¿Estás seguro de finalizar tus ${unlockedSubjsForConfirm.length} materias (${unlockedSubjsForConfirm.map(s => s.name).join(', ')}) para ${periodLabel}? Una vez finalizadas, no podrás editarlas a menos que un administrador te habilite.`
         : `¿Estás seguro de finalizar las calificaciones de ${periodLabel}? Una vez finalizado, no podrás editarlas a menos que un administrador te habilite.`;
 
     if (!window.confirm(confirmMsg)) return;
@@ -2552,14 +2566,20 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
             lockedBy: userProfile.id
           });
         }
-        toast.success(`¡Todas las materias finalizadas para ${periodLabel}!`);
+        toast.success(`¡Tus materias han sido finalizadas para ${periodLabel}!`);
         hasManuallySelectedPeriodRef.current = false;
         if (selectedBimestre < evalConfig.periodCount) {
           const nextB = (selectedBimestre + 1) as Bimestre;
           setSelectedBimestre(nextB);
-          setSavedStatus(`¡Todas las materias finalizadas para ${periodLabel}! Se avanzó al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
+          setSavedStatus(`¡Tus materias han sido finalizadas para ${periodLabel}! Se avanzó al periodo ${evalConfig.periodType.charAt(0)}${nextB}.`);
         }
+      } else if (isSecundariaOrPrepa) {
+        // In Secundaria and Preparatoria, NEVER create a global lock without subjectId
+        toast.warning("Debes seleccionar una materia específica para finalizar.");
+        setIsFinalizeModalOpen(true);
+        return;
       } else {
+        // ONLY for Preescolar and Primaria (global lock for the group)
         const lockId = `${selectedBimestre}_${targetLevel}_${targetGrade}_${targetGroup || ''}_${currentCycleId}`;
         await setDoc(doc(db, 'bimestreLocks', lockId), {
           id: lockId,
@@ -3334,7 +3354,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                       <Lock size={12} />
                       {isSecundariaOrPrepa && activeLevelSubjects.length === 1 
                         ? `${activeLevelSubjects[0].name} Finalizada` 
-                        : 'Periodo Finalizado'}
+                        : isSecundariaOrPrepa
+                          ? 'Materias Finalizadas'
+                          : 'Periodo Finalizado'}
                       {canBypassLock && (
                         <span className="text-[8.5px] bg-amber-200/80 text-amber-950 px-1.5 py-0.5 rounded font-black tracking-normal">
                           Edición habilitada
@@ -3389,7 +3411,9 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                     )}
                     {isSecundariaOrPrepa && activeLevelSubjects.length === 1
                       ? `Finalizar ${activeLevelSubjects[0].name}`
-                      : `Finalizar ${evalConfig.periodNames?.[selectedBimestre - 1] || 'Periodo'}`}
+                      : isSecundariaOrPrepa
+                        ? 'Finalizar Materia...'
+                        : `Finalizar ${evalConfig.periodNames?.[selectedBimestre - 1] || 'Periodo'}`}
                   </button>
                 )}
               </>
@@ -4152,11 +4176,24 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               title={`Académica: ${subj.name}`}
                             >
                               <span className="block leading-tight">{subj.name}</span>
-                              {isColLocked && (
+                              {isColLocked ? (
                                 <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
                                   <Lock size={8} /> FINALIZADA
                                 </span>
-                              )}
+                              ) : isSecundariaOrPrepa ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFinalize(subj);
+                                  }}
+                                  disabled={isLocking || isSaving}
+                                  title={`Finalizar periodo para ${subj.name}`}
+                                  className="inline-flex items-center gap-1 text-[7.5px] font-black text-blue-900 bg-blue-100/90 hover:bg-blue-200 border border-blue-300/80 rounded px-1.5 py-0.5 mt-1 tracking-wider cursor-pointer active:scale-95 transition-all shadow-2xs"
+                                >
+                                  <Lock size={8} /> FINALIZAR
+                                </button>
+                              ) : null}
                               {subj.linkedSubjectName && (
                                 <span className="block text-[7px] text-blue-800 font-bold uppercase tracking-tighter mt-0.5">
                                   🔗 Suma a: {subj.linkedSubjectName}
@@ -4192,11 +4229,24 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               )}
                             >
                               <span className="block leading-tight">{subj.name}</span>
-                              {isColLocked && (
+                              {isColLocked ? (
                                 <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
                                   <Lock size={8} /> FINALIZADA
                                 </span>
-                              )}
+                              ) : isSecundariaOrPrepa ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFinalize(subj);
+                                  }}
+                                  disabled={isLocking || isSaving}
+                                  title={`Finalizar periodo para ${subj.name}`}
+                                  className="inline-flex items-center gap-1 text-[7.5px] font-black text-blue-900 bg-blue-100/90 hover:bg-blue-200 border border-blue-300/80 rounded px-1.5 py-0.5 mt-1 tracking-wider cursor-pointer active:scale-95 transition-all shadow-2xs"
+                                >
+                                  <Lock size={8} /> FINALIZAR
+                                </button>
+                              ) : null}
                               {subj.linkedSubjectName && (
                                 <span className="block text-[7px] text-blue-800 font-bold uppercase tracking-tighter mt-0.5">
                                   🔗 Suma a: {subj.linkedSubjectName}
@@ -4228,11 +4278,24 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               title={`Autonomía Curricular: ${subj.name}${subj.linkedSubjectName ? ` (Suma al promedio de: ${subj.linkedSubjectName})` : ''}`}
                             >
                               <span className="block leading-tight">{subj.name}</span>
-                              {isColLocked && (
+                              {isColLocked ? (
                                 <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
                                   <Lock size={8} /> FINALIZADA
                                 </span>
-                              )}
+                              ) : isSecundariaOrPrepa ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFinalize(subj);
+                                  }}
+                                  disabled={isLocking || isSaving}
+                                  title={`Finalizar periodo para ${subj.name}`}
+                                  className="inline-flex items-center gap-1 text-[7.5px] font-black text-blue-900 bg-blue-100/90 hover:bg-blue-200 border border-blue-300/80 rounded px-1.5 py-0.5 mt-1 tracking-wider cursor-pointer active:scale-95 transition-all shadow-2xs"
+                                >
+                                  <Lock size={8} /> FINALIZAR
+                                </button>
+                              ) : null}
                               {subj.linkedSubjectName && (
                                 <span className="block text-[7px] text-amber-700 font-bold uppercase tracking-tighter mt-0.5">
                                   🔗 Suma a: {subj.linkedSubjectName}
@@ -4263,11 +4326,24 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               )}
                             >
                               <span className="block leading-tight">{subj.name}</span>
-                              {isColLocked && (
+                              {isColLocked ? (
                                 <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
                                   <Lock size={8} /> FINALIZADA
                                 </span>
-                              )}
+                              ) : isSecundariaOrPrepa ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFinalize(subj);
+                                  }}
+                                  disabled={isLocking || isSaving}
+                                  title={`Finalizar periodo para ${subj.name}`}
+                                  className="inline-flex items-center gap-1 text-[7.5px] font-black text-blue-900 bg-blue-100/90 hover:bg-blue-200 border border-blue-300/80 rounded px-1.5 py-0.5 mt-1 tracking-wider cursor-pointer active:scale-95 transition-all shadow-2xs"
+                                >
+                                  <Lock size={8} /> FINALIZAR
+                                </button>
+                              ) : null}
                               {subj.linkedSubjectName && (
                                 <span className="block text-[7px] text-blue-800 font-bold uppercase tracking-tighter mt-0.5">
                                   🔗 Suma a: {subj.linkedSubjectName}
@@ -6816,7 +6892,7 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   Cancelar
                 </button>
 
-                {activeLevelSubjects.filter(s => !isSubjectLockedInPeriod(selectedBimestre, s.id, s.name)).length > 1 && (
+                {isSpecificTeacher && activeLevelSubjects.filter(s => !isSubjectLockedInPeriod(selectedBimestre, s.id, s.name)).length > 1 && (
                   <button
                     type="button"
                     onClick={() => handleFinalize('ALL')}

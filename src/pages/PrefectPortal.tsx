@@ -872,20 +872,22 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
               });
             });
 
-            // Global group lock
-            const globalLockId = `${selectedPeriod}_${selectedLevel}_${g}_${grp}_${currentCycleId}`;
-            const globalRef = doc(db, 'bimestreLocks', globalLockId);
-            batch.set(globalRef, {
-              id: globalLockId,
-              bimestre: selectedPeriod,
-              level: selectedLevel,
-              grade: g,
-              group: grp,
-              cycleId: currentCycleId,
-              locked: true,
-              lockedAt: serverTimestamp(),
-              lockedBy: userProfile?.id || 'prefectura'
-            });
+            // Global group lock ONLY for non-subject levels (Preescolar, Primaria)
+            if (!isSubjectLockLevel(selectedLevel)) {
+              const globalLockId = `${selectedPeriod}_${selectedLevel}_${g}_${grp}_${currentCycleId}`;
+              const globalRef = doc(db, 'bimestreLocks', globalLockId);
+              batch.set(globalRef, {
+                id: globalLockId,
+                bimestre: selectedPeriod,
+                level: selectedLevel,
+                grade: g,
+                group: grp,
+                cycleId: currentCycleId,
+                locked: true,
+                lockedAt: serverTimestamp(),
+                lockedBy: userProfile?.id || 'prefectura'
+              });
+            }
           });
         });
 
