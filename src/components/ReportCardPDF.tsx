@@ -600,20 +600,23 @@ export default function ReportCardPDF({
     isStudentEnrolledInSubject(s, student.id, student.grade, student.group, grades, teacherSubjectGroupsMap)
   );
 
-  // Separate subjects into categories as requested
-  const academicSubjects = studentSubjects
+  // Subjects explicitly configured to show in the official boleta (defaults to true)
+  const boletaSubjects = studentSubjects.filter(s => s.showInBoleta !== false);
+
+  // Separate subjects into categories as requested (only boleta-visible subjects are printed as rows)
+  const academicSubjects = boletaSubjects
     .filter(s => s.category !== 'Autonomía Curricular' && s.category !== 'Aspectos Formativos' && s.category !== 'Desarrollo Personal' && s.category !== 'Recursamiento')
     .map(s => s.name);
 
-  const recursamientoSubjects = studentSubjects
+  const recursamientoSubjects = boletaSubjects
     .filter(s => s.category === 'Recursamiento')
     .map(s => s.name);
 
-  const curricularSubjects = studentSubjects
+  const curricularSubjects = boletaSubjects
     .filter(s => s.category === 'Autonomía Curricular')
     .map(s => s.name);
 
-  const personalDevSubjects = studentSubjects
+  const personalDevSubjects = boletaSubjects
     .filter(s => s.category === 'Aspectos Formativos' || s.category === 'Desarrollo Personal')
     .map(s => s.name);
 
@@ -640,9 +643,9 @@ export default function ReportCardPDF({
   };
 
   const getGrade = (subject: string, bimestre: number): string | number => {
-    // If it's an academic or recursamiento subject, compute effective grade taking into account linked autonomy subjects
-    const isAcademic = academicSubjects.includes(subject) || recursamientoSubjects.includes(subject);
-    if (isAcademic) {
+    // If it's an academic, recursamiento or autonomy subject, compute effective grade taking into account linked subjects (both visible and hidden)
+    const isGradedSubject = academicSubjects.includes(subject) || recursamientoSubjects.includes(subject) || curricularSubjects.includes(subject);
+    if (isGradedSubject) {
       const effective = getEffectiveSubjectGrade(subject, bimestre, grades, subjects, scale, roundAverages, roundLinkedSubjects);
       if (effective.rawValue !== '-') {
         return effective.rawValue;

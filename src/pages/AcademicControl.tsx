@@ -4,7 +4,7 @@ import { collection, onSnapshot, updateDoc, doc, serverTimestamp, query, orderBy
 import { db } from '../firebase';
 import { Enrollment, Student, AppSettings, Payment, SchoolCycle, StudentGrade, Subject, AppUser } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
-import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2, MessageSquare, UserCheck } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, Clock, Eye, EyeOff, X, Copy, Check, GraduationCap, MapPin, Phone, Mail, User, Users, ShieldAlert, AlertCircle, Printer, FileDown, Edit2, CreditCard, AlertTriangle, UserRound, Download, BookOpen, Plus, Trash2, Sparkles, Calendar, UserPlus, Image as ImageIcon, ReceiptText, ShieldCheck, FileSpreadsheet, Layers, Link2, MessageSquare, UserCheck } from 'lucide-react';
 import { cn, studentMatchesSearch } from '../lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -2529,11 +2529,12 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
     level: string;
     category: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Aspectos Formativos' | 'Recursamiento';
     linkedSubjectName: string;
+    showInBoleta: boolean;
     isAttendanceCount: boolean;
     isTae: boolean;
     applicableGrades: string[];
     applicableGroups: string[];
-  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [], applicableGroups: [] });
+  }>({ name: '', level: '', category: 'Académica', linkedSubjectName: '', showInBoleta: true, isAttendanceCount: false, isTae: false, applicableGrades: [], applicableGroups: [] });
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [copyingLevel, setCopyingLevel] = useState<string | null>(null); // level card that is picking a source
@@ -2556,10 +2557,11 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
 
   const handleMoveCategory = async (subject: Subject, newCategory: 'Académica' | 'Autonomía Curricular' | 'Desarrollo Personal' | 'Recursamiento') => {
     if (subject.category === newCategory) return;
+    const canLink = newCategory === 'Académica' || newCategory === 'Autonomía Curricular';
     try {
       await updateDoc(doc(db, 'subjects', subject.id), {
         category: newCategory,
-        linkedSubjectName: newCategory === 'Autonomía Curricular' ? (subject.linkedSubjectName || null) : null,
+        linkedSubjectName: canLink ? (subject.linkedSubjectName || null) : null,
         isAttendanceCount: (newCategory === 'Desarrollo Personal' || (newCategory as any) === 'Aspectos Formativos') ? !!subject.isAttendanceCount : false,
         updatedAt: serverTimestamp()
       });
@@ -2585,13 +2587,15 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
       alert(`La materia "${cleanName}" ya está registrada en el nivel ${cleanLevel}. No se pueden duplicar materias en el mismo nivel.`);
       return;
     }
+    const canLink = newSubject.category === 'Académica' || newSubject.category === 'Autonomía Curricular';
     setIsSaving(true);
     try {
       await addDoc(collection(db, 'subjects'), {
         name: cleanName,
         level: cleanLevel,
         category: newSubject.category,
-        linkedSubjectName: newSubject.category === 'Autonomía Curricular' ? (newSubject.linkedSubjectName || null) : null,
+        linkedSubjectName: canLink ? (newSubject.linkedSubjectName || null) : null,
+        showInBoleta: newSubject.showInBoleta !== false,
         isAttendanceCount: (newSubject.category === 'Desarrollo Personal' || newSubject.category === 'Aspectos Formativos') ? !!newSubject.isAttendanceCount : false,
         isTae: !!newSubject.isTae,
         taeStudentMode: newSubject.isTae ? 'all' : null,
@@ -2600,7 +2604,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
         applicableGroups: newSubject.applicableGroups || [],
         createdAt: serverTimestamp()
       });
-      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', isAttendanceCount: false, isTae: false, applicableGrades: [], applicableGroups: [] });
+      setNewSubject({ name: '', level: '', category: 'Académica', linkedSubjectName: '', showInBoleta: true, isAttendanceCount: false, isTae: false, applicableGrades: [], applicableGroups: [] });
       toast.success(newSubject.isTae ? `Materia TAE "${cleanName}" creada. Configura sus alumnos en la pestaña TAES.` : `Materia "${cleanName}" creada correctamente.`);
     } catch (error) {
       console.error("Error creating subject:", error);
@@ -2623,13 +2627,15 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
       alert(`Ya existe otra materia llamada "${cleanName}" en el nivel ${cleanLevel}.`);
       return;
     }
+    const canLink = (editingSubject.category || 'Académica') === 'Académica' || editingSubject.category === 'Autonomía Curricular';
     setIsSaving(true);
     try {
       await updateDoc(doc(db, 'subjects', editingSubject.id), {
         name: cleanName,
         level: cleanLevel,
         category: editingSubject.category || 'Académica',
-        linkedSubjectName: editingSubject.category === 'Autonomía Curricular' ? (editingSubject.linkedSubjectName || null) : null,
+        linkedSubjectName: canLink ? (editingSubject.linkedSubjectName || null) : null,
+        showInBoleta: editingSubject.showInBoleta !== false,
         isAttendanceCount: (editingSubject.category === 'Desarrollo Personal' || editingSubject.category === 'Aspectos Formativos') ? !!editingSubject.isAttendanceCount : false,
         isTae: !!editingSubject.isTae,
         taeStudentMode: editingSubject.isTae ? (editingSubject.taeStudentMode || 'all') : null,
@@ -2692,6 +2698,7 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
           level: targetLevel,
           category: subj.category || 'Académica',
           linkedSubjectName: subj.linkedSubjectName || null,
+          showInBoleta: subj.showInBoleta !== false,
           isAttendanceCount: !!subj.isAttendanceCount,
           isTae: !!subj.isTae,
           taeStudentMode: subj.isTae ? (subj.taeStudentMode || 'all') : null,
@@ -2753,7 +2760,16 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Tipo / Categoría</label>
             <select
               value={newSubject.category}
-              onChange={(e) => setNewSubject({ ...newSubject, category: e.target.value as any, linkedSubjectName: '', isAttendanceCount: false })}
+              onChange={(e) => {
+                const cat = e.target.value as any;
+                const canLink = cat === 'Académica' || cat === 'Autonomía Curricular';
+                setNewSubject({ 
+                  ...newSubject, 
+                  category: cat, 
+                  linkedSubjectName: canLink ? newSubject.linkedSubjectName : '', 
+                  isAttendanceCount: false 
+                });
+              }}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold uppercase tracking-tight"
             >
               <option value="Académica">Académica (Base)</option>
@@ -2762,25 +2778,45 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
               <option value="Recursamiento">Recursamiento</option>
             </select>
           </div>
-          {newSubject.category === 'Autonomía Curricular' && (
+          {(newSubject.category === 'Académica' || newSubject.category === 'Autonomía Curricular') && (
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                Suma al promedio de
+              <label className="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
+                <Link2 size={11} /> Suma al promedio de
               </label>
               <select
                 value={newSubject.linkedSubjectName || ''}
                 onChange={(e) => setNewSubject({ ...newSubject, linkedSubjectName: e.target.value })}
                 className="w-full px-4 py-3 bg-amber-50/60 border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-bold uppercase tracking-tight text-amber-900"
               >
-                <option value="">(Ninguna - Independiente)</option>
+                <option value="">(Ninguna - Materia Independiente)</option>
                 {(subjectsByLevel[newSubject.level] || [])
-                  .filter(s => normalizeCategory(s.category) === 'Académica')
+                  .filter(s => {
+                    const normCat = normalizeCategory(s.category);
+                    return (normCat === 'Académica' || normCat === 'Autonomía Curricular') && 
+                           s.name.trim().toLowerCase() !== newSubject.name.trim().toLowerCase();
+                  })
                   .map(s => (
-                    <option key={s.id} value={s.name}>Suma a: {s.name}</option>
+                    <option key={s.id} value={s.name}>Suma a: {s.name} ({s.category || 'Académica'})</option>
                   ))}
               </select>
             </div>
           )}
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+              Impresión Oficial
+            </label>
+            <label className="flex items-center gap-2 px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/70 transition-colors" title="Si se desmarca, la materia no saldrá en la boleta oficial ni en el portal de padres, pero el docente podrá evaluarla">
+              <input
+                type="checkbox"
+                checked={newSubject.showInBoleta !== false}
+                onChange={(e) => setNewSubject({ ...newSubject, showInBoleta: e.target.checked })}
+                className="w-4 h-4 text-blue-900 rounded border-slate-300 focus:ring-blue-900 cursor-pointer"
+              />
+              <span className="text-[11px] font-bold text-slate-800 uppercase tracking-tight leading-none">
+                {newSubject.showInBoleta !== false ? 'Mostrar en Boleta' : 'Oculta en Boleta'}
+              </span>
+            </label>
+          </div>
           {newSubject.category === 'Desarrollo Personal' && (
             <div>
               <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5 ml-1">
@@ -3061,11 +3097,15 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                     />
                                     <select
                                       value={normalizeCategory(editingSubject.category)}
-                                      onChange={(e) => setEditingSubject({ 
-                                        ...editingSubject, 
-                                        category: e.target.value as any,
-                                        linkedSubjectName: e.target.value === 'Autonomía Curricular' ? editingSubject.linkedSubjectName : undefined
-                                      })}
+                                      onChange={(e) => {
+                                        const cat = e.target.value as any;
+                                        const canLink = cat === 'Académica' || cat === 'Autonomía Curricular';
+                                        setEditingSubject({ 
+                                          ...editingSubject, 
+                                          category: cat,
+                                          linkedSubjectName: canLink ? editingSubject.linkedSubjectName : undefined
+                                        });
+                                      }}
                                       className="bg-white border border-blue-200 rounded px-2 py-1.5 text-[9px] font-black uppercase"
                                     >
                                       <option value="Académica">Académica</option>
@@ -3073,21 +3113,41 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                       <option value="Autonomía Curricular">Aut. Curr.</option>
                                       <option value="Recursamiento">Recursamiento</option>
                                     </select>
-                                    {normalizeCategory(editingSubject.category) === 'Autonomía Curricular' && (
+                                    {(normalizeCategory(editingSubject.category) === 'Académica' || normalizeCategory(editingSubject.category) === 'Autonomía Curricular') && (
                                       <select
                                         value={editingSubject.linkedSubjectName || ''}
                                         onChange={(e) => setEditingSubject({ ...editingSubject, linkedSubjectName: e.target.value })}
-                                        className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-amber-900 max-w-[160px]"
-                                        title="Vincular a materia académica para promediar"
+                                        className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-amber-900 max-w-[170px]"
+                                        title="Vincular a otra materia para promediar"
                                       >
-                                        <option value="">(Sin vincular)</option>
+                                        <option value="">(Sin vincular - Indep.)</option>
                                         {(subjectsByLevel[editingSubject.level] || [])
-                                          .filter(s => normalizeCategory(s.category) === 'Académica' && s.id !== editingSubject.id)
+                                          .filter(s => {
+                                            const normCat = normalizeCategory(s.category);
+                                            return (normCat === 'Académica' || normCat === 'Autonomía Curricular') && s.id !== editingSubject.id;
+                                          })
                                           .map(s => (
                                             <option key={s.id} value={s.name}>Suma a: {s.name}</option>
                                           ))}
                                       </select>
                                     )}
+                                    <label 
+                                      className={cn(
+                                        "flex items-center gap-1 border rounded px-1.5 py-1 text-[8px] font-black uppercase cursor-pointer transition-colors",
+                                        editingSubject.showInBoleta !== false 
+                                          ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                                          : "bg-slate-100 border-slate-300 text-slate-500"
+                                      )} 
+                                      title={editingSubject.showInBoleta !== false ? "Visible en boleta oficial" : "Oculta en boleta oficial"}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={editingSubject.showInBoleta !== false}
+                                        onChange={(e) => setEditingSubject({ ...editingSubject, showInBoleta: e.target.checked })}
+                                        className="w-3 h-3 text-emerald-600 rounded cursor-pointer"
+                                      />
+                                      <span>{editingSubject.showInBoleta !== false ? 'En Boleta' : 'No Boleta'}</span>
+                                    </label>
                                     {normalizeCategory(editingSubject.category) === 'Desarrollo Personal' && (
                                       <label className="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-1 text-[8px] font-black uppercase text-indigo-900 cursor-pointer" title="Marcar para sumar faltas automáticamente">
                                         <input
@@ -3271,8 +3331,13 @@ function SubjectsManagement({ subjects, settings, availableLevels }: { subjects:
                                         <Sparkles size={10} className="text-blue-700" /> TAE {subj.taeStudentMode === 'specific' ? `(${subj.taeStudentIds?.length || 0} alumnos)` : '(Todos los alumnos)'}
                                       </span>
                                     )}
+                                    {subj.showInBoleta === false && (
+                                      <span className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
+                                        <EyeOff size={10} className="text-slate-500" /> Oculta en Boleta
+                                      </span>
+                                    )}
                                     {subj.linkedSubjectName && (
-                                      <span className="text-[9px] font-bold text-amber-600 flex items-center gap-1 mt-0.5">
+                                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-1 mt-0.5 w-fit">
                                         <Link2 size={10} /> Suma a: {subj.linkedSubjectName}
                                       </span>
                                     )}

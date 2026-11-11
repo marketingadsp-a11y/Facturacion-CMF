@@ -396,6 +396,7 @@ export interface Subject {
   applicableGroups?: string[]; // Grupos específicos a los que aplica (ej. ["A", "B"]). Si está vacío o undefined, aplica a todos los grupos del nivel.
   linkedSubjectId?: string; // Optional: ID of an Academic subject this Autonomía Curricular subject contributes to
   linkedSubjectName?: string; // Optional: Name of the Academic subject (e.g. "De lo Humano y lo Comunitario")
+  showInBoleta?: boolean; // When false, this subject does not appear in the official boleta or parent grades view. Defaults to true.
   isAttendanceCount?: boolean; // When true, student absences (Faltas) automatically sum into this subject
   isTae?: boolean; // Trayectoria de Aprendizaje Especializante (Materia optativa/especializante)
   taeStudentMode?: 'all' | 'specific'; // 'all' (todos los alumnos del nivel) o 'specific' (solo alumnos asignados)

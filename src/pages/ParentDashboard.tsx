@@ -953,7 +953,8 @@ export default function ParentDashboard() {
                   {students.filter(student => isStudentFeatureEnabled(student, 'grades')).map((student, sIdx) => {
                     const studentGradeDocs = studentGrades.filter(g => g.studentId === student.id && g.cycleId === currentCycle?.id);
                     const studentLevelSubjects = subjects.filter(sub => sub.level === student.level && isStudentEnrolledInSubject(sub, student.id, student.grade, student.group, studentGradeDocs));
-                    const academicSubjectNames = studentLevelSubjects
+                    const visibleSubjects = studentLevelSubjects.filter(sub => sub.showInBoleta !== false);
+                    const academicSubjectNames = visibleSubjects
                       .filter(isPureAcademicSubject)
                       .map(s => s.name);
                     
@@ -1048,18 +1049,18 @@ export default function ParentDashboard() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                              {studentLevelSubjects.length === 0 ? (
+                              {visibleSubjects.length === 0 ? (
                                 <tr>
                                   <td colSpan={periodIndices.length + 2} className="px-6 py-8 text-center text-slate-400 italic text-[10px]">
                                     No hay materias configuradas para este nivel.
                                   </td>
                                 </tr>
                               ) : (
-                                studentLevelSubjects.map((sub) => {
-                                  const isAcademic = isPureAcademicSubject(sub);
+                                visibleSubjects.map((sub) => {
+                                  const isAcademicOrHasLinked = isPureAcademicSubject(sub) || studentLevelSubjects.some(s => s.linkedSubjectName && s.linkedSubjectName.trim().toLowerCase() === sub.name.trim().toLowerCase());
                                   const subjectPoints: number[] = [];
                                   periodIndices.forEach(b => {
-                                    if (isAcademic) {
+                                    if (isAcademicOrHasLinked) {
                                       const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages, roundLinkedSubjects);
                                       if (eff.numericValue !== null) subjectPoints.push(eff.numericValue);
                                     } else {
@@ -1077,8 +1078,8 @@ export default function ParentDashboard() {
                                       <td className="px-6 py-3">
                                         <div className="flex flex-col">
                                           <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest leading-none mb-1">
-                                            {sub.category === 'Autonomía Curricular' && sub.linkedSubjectName 
-                                              ? `Autonomía • Suma a: ${sub.linkedSubjectName}`
+                                            {sub.linkedSubjectName 
+                                              ? `${sub.category || 'Materia'} • Suma a: ${sub.linkedSubjectName}`
                                               : (sub.category || 'Materia')}
                                           </span>
                                           <span className="text-xs font-semibold text-slate-700 truncate">{sub.name}</span>
@@ -1088,7 +1089,7 @@ export default function ParentDashboard() {
                                         let rawGrade: string | number = '—';
                                         let hasGrade = false;
 
-                                        if (isAcademic) {
+                                        if (isAcademicOrHasLinked) {
                                           const eff = getEffectiveSubjectGrade(sub.name, b, studentGradeDocs, studentLevelSubjects, scale, roundAverages, roundLinkedSubjects);
                                           if (eff.rawValue !== '-') {
                                             rawGrade = eff.rawValue;

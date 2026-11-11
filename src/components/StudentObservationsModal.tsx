@@ -60,6 +60,7 @@ export default function StudentObservationsModal({
     const studentLvl = student.level.toLowerCase().trim();
     return subjects.filter(s => 
       s.level?.toLowerCase().trim() === studentLvl &&
+      s.showInBoleta !== false &&
       isPureAcademicSubject(s) &&
       isStudentEnrolledInSubject(s, student.id, student.grade)
     );

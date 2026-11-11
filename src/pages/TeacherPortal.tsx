@@ -4146,6 +4146,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                   <Lock size={8} /> FINALIZADA
                                 </span>
                               )}
+                              {subj.linkedSubjectName && (
+                                <span className="block text-[7px] text-blue-800 font-bold uppercase tracking-tighter mt-0.5">
+                                  🔗 Suma a: {subj.linkedSubjectName}
+                                </span>
+                              )}
+                              {subj.showInBoleta === false && (
+                                <span className="block text-[6.5px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5 bg-slate-100 rounded px-1 py-0.5 border border-slate-200">
+                                  No sale en boleta
+                                </span>
+                              )}
                             </th>
                           );
                         })
@@ -4174,6 +4184,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               {isColLocked && (
                                 <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
                                   <Lock size={8} /> FINALIZADA
+                                </span>
+                              )}
+                              {subj.linkedSubjectName && (
+                                <span className="block text-[7px] text-blue-800 font-bold uppercase tracking-tighter mt-0.5">
+                                  🔗 Suma a: {subj.linkedSubjectName}
+                                </span>
+                              )}
+                              {subj.showInBoleta === false && (
+                                <span className="block text-[6.5px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5 bg-slate-100 rounded px-1 py-0.5 border border-slate-200">
+                                  No sale en boleta
                                 </span>
                               )}
                             </th>
@@ -4207,6 +4227,11 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                                   🔗 Suma a: {subj.linkedSubjectName}
                                 </span>
                               )}
+                              {subj.showInBoleta === false && (
+                                <span className="block text-[6.5px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5 bg-slate-100 rounded px-1 py-0.5 border border-slate-200">
+                                  No sale en boleta
+                                </span>
+                              )}
                             </th>
                           );
                         })
@@ -4230,6 +4255,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                               {isColLocked && (
                                 <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-1 tracking-wider">
                                   <Lock size={8} /> FINALIZADA
+                                </span>
+                              )}
+                              {subj.linkedSubjectName && (
+                                <span className="block text-[7px] text-blue-800 font-bold uppercase tracking-tighter mt-0.5">
+                                  🔗 Suma a: {subj.linkedSubjectName}
+                                </span>
+                              )}
+                              {subj.showInBoleta === false && (
+                                <span className="block text-[6.5px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5 bg-slate-100 rounded px-1 py-0.5 border border-slate-200">
+                                  No sale en boleta
                                 </span>
                               )}
                             </th>
