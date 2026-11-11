@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { collection, query, where, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, getDocs, writeBatch, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { usePermissions } from '../hooks/usePermissions';
@@ -3250,6 +3251,16 @@ export default function TeacherPortal({ appSettings }: TeacherPortalProps = {}) 
                   <ArrowLeftRight size={13} className="text-blue-600" />
                   <span>Cambiar Grupo</span>
                 </button>
+              )}
+              {userProfile?.canAccessPrefectura && (
+                <Link
+                  to="/prefectura"
+                  className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  title="Ir al panel de Prefectura"
+                >
+                  <ShieldCheck size={13} className="text-blue-400" />
+                  <span>Panel de Prefectura</span>
+                </Link>
               )}
             </div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">

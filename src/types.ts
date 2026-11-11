@@ -125,6 +125,10 @@ export interface AppPermissions {
     view: boolean;
     manage: boolean;
   };
+  prefectura?: {
+    view: boolean;
+    manage: boolean;
+  };
 }
 
 export interface Enrollment {
@@ -213,6 +217,9 @@ export interface AppUser {
   restrictedLevels?: string[];
   restrictedGrades?: string[];
   restrictedGroups?: string[];
+  // Prefectura access for Docentes or other roles
+  canAccessPrefectura?: boolean;
+  prefecturaLevels?: string[];
   // Password and subject assignment management
   currentPassword?: string;
   teacherSubjectAccess?: 'all' | 'specific';

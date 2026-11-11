@@ -195,7 +195,8 @@ export default function Settings() {
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
       grading: { view: true, manage: true },
-      timeClock: { view: true, manage: true }
+      timeClock: { view: true, manage: true },
+      prefectura: { view: true, manage: true }
     },
     Administrador: {
       dashboard: { view: true },
@@ -208,7 +209,8 @@ export default function Settings() {
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
       grading: { view: true, manage: true },
-      timeClock: { view: true, manage: true }
+      timeClock: { view: true, manage: true },
+      prefectura: { view: true, manage: true }
     },
     Visor: {
       dashboard: { view: true },
@@ -221,7 +223,8 @@ export default function Settings() {
       parents: { view: true, manage: false },
       controlEscolar: { view: true, manage: false },
       grading: { view: true, manage: false },
-      timeClock: { view: true, manage: false }
+      timeClock: { view: true, manage: false },
+      prefectura: { view: false, manage: false }
     },
     Cajero: {
       dashboard: { view: true },
@@ -234,7 +237,8 @@ export default function Settings() {
       parents: { view: true, manage: false },
       controlEscolar: { view: true, manage: false },
       grading: { view: false, manage: false },
-      timeClock: { view: false, manage: false }
+      timeClock: { view: false, manage: false },
+      prefectura: { view: false, manage: false }
     },
     Padre: {
       dashboard: { view: true },
@@ -247,7 +251,8 @@ export default function Settings() {
       parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: false, manage: false },
-      timeClock: { view: false, manage: false }
+      timeClock: { view: false, manage: false },
+      prefectura: { view: false, manage: false }
     },
     'Control Escolar': {
       dashboard: { view: true },
@@ -260,7 +265,8 @@ export default function Settings() {
       parents: { view: true, manage: true },
       controlEscolar: { view: true, manage: true },
       grading: { view: true, manage: true },
-      timeClock: { view: false, manage: false }
+      timeClock: { view: false, manage: false },
+      prefectura: { view: true, manage: true }
     },
     Docente: {
       dashboard: { view: true },
@@ -273,7 +279,8 @@ export default function Settings() {
       parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: true, manage: true },
-      timeClock: { view: false, manage: false }
+      timeClock: { view: false, manage: false },
+      prefectura: { view: false, manage: false }
     },
     Prefecto: {
       dashboard: { view: true },
@@ -286,7 +293,8 @@ export default function Settings() {
       parents: { view: false, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: true, manage: true },
-      timeClock: { view: true, manage: true }
+      timeClock: { view: true, manage: true },
+      prefectura: { view: true, manage: true }
     },
     'Recepción': {
       dashboard: { view: true },
@@ -299,7 +307,8 @@ export default function Settings() {
       parents: { view: true, manage: false },
       controlEscolar: { view: false, manage: false },
       grading: { view: false, manage: false },
-      timeClock: { view: true, manage: true }
+      timeClock: { view: true, manage: true },
+      prefectura: { view: false, manage: false }
     }
   };
 
@@ -320,7 +329,9 @@ export default function Settings() {
     permissions: DEFAULT_PERMISSIONS['Cajero'],
     teacherSubjectAccess: 'all',
     assignedSubjects: [],
-    teacherGradeGroups: {}
+    teacherGradeGroups: {},
+    canAccessPrefectura: false,
+    prefecturaLevels: []
   });
 
   // New Cycle Form
@@ -3417,7 +3428,9 @@ export default function Settings() {
                           teacherGroupAccess: 'single',
                           restrictedLevels: [],
                           restrictedGrades: [],
-                          restrictedGroups: []
+                          restrictedGroups: [],
+                          canAccessPrefectura: false,
+                          prefecturaLevels: []
                         });
                         setShowCurrentPassword(false);
                         setShowNewPassword(false);
@@ -3692,32 +3705,42 @@ export default function Settings() {
                                   {/* Academic Assignment */}
                                   <td className="py-3.5 px-4">
                                     {user.role === 'Docente' ? (
-                                      (user.teacherGroupAccess === 'multiple' || (user.restrictedLevels && user.restrictedLevels.length > 1) || (user.restrictedGrades && user.restrictedGrades.length > 1)) ? (
-                                        <div className="space-y-0.5">
-                                          <div className="font-black text-indigo-700 text-[11px] flex items-center gap-1">
-                                            <Users size={12} className="text-indigo-600" />
-                                            Múltiples Grupos
-                                          </div>
-                                          <span className="text-[10px] text-slate-500 font-bold block">
-                                            {user.restrictedLevels?.join(', ') || 'Todos los niveles'}
-                                          </span>
-                                        </div>
-                                      ) : hasFullAssignment ? (
-                                        <div className="space-y-0.5">
-                                          <div className="font-black text-slate-800 text-[11px]">
-                                            {user.assignedLevel} {user.assignedGrade} "{user.assignedGroup}"
-                                          </div>
-                                          {user.maxHoursPerWeek ? (
-                                            <span className="text-[10px] font-bold text-slate-400 block">
-                                              Jornada: {user.maxHoursPerWeek} hrs/sem
+                                      <div className="space-y-1">
+                                        {(user.teacherGroupAccess === 'multiple' || (user.restrictedLevels && user.restrictedLevels.length > 1) || (user.restrictedGrades && user.restrictedGrades.length > 1)) ? (
+                                          <div className="space-y-0.5">
+                                            <div className="font-black text-indigo-700 text-[11px] flex items-center gap-1">
+                                              <Users size={12} className="text-indigo-600" />
+                                              Múltiples Grupos
+                                            </div>
+                                            <span className="text-[10px] text-slate-500 font-bold block">
+                                              {user.restrictedLevels?.join(', ') || 'Todos los niveles'}
                                             </span>
-                                          ) : null}
-                                        </div>
-                                      ) : (
-                                        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-bold">
-                                          Sin grupo asignado
-                                        </span>
-                                      )
+                                          </div>
+                                        ) : hasFullAssignment ? (
+                                          <div className="space-y-0.5">
+                                            <div className="font-black text-slate-800 text-[11px]">
+                                              {user.assignedLevel} {user.assignedGrade} "{user.assignedGroup}"
+                                            </div>
+                                            {user.maxHoursPerWeek ? (
+                                              <span className="text-[10px] font-bold text-slate-400 block">
+                                                Jornada: {user.maxHoursPerWeek} hrs/sem
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-bold">
+                                            Sin grupo asignado
+                                          </span>
+                                        )}
+                                        {user.canAccessPrefectura && (
+                                          <div>
+                                            <span className="inline-flex items-center gap-1 text-[9px] font-black text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded shadow-2xs" title={`Prefectura: ${(user.prefecturaLevels || []).join(', ') || 'General'}`}>
+                                              <ShieldCheck size={10} className="text-blue-600" />
+                                              Prefectura ({(user.prefecturaLevels || []).join(', ') || 'General'})
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
                                     ) : user.role === 'Control Escolar' ? (
                                       (user.restrictedLevels?.length || user.restrictedGrades?.length || user.restrictedGroups?.length) ? (
                                         <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
@@ -3819,7 +3842,9 @@ export default function Settings() {
                                               ? user.assignedLevels
                                               : ((user.restrictedLevels && user.restrictedLevels.length > 0)
                                                   ? user.restrictedLevels
-                                                  : (user.assignedLevel ? [user.assignedLevel] : []))
+                                                  : (user.assignedLevel ? [user.assignedLevel] : [])),
+                                            canAccessPrefectura: !!user.canAccessPrefectura,
+                                            prefecturaLevels: user.prefecturaLevels || []
                                           });
                                           setShowCurrentPassword(false);
                                           setShowNewPassword(false);
@@ -3910,6 +3935,15 @@ export default function Settings() {
                                   ) : null
                                 )}
 
+                                {user.role === 'Docente' && user.canAccessPrefectura && (
+                                  <div className="p-2 bg-blue-50/80 border border-blue-200 rounded-lg text-xs font-bold text-blue-900 flex items-center justify-between">
+                                    <span className="flex items-center gap-1.5">
+                                      <ShieldCheck size={13} className="text-blue-600" />
+                                      Prefectura: {(user.prefecturaLevels || []).join(', ') || 'General'}
+                                    </span>
+                                  </div>
+                                )}
+
                                 {user.role === 'Prefecto' && (
                                   <div className="p-2 bg-teal-50 border border-teal-200 rounded-lg text-xs font-bold text-teal-900 flex items-center justify-between">
                                     <span className="flex items-center gap-1.5">
@@ -3968,7 +4002,9 @@ export default function Settings() {
                                           ? user.assignedLevels
                                           : ((user.restrictedLevels && user.restrictedLevels.length > 0)
                                               ? user.restrictedLevels
-                                              : (user.assignedLevel ? [user.assignedLevel] : []))
+                                              : (user.assignedLevel ? [user.assignedLevel] : [])),
+                                        canAccessPrefectura: !!user.canAccessPrefectura,
+                                        prefecturaLevels: user.prefecturaLevels || []
                                       });
                                       setShowCurrentPassword(false);
                                       setShowNewPassword(false);
@@ -4182,7 +4218,12 @@ export default function Settings() {
                         value={userFormData.role}
                         onChange={(e) => {
                           const role = e.target.value as UserRole;
-                          setUserFormData({...userFormData, role, permissions: DEFAULT_PERMISSIONS[role]});
+                          setUserFormData({
+                            ...userFormData, 
+                            role, 
+                            permissions: DEFAULT_PERMISSIONS[role],
+                            canAccessPrefectura: role === 'Docente' ? (userFormData.canAccessPrefectura || false) : (role === 'Prefecto' ? true : false)
+                          });
                         }}
                         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236B7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat"
                       >
@@ -5770,6 +5811,98 @@ export default function Settings() {
                           );
                         })()}
                       </div>
+
+                      {/* Permiso de Acceso a Panel de Prefectura (Docente) */}
+                      <div className="border-t border-blue-200/80 pt-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck size={16} className="text-blue-700 shrink-0" />
+                            <div>
+                              <p className="text-xs font-bold text-slate-800">Panel de Prefectura</p>
+                              <p className="text-[10px] text-slate-500">Habilita el acceso al módulo de Prefectura para pase de lista y justificaciones</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!!userFormData.canAccessPrefectura}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                const currentLevels = userFormData.prefecturaLevels || [];
+                                const defaultLevels = currentLevels.length > 0
+                                  ? currentLevels
+                                  : (userFormData.restrictedLevels && userFormData.restrictedLevels.length > 0
+                                      ? userFormData.restrictedLevels
+                                      : (userFormData.assignedLevel ? [userFormData.assignedLevel] : (settings.academicLevels?.slice(0, 1) || [])));
+                                setUserFormData({
+                                  ...userFormData,
+                                  canAccessPrefectura: checked,
+                                  prefecturaLevels: checked ? defaultLevels : []
+                                });
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                          </label>
+                        </div>
+
+                        {userFormData.canAccessPrefectura && (
+                          <div className="bg-white p-3.5 rounded-xl border border-blue-200 space-y-2.5 animate-in fade-in duration-150">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
+                                Niveles con Acceso en Prefectura *
+                              </label>
+                              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                {(userFormData.prefecturaLevels || []).length} seleccionado(s)
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              Selecciona qué niveles educativos podrá consultar y gestionar este docente en el módulo de Prefectura:
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                              {(settings.academicLevels || ['Secundaria', 'Preparatoria']).map(lvl => {
+                                const isSelected = (userFormData.prefecturaLevels || []).some(
+                                  l => l.trim().toLowerCase() === lvl.trim().toLowerCase()
+                                );
+                                return (
+                                  <label
+                                    key={lvl}
+                                    className={cn(
+                                      "flex items-center gap-2 p-2 rounded-lg border text-xs font-bold cursor-pointer transition-all",
+                                      isSelected
+                                        ? "bg-blue-50 border-blue-400 text-blue-900 shadow-xs"
+                                        : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                                    )}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const current = userFormData.prefecturaLevels || [];
+                                        const next = e.target.checked
+                                          ? [...current, lvl]
+                                          : current.filter(l => l.trim().toLowerCase() !== lvl.trim().toLowerCase());
+                                        setUserFormData({
+                                          ...userFormData,
+                                          prefecturaLevels: next
+                                        });
+                                      }}
+                                      className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span>{lvl}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            {(userFormData.prefecturaLevels || []).length === 0 && (
+                              <p className="text-[10px] font-bold text-amber-600 mt-1">
+                                ⚠️ Selecciona al menos un nivel para el acceso a Prefectura.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -5919,6 +6052,19 @@ export default function Settings() {
                           label="Gestionar Padres" 
                           checked={userFormData.permissions?.parents?.manage} 
                           onChange={(v) => setUserFormData({...userFormData, permissions: {...userFormData.permissions!, parents: {...userFormData.permissions?.parents, manage: v}}})}
+                        />
+                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-4">Prefectura</p>
+                        <PermissionToggle 
+                          label="Acceso a Prefectura" 
+                          checked={!!userFormData.canAccessPrefectura || !!userFormData.permissions?.prefectura?.view} 
+                          onChange={(v) => setUserFormData({
+                            ...userFormData, 
+                            canAccessPrefectura: v,
+                            permissions: {
+                              ...userFormData.permissions!, 
+                              prefectura: { view: v, manage: v }
+                            }
+                          })}
                         />
                       </div>
                     </div>
@@ -6118,6 +6264,19 @@ export default function Settings() {
                         await setDoc(userRef, {
                           ...firestoreData,
                           ...(finalPassword ? { currentPassword: finalPassword } : {}),
+                          canAccessPrefectura: userFormData.role === 'Docente'
+                            ? !!userFormData.canAccessPrefectura
+                            : (userFormData.role === 'Prefecto' || userFormData.role === 'Control Escolar' || userFormData.role === 'Superadministrador' || userFormData.role === 'Administrador' ? true : !!userFormData.canAccessPrefectura),
+                          prefecturaLevels: userFormData.canAccessPrefectura
+                            ? (userFormData.prefecturaLevels || [])
+                            : [],
+                          permissions: {
+                            ...userFormData.permissions,
+                            prefectura: {
+                              view: !!(userFormData.canAccessPrefectura || userFormData.permissions?.prefectura?.view || userFormData.role === 'Prefecto' || userFormData.role === 'Control Escolar' || userFormData.role === 'Superadministrador' || userFormData.role === 'Administrador'),
+                              manage: !!(userFormData.canAccessPrefectura || userFormData.permissions?.prefectura?.manage || userFormData.role === 'Prefecto' || userFormData.role === 'Control Escolar' || userFormData.role === 'Superadministrador' || userFormData.role === 'Administrador')
+                            }
+                          },
                           teacherSubjectAccess: userFormData.role === 'Docente' ? (userFormData.teacherSubjectAccess || 'all') : 'all',
                           assignedSubjects: userFormData.role === 'Docente' && userFormData.teacherSubjectAccess === 'specific'
                             ? Array.from(new Set(userFormData.assignedSubjects || []))
@@ -6441,6 +6600,29 @@ export default function Settings() {
                         </div>
                       )}
 
+                      {/* Prefectura Access if Docente */}
+                      {selectedUserDetail.role === 'Docente' && selectedUserDetail.canAccessPrefectura && (
+                        <div className="pt-2 border-t border-blue-200/60 text-[11px] space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                            <ShieldCheck size={13} className="text-blue-600" />
+                            <span>Panel de Prefectura Habilitado:</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {(selectedUserDetail.prefecturaLevels || []).length > 0 ? (
+                              selectedUserDetail.prefecturaLevels!.map(lvl => (
+                                <span key={lvl} className="bg-white border border-blue-200 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded shadow-2xs">
+                                  {lvl}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-slate-500 italic text-[10px]">
+                                Sin niveles específicos asignados (usa los niveles del docente)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Restrictions if Control Escolar */}
                       {selectedUserDetail.role === 'Control Escolar' && (
                         <div className="pt-2 border-t border-blue-200/60 text-[11px]">
@@ -6505,6 +6687,7 @@ export default function Settings() {
                         { label: 'Gastos (Ver)', enabled: selectedUserDetail.permissions?.expenses?.view },
                         { label: 'Gastos (Registrar)', enabled: selectedUserDetail.permissions?.expenses?.create },
                         { label: 'Control Escolar', enabled: selectedUserDetail.permissions?.controlEscolar?.view },
+                        { label: 'Prefectura', enabled: selectedUserDetail.canAccessPrefectura || selectedUserDetail.permissions?.prefectura?.view || selectedUserDetail.role === 'Prefecto' },
                         { label: 'Calificaciones', enabled: selectedUserDetail.permissions?.grading?.view },
                         { label: 'Checador (Ver)', enabled: selectedUserDetail.permissions?.timeClock?.view },
                         { label: 'Checador (Gestionar)', enabled: selectedUserDetail.permissions?.timeClock?.manage },
@@ -6552,7 +6735,9 @@ export default function Settings() {
                           password: '',
                           teacherSubjectAccess: targetUser.teacherSubjectAccess || 'all',
                           assignedSubjects: targetUser.assignedSubjects || [],
-                          teacherGradeGroups: targetUser.teacherGradeGroups || {}
+                          teacherGradeGroups: targetUser.teacherGradeGroups || {},
+                          canAccessPrefectura: !!targetUser.canAccessPrefectura,
+                          prefecturaLevels: targetUser.prefecturaLevels || []
                         });
                         setShowCurrentPassword(false);
                         setShowNewPassword(false);

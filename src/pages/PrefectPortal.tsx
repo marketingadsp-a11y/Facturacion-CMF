@@ -166,6 +166,31 @@ export default function PrefectPortal({ appSettings: initialSettings }: PrefectP
       return allConfigured;
     }
 
+    // Specific prefecturaLevels (for Docente or any user configured with Prefectura levels)
+    if (userProfile?.prefecturaLevels && userProfile.prefecturaLevels.length > 0) {
+      const filtered = allConfigured.filter(lvl => 
+        userProfile.prefecturaLevels!.some(a => a.trim().toLowerCase() === lvl.trim().toLowerCase())
+      );
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+
+    // If role is Docente and has Prefectura access, restrict strictly to their assigned levels
+    if (userProfile?.role === 'Docente') {
+      const docLevels = (userProfile.assignedLevels && userProfile.assignedLevels.length > 0)
+        ? userProfile.assignedLevels
+        : ((userProfile.restrictedLevels && userProfile.restrictedLevels.length > 0)
+            ? userProfile.restrictedLevels
+            : (userProfile.assignedLevel ? [userProfile.assignedLevel] : []));
+      if (docLevels.length > 0) {
+        const filtered = allConfigured.filter(lvl =>
+          docLevels.some(a => a.trim().toLowerCase() === lvl.trim().toLowerCase())
+        );
+        if (filtered.length > 0) return filtered;
+      }
+    }
+
     // Resolve any restricted or assigned levels for the user (Prefecto, Control Escolar, etc.)
     const assigned = (userProfile?.restrictedLevels && userProfile.restrictedLevels.length > 0)
       ? userProfile.restrictedLevels

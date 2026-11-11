@@ -161,8 +161,13 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     if (auth.currentUser?.email?.toLowerCase() === 'cramonmb@gmail.com') return true;
     if (!userProfile) return false;
     if (userProfile.role === 'Superadministrador') return true;
-    if (userProfile.role === 'Control Escolar' && (section === 'grading' || section === 'controlEscolar')) return true;
-    if (userProfile.role === 'Prefecto' && (section === 'timeClock' || section === 'grading' || section === 'dashboard' || (section === 'students' && action === 'view'))) return true;
+    if (userProfile.role === 'Control Escolar' && (section === 'grading' || section === 'controlEscolar' || section === 'prefectura')) return true;
+    if (userProfile.role === 'Prefecto' && (section === 'timeClock' || section === 'grading' || section === 'dashboard' || section === 'prefectura' || (section === 'students' && action === 'view'))) return true;
+    
+    if (section === 'prefectura') {
+      if (userProfile.role === 'Administrador') return true;
+      if (userProfile.canAccessPrefectura) return true;
+    }
     
     const sectionPerms = userProfile.permissions?.[section] as any;
     if (!sectionPerms) return false;

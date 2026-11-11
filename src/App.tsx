@@ -217,7 +217,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Checador', path: '/checador-admin', icon: UserRound, section: 'timeClock', action: 'view' },
     { name: 'Checador Alumnos', path: '/checador-alumnos', icon: ClipboardList, section: 'timeClock', action: 'view' },
     { name: 'Control Escolar', path: '/control-escolar', icon: FileBadge, section: 'controlEscolar', action: 'view' },
-    { name: 'Prefectura', path: '/prefectura', icon: ShieldCheck, section: 'controlEscolar', action: 'view' },
+    { name: 'Prefectura', path: '/prefectura', icon: ShieldCheck, section: 'prefectura', action: 'view' },
     { name: 'Docente', path: '/docentes', icon: Presentation, section: 'grading', action: 'view' },
     { name: 'Gastos', path: '/gastos', icon: TrendingDown, section: 'expenses', action: 'view' },
     { name: 'Ajustes', path: '/ajustes', icon: SlidersHorizontal, section: 'settings', action: 'view' },
@@ -638,7 +638,7 @@ const AppContent = () => {
         path="/prefectura" 
         element={
           <ProtectedRoute>
-            {isParent || (!hasPermission('controlEscolar', 'view') && userProfile?.role !== 'Prefecto' && userProfile?.role !== 'Superadministrador' && userProfile?.role !== 'Administrador') ? <Navigate to="/" /> : <PrefectPortal appSettings={appSettings} />}
+            {isParent || (!hasPermission('prefectura', 'view') && !userProfile?.canAccessPrefectura && userProfile?.role !== 'Prefecto' && userProfile?.role !== 'Superadministrador' && userProfile?.role !== 'Administrador') ? <Navigate to="/" /> : <PrefectPortal appSettings={appSettings} />}
           </ProtectedRoute>
         } 
       />
